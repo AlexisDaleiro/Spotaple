@@ -28,6 +28,7 @@ La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple
 - **Playlists**: crear, renombrar, agregar y quitar canciones, reordenar (arrastrando o por menú) y eliminar con confirmación cuando tiene contenido.
 - **Reproductor persistente**: play/pausa, anterior/siguiente, posición, volumen, silencio, aleatorio, repetición (toda la cola / una), cola editable en panel lateral, teclas multimedia y tarjeta del sistema.
 - **Persistencia**: cola, canción actual, posición, volumen y modos se restauran al abrir; la reproducción solo arranca con una acción tuya.
+- **Jam**: salas para escuchar en grupo (cola compartida, votos para saltar y likes), por red local o por internet. Ver [Modo Jam](#modo-jam-escuchar-en-grupo).
 
 No hay descarga offline, crossfade, reproducción sin pausas ni ecualizador: **no están implementados** y la interfaz no los muestra.
 
@@ -45,23 +46,40 @@ No hay descarga offline, crossfade, reproducción sin pausas ni ecualizador: **n
 | `Alt+←` / `Alt+→` | Atrás / adelante |
 | `Enter`, `Menú contextual` / `Shift+F10` sobre una canción | Reproducir desde ahí / abrir el menú |
 
+## Modo Jam (escuchar en grupo)
+
+Una sala compartida: cada persona pide canciones desde su propia PC y suenan donde decida el admin.
+
+- **Crear o unirse:** barra lateral → **Jam**. Quien crea la sala es el admin y elige cómo se conectan:
+  - **Red local:** el admin hospeda la sala en su PC y los demás se unen con `ip:puerto/CÓDIGO`. No usa ningún servidor externo. La primera vez Windows pregunta por el firewall: permití el acceso en redes privadas. Algunas redes Wi-Fi aíslan los equipos entre sí; ahí no funciona.
+  - **Internet:** las apps se conectan a un relé y se unen con un código de 5 caracteres. Funciona aunque la red no deje conectar PCs entre sí. El relé se despliega una vez: ver [`relay/README.md`](relay/README.md).
+- **Dónde suena** (switch del admin): **solo en la PC del admin** o **en todas las PCs**. En "Todas" cada PC baja su propio audio de YouTube y se sincroniza con la del admin; entre PCs solo viaja el control (qué canción, en qué segundo), nunca audio.
+- **Cola compartida:** cualquiera pide canciones (botón +, clic derecho o doble clic) y entran por orden. El admin reordena y quita; cada persona quita lo que pidió.
+- **Votos y likes:** una canción se salta cuando vota más de la mitad de las personas conectadas (el admin y quien la pidió la saltan directo). El like es un "buena elección" y suma a quien la pidió.
+- Tu cola personal, tus favoritos y tus playlists no se tocan: al salir de la sala, la cola vuelve como estaba.
+- No hay cuentas: cada uno elige un nombre. Tampoco hay contraseña ni expulsión; cualquiera con el código entra, y las salas de internet se borran tras 6 h sin actividad.
+- Para probar la red antes de armar una sala: `npm run check:jam -- listen` en una PC y `npm run check:jam -- connect <ip>:47800` en otra.
+
 ## Arquitectura
 
 ```
 src/
   shared/      tipos y contrato IPC (única fuente de verdad), política CSP
+    jam/         motor de sala puro, protocolo y reloj (los comparten la app y el relé)
   main/        proceso local (Node): ventana, base de datos, proveedor musical, protocolo de audio
     db/          store.ts — SQLite (node:sqlite), migraciones, historial, playlists
     music/       provider.ts — contrato MusicProvider; youtube/ — implementación con YouTube.js
     audio-protocol.ts   spotaple-audio://track/<id> → audio con Range
     validate.ts  validación de todo lo que llega del renderer
+    jam/         servidor de salas para red local, cliente WebSocket con reconexión y sesión (la red del jam vive aquí)
   preload/     puente contextBridge: superficie explícita y limitada
   renderer/    React + TypeScript
     src/player/  queue.ts (lógica pura de cola), player.ts (estado y audio), instance.ts (singleton)
     src/stores/  navegación, biblioteca, búsqueda, interfaz
     src/styles/  tokens → base → layout → componentes
 tests/         pruebas automáticas (vitest)
-scripts/       recorridos reales (e2e), accesibilidad, comprobación de YouTube
+scripts/       recorridos reales (e2e), accesibilidad, comprobación de YouTube y de la red del jam
+relay/         relé del modo Internet (Cloudflare Workers + Durable Objects, y versión Node)
 ```
 
 **Cambiar de proveedor musical** solo exige otra implementación de `MusicProvider` (`search`, `getAlbum`, `getArtist`, `resolveAudio`, `invalidate`); ni la interfaz ni la base de datos conocen YouTube.
@@ -107,6 +125,7 @@ Verificado con `npm run e2e:ui`: arranca la app con un proxy local (`--proxy-ser
 - Títulos, artistas y portadas remotos se tratan como datos: React los escapa y no se usa HTML crudo.
 - Navegación y ventanas nuevas bloqueadas; permisos del navegador denegados.
 - No hay cuentas ni secretos: nada de sesión de YouTube se guarda ni se registra.
+- Jam: la red vive en el proceso local, no en la interfaz (la CSP sigue sin permitir conexiones directas). Cada servidor de salas valida todo mensaje (tipos, largos, `https` en portadas, límite de 30 mensajes por segundo y cierre tras 20 inválidos) y la interfaz no puede enviar `hello`.
 
 ## Datos locales
 
@@ -119,7 +138,7 @@ SQLite (`node:sqlite`, incluido en Electron: no hay módulos nativos que reconst
 | `playlists`, `playlist_items` | listas propias y su orden |
 | `plays` | canciones que **realmente empezaron a sonar** |
 | `selections` | canciones que solo se eligieron (pueden no haber sonado) |
-| `settings` | estado del reproductor (cola, índice, posición, volumen, modos) |
+| `settings` | estado del reproductor (cola, índice, posición, volumen, modos) y del jam (`jam_member_id`, `jam_name`, `jam_last_mode`) |
 
 Las playlists pertenecen a esta app; la sincronización con una cuenta de YouTube queda para más adelante.
 
@@ -131,7 +150,7 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 
 ## Pruebas
 
-**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js y el aislamiento del evaluador.
+**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js, el aislamiento del evaluador y el modo Jam (motor de sala, protocolo, reloj, servidores, cliente, sesión y conductor del reproductor).
 
 **Reales** (contra YouTube; requieren internet y `npm run build`):
 
@@ -139,10 +158,12 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 |---|---|
 | `npm run e2e` | abrir → buscar → **reproducir de verdad** → pausa/continuar → saltar de posición → cola → navegar → minimizar → playlist y favoritos → cerrar y reabrir → tamaños de ventana. `SPOTAPLE_EXE=ruta\Spotaple.exe` lo prueba sobre la versión empaquetada. |
 | `npm run e2e:ui` | artista, álbum, menú, atajos, arrastrar la cola, diálogos, uso del proxy configurado, recuperación ante caídas de red (el proxy se corta) y contenido inexistente. |
-| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales. |
+| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales (incluidas las del Jam). |
+| `npm run e2e:jam` | dos instancias de Electron (admin y miembro) con música real: crear sala y unirse, pedir canciones, like, saltar, pasar a "Todas" y comprobar la sincronía, cerrar y reabrir, y lo mismo por la interfaz. `JAM_KIND=internet` con `SPOTAPLE_JAM_RELAY=ws://127.0.0.1:8788` lo prueba contra un relé (`npm run relay:node -- 8788` o `wrangler dev`); `E2E_VERBOSE=1` muestra qué ve cada app si un paso falla. |
 | `npm run check:youtube` | qué clientes de YouTube entregan hoy el audio completo. |
+| `npm run check:jam` | si dos PCs (o esta y el relé) pueden hablarse por WebSocket: `listen`, `connect <ip>:<puerto>` y `url <ws://…>`. |
 
-Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real ni se ejecutó el instalador NSIS (sí la versión sin instalar).
+Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real ni se ejecutó el instalador NSIS (sí la versión sin instalar). El modo Jam se verificó en una sola PC con dos instancias (red local, relé Node y relé de Cloudflare corriendo con `wrangler dev`); **no se probó** en una red de oficina real, con un proxy que solo deje salir por HTTP ni contra el relé desplegado en Cloudflare.
 
 ## Diagnóstico
 
