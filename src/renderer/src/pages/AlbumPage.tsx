@@ -4,7 +4,7 @@ import { formatTotal, plural, totalDuration } from '../lib/format';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { navigate } from '../stores/nav';
-import { toast } from '../stores/ui';
+import { toastQueued } from '../lib/actions';
 import { Cover } from '../components/Cover';
 import { Hero } from '../components/Shelf';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
@@ -69,7 +69,7 @@ export function AlbumPage({ id }: { id: string }) {
               icon={<ListPlus size={18} />}
               label="Agregar el álbum a la cola"
               disabled={!tracks.length}
-              onClick={() => (player().addToQueue(tracks), toast(`${tracks.length} canciones agregadas a la cola`, 'success'))}
+              onClick={() => (player().addToQueue(tracks), toastQueued(tracks.length))}
             />
           </>
         }

@@ -65,7 +65,18 @@ export function Sidebar() {
           label="Jam"
           active={route.page === 'jam'}
           onClick={go({ page: 'jam' })}
-          badge={inRoom(jam) ? <span className="jam-dot" role="img" aria-label={`Sala ${jam?.state?.code} activa`} /> : undefined}
+          badge={
+            inRoom(jam) ? (
+              <span className="jam-entry__live">
+                <span className="jam-entry__code">{jam?.state?.code}</span>
+                <span
+                  className={cx('jam-dot', jam?.status === 'reconnecting' && 'is-warn')}
+                  role="img"
+                  aria-label={jam?.status === 'reconnecting' ? `Sala ${jam?.state?.code}: reconectando` : `Sala ${jam?.state?.code} activa`}
+                />
+              </span>
+            ) : undefined
+          }
         />
       </div>
 

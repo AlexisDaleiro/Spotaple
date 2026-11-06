@@ -18,6 +18,8 @@ export const LIMITS = {
   maxMsgBytes: 8192,
   /** Mensajes inválidos que se toleran por conexión antes de cortarla. */
   maxInvalid: 20,
+  /** Una conexión que no dice nada en este tiempo se da por muerta (los clientes hablan cada ~30 s). */
+  peerSilentMs: 75_000,
 } as const;
 
 /** admin-only: suena solo en la PC del admin · everyone: suena sincronizado en todas. */

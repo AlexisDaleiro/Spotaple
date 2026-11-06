@@ -6,7 +6,7 @@ import { api } from '../api';
 import { nextIndex } from '../player/queue';
 import { artistsText, cx, formatTime } from '../lib/format';
 import { player, usePlayer } from '../player/instance';
-import { inRoom, isAdmin, useJam } from '../stores/jam';
+import { canAdvance, inRoom, isAdmin, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
 import { useUi } from '../stores/ui';
@@ -209,7 +209,15 @@ export function PlayerBar() {
         ) : (
           <div className="player__idle">
             <span className="player__idle-cover" aria-hidden="true" />
-            <span>{room ? 'Nadie pidió nada todavía' : 'Elegí una canción para empezar'}</span>
+            <span>
+              {room
+                ? room.state?.halted
+                  ? admin
+                    ? 'La sala se detuvo: pasá a la siguiente'
+                    : 'La sala se detuvo: el admin tiene que pasar a la siguiente'
+                  : 'Nadie pidió nada todavía'
+                : 'Elegí una canción para empezar'}
+            </span>
           </div>
         )}
       </div>
@@ -232,7 +240,7 @@ export function PlayerBar() {
             icon={<SkipForward size={19} fill="currentColor" />}
             label="Canción siguiente"
             {...(locked ? { title: lockTitle } : {})}
-            disabled={room ? !admin || !now : !item || !hasNext}
+            disabled={room ? !canAdvance(room) : !item || !hasNext}
             onClick={() => (room ? sendJam({ t: 'transport', action: 'next' }) : player().next())}
           />
           <IconButton

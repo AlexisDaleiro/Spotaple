@@ -14,6 +14,8 @@ export interface JamClientOpts {
   protocol?: number;
   /** Solo pruebas: reloj local simulado. */
   now?: () => number;
+  /** Solo pruebas: silencio del servidor tras el cual la conexión se da por muerta (45 s por defecto). */
+  silentMs?: number;
 }
 
 export interface JamClientEvents {
@@ -32,6 +34,8 @@ const GIVE_UP_MS = 120_000;
 const SYNC_SAMPLES = 5;
 const SYNC_GAP_MS = 150;
 const RESYNC_MS = 30_000;
+/** Si el servidor no dice nada en este tiempo la conexión se da por muerta (hay un ping cada 30 s). */
+const SILENT_MS = 45_000;
 /** Errores tras los cuales reintentar no sirve de nada. */
 const FATAL: ReadonlySet<JamErrorCode> = new Set<JamErrorCode>(['no_room', 'protocol', 'code_taken', 'room_full', 'closed']);
 
@@ -57,6 +61,8 @@ export class JamClient {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private syncTimers: ReturnType<typeof setTimeout>[] = [];
   private resyncTimer?: ReturnType<typeof setInterval>;
+  private watchdog?: ReturnType<typeof setInterval>;
+  private lastHeard = 0;
   private samples: ClockSample[] = [];
   private readonly pending = new Map<number, number>();
   private pingSeq = 0;
@@ -121,6 +127,7 @@ export class JamClient {
         return;
       }
       if (!isServerMsg(m)) return;
+      this.lastHeard = Date.now();
       if (m.t === 'state') {
         if (!gotState) {
           gotState = true;
@@ -149,6 +156,9 @@ export class JamClient {
     this.setStatus('connected');
     this.runSync();
     this.resyncTimer ??= setInterval(() => this.runSync(), RESYNC_MS);
+    const silent = this.o.silentMs ?? SILENT_MS;
+    this.lastHeard = Date.now();
+    this.watchdog ??= setInterval(() => this.checkAlive(silent), Math.max(50, Math.min(5000, silent / 3)));
   }
 
   private onDrop(): void {
@@ -184,11 +194,26 @@ export class JamClient {
     this.e.onOffset?.(this.offset);
   }
 
+  /** Una conexión TCP medio abierta no avisa que murió: si el servidor calla demasiado se da por caída y se reintenta. */
+  private checkAlive(silent: number): void {
+    if (this.ended || Date.now() - this.lastHeard <= silent) return;
+    const dead = this.ws;
+    this.ws = null; // el `onclose` tardío del socket muerto ya no cuenta
+    try {
+      dead?.close();
+    } catch {
+      /* ya estaba cerrado */
+    }
+    this.onDrop();
+  }
+
   private stopSync(): void {
     for (const t of this.syncTimers) clearTimeout(t);
     this.syncTimers = [];
     clearInterval(this.resyncTimer);
     this.resyncTimer = undefined;
+    clearInterval(this.watchdog);
+    this.watchdog = undefined;
     this.pending.clear();
   }
 

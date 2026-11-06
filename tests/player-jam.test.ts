@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRoom } from '../src/shared/jam/engine';
 import type { JamView } from '../src/shared/jam/types';
 import { createPlayer, type JamHook } from '../src/renderer/src/player/player';
-import { inRoom, isAdmin } from '../src/renderer/src/stores/jam';
+import { canAdvance, inRoom, isAdmin } from '../src/renderer/src/stores/jam';
+import type { PreparedAudio } from '../src/shared/types';
 import { FakeAudio, flush, ok, track, tracks } from './helpers/fake-audio';
 
 function setup(active: boolean) {
@@ -61,6 +62,31 @@ describe('playAt', () => {
   });
 });
 
+describe('stop', () => {
+  it('descarta una carga en curso: no arranca sola después (Important del revisor)', async () => {
+    const audio = new FakeAudio();
+    let release!: (p: PreparedAudio) => void;
+    const store = createPlayer({
+      audio,
+      api: {
+        prepare: () => new Promise<PreparedAudio>((res) => (release = res)),
+        invalidate: async () => undefined,
+        recordSelection: async () => undefined,
+        recordPlay: async () => undefined,
+      },
+      urlFor: (id) => `test://${id}`,
+    });
+    store.getState().playAt(track(0), 0);
+    expect(store.getState().status).toBe('loading');
+    store.getState().stop();
+    release(ok(track(0).id));
+    await flush();
+    expect(audio.src).toBe('');
+    expect(audio.paused).toBe(true);
+    expect(store.getState().status).toBe('paused');
+  });
+});
+
 describe('estado de la sala en el renderer', () => {
   const view = (patch: Partial<JamView>): JamView => ({
     status: 'connected',
@@ -80,6 +106,17 @@ describe('estado de la sala en el renderer', () => {
     expect(inRoom(view({ status: 'connecting', state: null }))).toBe(false);
     expect(inRoom(view({ status: 'ended' }))).toBe(false);
     expect(inRoom(view({ status: 'idle', state: null }))).toBe(false);
+  });
+
+  it('canAdvance: el admin puede pasar si algo suena o si la sala se detuvo con cola (Important del revisor)', () => {
+    const idle = view({});
+    expect(canAdvance(idle)).toBe(false);
+    const item = { itemId: 'i9', track: track(1), addedBy: 'u-mara-0001', addedAt: 0 };
+    const halted = view({ state: { ...idle.state!, halted: true, queue: [item] } });
+    expect(canAdvance(halted)).toBe(true);
+    expect(canAdvance({ ...halted, selfId: 'u-mara-0001' })).toBe(false);
+    const playing = view({ state: { ...idle.state!, now: { item, status: 'playing', anchorMs: 0, pausedAtSec: 0, skipVotes: [], likes: [] } } });
+    expect(canAdvance(playing)).toBe(true);
   });
 
   it('isAdmin compara el id propio con el del admin', () => {

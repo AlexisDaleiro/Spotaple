@@ -250,7 +250,21 @@
   flex: none;
   width: 8px;
   height: 8px;
-  margin-left: auto;
   border-radius: 50%;
   background: var(--ok);
+}
+.jam-dot.is-warn {
+  background: var(--accent);
+}
+.jam-entry__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-left: auto;
+}
+.jam-entry__code {
+  color: var(--fg-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-xs);
 }

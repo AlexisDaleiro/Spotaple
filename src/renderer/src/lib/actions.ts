@@ -1,7 +1,13 @@
 import type { Track } from '@shared/types';
 import { api, errorMessage } from '../api';
 import { player } from '../player/instance';
+import { inRoom, useJam } from '../stores/jam';
 import { toast } from '../stores/ui';
+
+/** "N canciones agregadas a la cola". Dentro de una sala el aviso ("pedidas a la sala") lo da el propio pedido. */
+export const toastQueued = (count: number) => {
+  if (!inRoom(useJam.getState().view)) toast(`${count} canciones agregadas a la cola`, 'success');
+};
 
 /** Acciones que primero necesitan datos (álbum, artista, playlist) y luego tocan el reproductor. */
 async function withTracks(load: () => Promise<Track[]>, then: (tracks: Track[]) => void, empty = 'No hay canciones para reproducir.') {
@@ -20,7 +26,7 @@ export const queueAlbum = (id: string) =>
     async () => (await api.music.album(id)).tracks,
     (t) => {
       player().addToQueue(t);
-      toast(`${t.length} canciones agregadas a la cola`, 'success');
+      toastQueued(t.length);
     },
   );
 export const playArtist = (id: string) => withTracks(async () => (await api.music.artist(id)).topSongs, (t) => player().playTracks(t, 0), 'Este artista no tiene canciones populares.');
@@ -30,7 +36,7 @@ export const queuePlaylist = (id: number) =>
     async () => (await api.library.playlist(id)).items.map((i) => i.track),
     (t) => {
       player().addToQueue(t);
-      toast(`${t.length} canciones agregadas a la cola`, 'success');
+      toastQueued(t.length);
     },
     'La playlist está vacía.',
   );

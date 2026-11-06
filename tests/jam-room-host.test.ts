@@ -200,3 +200,17 @@ describe('vencimientos', () => {
     expect(vacia.expired).toBe(true);
   });
 });
+
+describe('conexiones muertas (Important del revisor)', () => {
+  it('sweep corta a quien lleva más de 75 s callado y lo marca como desconectado', () => {
+    const { host, advance, admin, sAdmin, joinMara } = setup();
+    const { c: mara } = joinMara();
+    advance(40_000);
+    sAdmin.receive(JSON.stringify({ t: 'ping', id: 1 }));
+    advance(40_000); // Mara lleva 80 s sin hablar; el admin, 40 s
+    host.sweep();
+    expect(mara.closed).toBe(true);
+    expect(admin.closed).toBe(false);
+    expect(admin.last().members.find((m) => m.id === MARA)?.connected).toBe(false);
+  });
+});

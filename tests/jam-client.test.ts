@@ -1,4 +1,7 @@
+import type { AddressInfo } from 'node:net';
+import { WebSocketServer } from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createRoom } from '../src/shared/jam/engine';
 import { JamClient, type JamClientOpts, type JamConnStatus } from '../src/main/jam/client';
 import { startNodeHost, type NodeHost } from '../src/main/jam/node-host';
 import type { JamErrorCode, JamState } from '../src/shared/jam/types';
@@ -104,5 +107,25 @@ describe('JamClient', () => {
     const a = make({ port: 1 }, { memberId: ADMIN, name: 'Ana', create: true });
     await until(() => a.status() === 'ended', 5000);
     expect(a.statuses.at(-1)).toEqual(['ended', undefined]);
+  });
+
+  it('si el servidor deja de contestar, detecta la conexión muerta y reintenta (Important del revisor)', async () => {
+    const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    await new Promise<void>((r) => wss.once('listening', () => r()));
+    // Saluda una vez y después calla: no contesta ni los ping.
+    wss.on('connection', (ws) =>
+      ws.on('message', (raw) => {
+        if (JSON.parse(String(raw)).t === 'hello') {
+          ws.send(JSON.stringify({ t: 'state', state: createRoom({ code: 'K7M2P', adminId: ADMIN, adminName: 'Ana', transferAdmin: false }, 0) }));
+        }
+      }),
+    );
+    try {
+      const a = make({ port: (wss.address() as AddressInfo).port }, { memberId: ADMIN, name: 'Ana', create: true, silentMs: 300 });
+      await until(() => a.status() === 'connected');
+      await until(() => a.statuses.some(([s]) => s === 'reconnecting'), 4000);
+    } finally {
+      wss.close();
+    }
   });
 });

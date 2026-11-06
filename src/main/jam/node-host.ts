@@ -106,13 +106,16 @@ export async function startLocalHost(code: string, preferredPort = 47800): Promi
   }
 }
 
-const isPrivate = (ip: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+/** Adaptadores que no son la red real de la oficina (WSL, Hyper-V, VirtualBox, VPN…): su IP no sirve para que otros se conecten. */
+const VIRTUAL = /vethernet|wsl|virtualbox|vmware|hyper-v|docker|vpn|\btap\b|\btun\b|tailscale|zerotier|bluetooth|npcap|loopback/i;
+const rank = (ip: string) => (ip.startsWith('192.168.') ? 0 : ip.startsWith('10.') ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
 
-/** IPv4 de esta PC que no son de loopback, las de redes privadas primero. */
-export function lanAddresses(): string[] {
-  const ips = Object.values(os.networkInterfaces())
-    .flat()
-    .filter((i): i is os.NetworkInterfaceInfo => !!i && i.family === 'IPv4' && !i.internal)
-    .map((i) => i.address);
-  return [...ips.filter(isPrivate), ...ips.filter((ip) => !isPrivate(ip))];
+/** IPv4 de esta PC que no son de loopback: sin adaptadores virtuales y con 192.168 y 10 antes que 172.16. */
+export function lanAddresses(ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string[] {
+  const all = Object.entries(ifaces).flatMap(([name, list]) =>
+    (list ?? []).filter((i) => i.family === 'IPv4' && !i.internal).map((i) => ({ name, ip: i.address })),
+  );
+  const real = all.filter((a) => !VIRTUAL.test(a.name));
+  // Si solo hay adaptadores virtuales, es mejor ofrecer esos que ninguno.
+  return (real.length ? real : all).map((a) => a.ip).sort((a, b) => rank(a) - rank(b));
 }

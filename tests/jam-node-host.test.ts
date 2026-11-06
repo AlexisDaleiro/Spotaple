@@ -1,3 +1,4 @@
+import type { NetworkInterfaceInfo } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { lanAddresses, startNodeHost, type NodeHost } from '../src/main/jam/node-host';
 import type { ServerMsg } from '../src/shared/jam/types';
@@ -110,6 +111,21 @@ describe('utilidades', () => {
       expect(ip).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/);
       expect(ip.startsWith('127.')).toBe(false);
     }
+  });
+
+  it('lanAddresses descarta adaptadores virtuales y prefiere 192.168 y 10 antes que 172.16 (Important del revisor)', () => {
+    const nic = (address: string, internal = false) => [{ address, family: 'IPv4', internal, netmask: '', mac: '', cidr: null }] as NetworkInterfaceInfo[];
+    const ifaces = {
+      'vEthernet (WSL)': nic('172.20.0.1'),
+      'VirtualBox Host-Only Network': nic('192.168.56.1'),
+      VPN: nic('10.8.0.2'),
+      'Wi-Fi': nic('10.0.0.5'),
+      Ethernet: nic('192.168.1.10'),
+      Loopback: nic('127.0.0.1', true),
+    };
+    expect(lanAddresses(ifaces)).toEqual(['192.168.1.10', '10.0.0.5']);
+    // Si solo hay adaptadores virtuales, es mejor ofrecer esos que ninguno.
+    expect(lanAddresses({ 'vEthernet (WSL)': nic('172.20.0.1') })).toEqual(['172.20.0.1']);
   });
 
   it('stop cierra los sockets abiertos y dropConnections los corta desde el servidor', async () => {

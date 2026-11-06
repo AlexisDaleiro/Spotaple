@@ -20,6 +20,8 @@ interface Peer {
   stamps: number[];
   invalid: number;
   dead: boolean;
+  /** Última vez que esta conexión dijo algo (para detectar las que murieron sin avisar). */
+  lastSeen: number;
 }
 
 /** Una sala nunca creada se descarta a los 60 s (evita acumular salas por códigos que nadie usó). */
@@ -52,21 +54,25 @@ export class RoomHost {
   }
 
   connect(conn: Conn): Session {
-    const peer: Peer = { conn, memberId: null, stamps: [], invalid: 0, dead: false };
+    const peer: Peer = { conn, memberId: null, stamps: [], invalid: 0, dead: false, lastSeen: this.now() };
     this.peers.add(peer);
     return { receive: (raw) => this.receive(peer, raw), closed: () => this.kill(peer, true) };
   }
 
   /** Vencimientos (gracia del admin, miembros desconectados): el transporte lo llama cada pocos segundos. */
   sweep(): void {
+    const t = this.now();
+    // Conexión muerta (Wi-Fi cortado, PC suspendida): los clientes hablan cada ~30 s, así que tanto silencio no es normal.
+    for (const p of [...this.peers]) if (t - p.lastSeen > LIMITS.peerSilentMs) this.kill(p, true);
     if (!this.state) return;
-    const r = reduce(this.state, { type: 'tick' }, this.now());
+    const r = reduce(this.state, { type: 'tick' }, t);
     if (r.state !== this.state) this.commit(r.state);
   }
 
   private receive(peer: Peer, raw: string): void {
     if (peer.dead) return;
     const t = this.now();
+    peer.lastSeen = t;
     peer.stamps = peer.stamps.filter((x) => t - x < 1000);
     peer.stamps.push(t);
     if (peer.stamps.length > LIMITS.msgPerSec) return this.reject(peer, 'rate_limited');

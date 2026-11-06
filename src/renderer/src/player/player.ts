@@ -77,6 +77,8 @@ export interface PlayerActions {
   playTracks(tracks: Track[], start?: number): void;
   /** Reemplaza la cola por esta canción y arranca en `startSec`. Lo usa el conductor de la sala; no pasa por el gancho jam. */
   playAt(track: Track, startSec: number): void;
+  /** Corta el audio y descarta cualquier carga en curso (no arranca sola después); la cola no se toca. */
+  stop(): void;
   /** Salta a un ítem de la cola actual. */
   playIndex(index: number): void;
   playNext(tracks: Track[]): void;
@@ -298,6 +300,13 @@ export function createPlayer(deps: PlayerDeps) {
       playAt(track, startSec) {
         commit({ items: makeItems([track]), index: 0, original: null });
         void go(0, { user: false, startAt: startSec });
+      },
+      stop() {
+        token++; // una carga que todavía resuelve la fuente ya no es la vigente: no pondrá el audio
+        pendingStart = null;
+        loadedUid = null;
+        audio.pause();
+        set({ status: get().index >= 0 ? 'paused' : 'idle', error: null });
       },
       playIndex(index) {
         if (index >= 0 && index < get().items.length) void go(index, { user: true });

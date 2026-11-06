@@ -23,9 +23,9 @@ export interface JamSyncDeps {
 /** Si el audio real del admin se desvía tanto de lo anclado (salto manual, corte de buffer), la sala se reancla. */
 const ADMIN_RESEEK_S = 1.5;
 const sounding = (status: PlayerState['status']) => status === 'playing' || status === 'buffering';
-/** Cuántos pedidos salen de una vez y cada cuánto sale el resto (20 + ~16 por segundo, bajo el límite de 30). */
-const BURST = 20;
-const SPACING_MS = 60;
+/** Cuántos pedidos salen de golpe y cada cuánto sale el resto: nunca más de ~20 en una ventana de 1 s (el servidor corta a los 30). */
+const BURST = 10;
+const SPACING_MS = 100;
 
 /**
  * Conductor de la sala: hace que el reproductor de esta PC suene lo que la sala dice (si le toca) y, si esta PC
@@ -40,19 +40,24 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
   /** Ítem de la sala cuyo audio está cargado: evita reiniciar la canción cuando solo cambia el estado de la sala. */
   let loadedItemId: string | null = null;
   let lastSeekSent = 0;
+  /** `serverTime` del último estado visto antes de perder la conexión: el primero con un `serverTime` mayor ya es de después de volver. */
+  let staleAt: number | null = null;
 
   const expected = (now: JamNow, v: JamView) => positionAt(now, clock() + v.offsetMs);
   const pauseIfSounding = () => {
     const p = player.getState();
     if (sounding(p.status)) p.togglePlay();
   };
+  /** Corta el audio y descarta también una carga que todavía está resolviendo la fuente (no deja audio fantasma). */
+  const stopAudio = () => player.getState().stop();
 
   function enter() {
     inside = true;
     loadedItemId = null;
+    staleAt = null;
     personal = player.getState().snapshot();
     d.setPersistenceSuspended(true);
-    pauseIfSounding();
+    stopAudio();
     // Cola vacía y repetir/aleatorio apagados: con una cola de un ítem, "repetir una" haría que `ended` nunca llegue.
     player.getState().hydrate({ ...personal, queue: [], index: 0, positionSec: 0, repeat: 'off', shuffle: false });
   }
@@ -60,7 +65,8 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
   function leaveRoom() {
     inside = false;
     loadedItemId = null;
-    pauseIfSounding();
+    staleAt = null;
+    stopAudio();
     const cur = player.getState();
     if (personal) cur.hydrate({ ...personal, volume: cur.volume, muted: cur.muted });
     personal = null;
@@ -82,26 +88,46 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     drift(now, v);
   }
 
+  /** El admin volvió de un corte: lo que pasó en su audio mientras no había conexión no llegó a la sala; se le cuenta ahora. */
+  function catchUp(now: JamNow) {
+    const p = player.getState();
+    if (p.items[p.index]?.track.id !== now.item.track.id) return;
+    const itemId = now.item.itemId;
+    if (p.status === 'ended') d.send({ t: 'ended', itemId });
+    else if (p.status === 'error' && (p.error?.code === 'unavailable' || p.error?.code === 'region')) d.send({ t: 'unavailable', itemId });
+    else if (sounding(p.status) && now.status !== 'playing') d.send({ t: 'playing', itemId, positionSec: p.position });
+    else if (p.status === 'paused' && now.status === 'playing') d.send({ t: 'transport', action: 'pause' });
+  }
+
   function reconcile(v: JamView) {
     const s = v.state!;
     const admin = isAdmin(v);
     if (v.status === 'reconnecting') {
       // El admin sigue con su audio mientras reconecta (no se reinicia la canción); un seguidor se pausa.
+      staleAt ??= s.serverTime;
       if (!admin) pauseIfSounding();
       return;
     }
+    // El primer estado con un reloj de sala posterior al que había al caerse es el de después de volver.
+    const fresh = staleAt !== null && s.serverTime > staleAt;
+    if (fresh) staleAt = null;
     const now = s.now;
     if (!now || !(admin || s.mode === 'everyone')) {
-      pauseIfSounding();
+      if (loadedItemId !== null || player.getState().status === 'loading' || sounding(player.getState().status)) stopAudio();
       loadedItemId = null;
       return;
     }
     if (loadedItemId !== now.item.itemId) {
       loadedItemId = now.item.itemId;
-      player.getState().playAt(now.item.track, admin ? 0 : expected(now, v));
+      // Un admin nuevo (traspaso) o que vuelve a unirse retoma donde va la sala; si la canción recién empieza, la posición es 0.
+      player.getState().playAt(now.item.track, expected(now, v));
       return;
     }
-    if (!admin) followerSync(now, v);
+    if (admin) {
+      if (fresh) catchUp(now);
+      return;
+    }
+    followerSync(now, v);
   }
 
   function apply(v: JamView | null) {
@@ -112,11 +138,19 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
   }
 
   /** Solo el admin: lo que pasa en su audio se cuenta a la sala, que lo difunde a los demás. */
+  /** Un seguidor: su audio recién empezó (o se reanudó). Solo debe sonar si la sala está sonando, y en su posición. */
+  function followerPlayer(cur: PlayerState, prev: PlayerState, now: JamNow, v: JamView) {
+    if (cur.status !== 'playing' || prev.status === 'playing') return;
+    if (now.status !== 'playing') pauseIfSounding();
+    else drift(now, v);
+  }
+
   function onPlayer(cur: PlayerState, prev: PlayerState) {
     const v = d.getView();
-    if (!v || !isAdmin(v) || v.status !== 'connected') return;
+    if (!v || v.status !== 'connected') return;
     const now = v.state?.now;
     if (!now || loadedItemId !== now.item.itemId || cur.items[cur.index]?.track.id !== now.item.track.id) return;
+    if (!isAdmin(v)) return followerPlayer(cur, prev, now, v);
     const itemId = now.item.itemId;
 
     if (cur.status === 'playing' && prev.status !== 'playing') {
@@ -159,10 +193,12 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
 }
 
 /** Gancho del reproductor: pedir canciones dentro de una sala las manda a la sala en vez de a la cola propia. */
-export function createJamHook(d: { getView(): JamView | null; send(msg: JamOutMsg): void }): JamHook {
+export function createJamHook(d: { getView(): JamView | null; send(msg: JamOutMsg): void; notify?(message: string): void }): JamHook {
   return {
     active: () => inRoom(d.getView()),
     request(tracks, how) {
+      if (!tracks.length) return;
+      d.notify?.(tracks.length === 1 ? 'Pedida a la sala' : `${tracks.length} canciones pedidas a la sala`);
       const admin = isAdmin(d.getView());
       // Un miembro siempre pide al final. El admin puede pedir "next"/"now": cada "next" va al frente, así que se envían al revés.
       const msgs: JamOutMsg[] =

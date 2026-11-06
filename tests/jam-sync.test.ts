@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRoom, reduce } from '../src/shared/jam/engine';
+import { RoomHost, type Conn } from '../src/shared/jam/room-host';
 import type { JamState, JamView } from '../src/shared/jam/types';
 import type { PreparedAudio } from '../src/shared/types';
 import { createJamHook, startJamSync, type JamOutMsg } from '../src/renderer/src/player/jam-sync';
@@ -214,8 +215,8 @@ describe('createJamHook', () => {
     try {
       const sent: JamOutMsg[] = [];
       createJamHook({ getView: () => view('u-mara', base()), send: (m) => void sent.push(m) }).request(tracks(45), 'end');
-      expect(sent).toHaveLength(20);
-      vi.advanceTimersByTime(60 * 25);
+      expect(sent).toHaveLength(10);
+      vi.advanceTimersByTime(4000);
       expect(sent).toHaveLength(45);
       expect(sent.at(-1)).toEqual({ t: 'queue.add', track: track(44) });
     } finally {
@@ -237,5 +238,129 @@ describe('createJamHook', () => {
       { t: 'queue.add', track: track(2), at: 'next' },
       { t: 'queue.add', track: track(1), at: 'next' },
     ]);
+  });
+
+  it('avisa que pidió a la sala, una canción o varias (Important del revisor)', () => {
+    const notices: string[] = [];
+    const hook = createJamHook({ getView: () => view('u-mara', base()), send: () => undefined, notify: (m) => notices.push(m) });
+    hook.request([track(1)], 'end');
+    hook.request([track(1), track(2), track(3)], 'end');
+    expect(notices).toEqual(['Pedida a la sala', '3 canciones pedidas a la sala']);
+  });
+
+  it('un pedido de 45 canciones pasa por un RoomHost real sin que el límite de tasa lo corte (Important del revisor)', () => {
+    vi.useFakeTimers();
+    try {
+      const host = new RoomHost({ code: 'K7M2P', transferAdmin: true });
+      const conn = {
+        sent: [] as string[],
+        closed: false,
+        send(data: string) {
+          this.sent.push(data);
+        },
+        close() {
+          this.closed = true;
+        },
+      };
+      const session = host.connect(conn as Conn);
+      session.receive(JSON.stringify({ t: 'hello', protocol: 1, memberId: 'u-mara-0001', name: 'Mara', create: true }));
+      createJamHook({ getView: () => view('u-mara-0001', base()), send: (m) => session.receive(JSON.stringify(m)) }).request(tracks(45), 'end');
+      vi.advanceTimersByTime(10_000);
+      const msgs = conn.sent.map((x) => JSON.parse(x));
+      expect(msgs.filter((m) => m.t === 'error')).toEqual([]);
+      expect(conn.closed).toBe(false);
+      expect(msgs.filter((m) => m.t === 'state').at(-1).state.queue).toHaveLength(44);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+const roomTrack = (st: JamState) => st.now?.item.track.id;
+/** Lo que mandó el admin, aplicado al motor: se comprueba el resultado en la sala y no solo el mensaje. */
+const applyToRoom = (st: JamState, sent: JamOutMsg[]): JamState =>
+  sent.reduce((s, m) => reduce(s, { type: 'msg', from: 'admin-1', msg: m as never }, CLOCK + 9000).state, st);
+
+describe('el admin que se reconecta se reancla a la sala (Critical del revisor)', () => {
+  it('si la sala quedó en pausa mientras el admin seguía sonando, se lo cuenta al volver', async () => {
+    const { s, sent, setView } = setup();
+    const st = anchored(withSong(base()), 3);
+    setView(view('admin-1', st));
+    await flush();
+    sent.length = 0;
+    setView(view('admin-1', st, { status: 'reconnecting' }));
+    // Al caerse el admin el servidor congela la canción; al volver llega un estado nuevo (serverTime mayor) en pausa.
+    const frozen = reduce(st, { type: 'disconnect', memberId: 'admin-1' }, CLOCK + 5000).state;
+    const back = reduce(frozen, { type: 'join', memberId: 'admin-1', name: 'Ana' }, CLOCK + 7000).state;
+    expect(back.now?.status).toBe('paused');
+    setView(view('admin-1', { ...back, serverTime: CLOCK + 8000 }));
+    expect(s().status).toBe('playing');
+    expect(sent).toContainEqual(expect.objectContaining({ t: 'playing', itemId: 'i1' }));
+    expect(applyToRoom(back, sent).now?.status).toBe('playing');
+  });
+
+  it('si la canción terminó durante el corte, avisa "ended" al volver y la sala avanza', async () => {
+    const { audio, sent, setView } = setup();
+    const playingState = anchored(withSong(withSong(base(), 0), 1), 3);
+    setView(view('admin-1', playingState));
+    await flush();
+    setView(view('admin-1', playingState, { status: 'reconnecting' }));
+    sent.length = 0;
+    audio.ended(); // sin conexión: el aviso no puede salir
+    expect(sent).toEqual([]);
+    setView(view('admin-1', { ...playingState, serverTime: CLOCK + 5000 }));
+    expect(sent).toContainEqual({ t: 'ended', itemId: 'i1' });
+    expect(roomTrack(applyToRoom(playingState, sent))).toBe(track(1).id);
+  });
+});
+
+describe('un admin nuevo arranca en la posición de la sala (Important del revisor)', () => {
+  it('no reinicia la canción en 0 ni reancla a todos en 0', async () => {
+    const { audio, sent, setView } = setup();
+    setView(view('admin-1', anchored(withSong(base()), 100)));
+    await flush();
+    audio.loaded(300);
+    expect(audio.currentTime).toBe(100);
+    expect(sent).toContainEqual({ t: 'playing', itemId: 'i1', positionSec: 100 });
+  });
+});
+
+describe('salir de la sala mientras una canción carga (Important del revisor)', () => {
+  it('no deja audio fantasma: la carga pendiente se descarta', async () => {
+    let release!: (p: PreparedAudio) => void;
+    const pending = new Promise<PreparedAudio>((res) => (release = res));
+    const { s, audio, setView } = setup(() => pending);
+    setView(view('admin-1', withSong(base())));
+    expect(s().status).toBe('loading');
+    setView(null);
+    release(ok('track000000'));
+    await flush();
+    expect(audio.src).toBe('');
+    expect(audio.paused).toBe(true);
+    expect(s().status).not.toBe('playing');
+  });
+});
+
+describe('un seguidor no suena si la sala no está sonando (Important del revisor)', () => {
+  it('con la sala en pausa se queda en pausa aunque su audio termine de cargar', async () => {
+    const { s, audio, setView } = setup();
+    const st = everyone(anchored(withSong(base()), 42));
+    setView(view('u-mara', { ...st, now: { ...st.now!, status: 'paused', pausedAtSec: 42 } }));
+    await flush();
+    audio.loaded(300);
+    expect(audio.paused).toBe(true);
+    expect(s().status).toBe('paused');
+  });
+
+  it('arranca recién cuando la sala pasa a sonar', async () => {
+    const { s, audio, setView } = setup();
+    setView(view('u-mara', everyone(withSong(base()))));
+    await flush();
+    audio.loaded(300);
+    expect(audio.paused).toBe(true);
+    setView(view('u-mara', everyone(anchored(withSong(base()), 5))));
+    await flush();
+    expect(audio.paused).toBe(false);
+    expect(s().status).toBe('playing');
   });
 });
