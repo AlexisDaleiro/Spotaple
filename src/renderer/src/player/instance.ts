@@ -1,7 +1,9 @@
 import { useStore } from 'zustand';
 import { api } from '../api';
 import { artistsText, thumbUrl } from '../lib/format';
+import { useJam } from '../stores/jam';
 import { toast } from '../stores/ui';
+import { createJamHook } from './jam-sync';
 import { createPlayer, type PlayerActions, type PlayerState } from './player';
 
 /**
@@ -35,7 +37,12 @@ export const playerStore = createPlayer({
     recordPlay: (t) => api.library.recordPlay(t),
   },
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
+  // Dentro de una sala, pedir canciones las manda a la sala (ver jam-sync.ts).
+  jam: createJamHook({ getView: () => useJam.getState().view, send: (m) => void api.jam.send(m).catch(() => undefined) }),
 });
+
+/** Mientras hay sala la cola del reproductor es la de la sala: no se guarda como cola personal. */
+export const persistence = { suspended: false };
 
 export const usePlayer = <T>(selector: (s: PlayerState & PlayerActions) => T): T => useStore(playerStore, selector);
 export const player = () => playerStore.getState();
@@ -57,6 +64,7 @@ export async function startPlayerPersistence() {
 
   const save = () => {
     timer = undefined;
+    if (persistence.suspended) return;
     lastSave = Date.now();
     api.state.save(playerStore.getState().snapshot()).catch(() => undefined);
   };
