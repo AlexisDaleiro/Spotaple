@@ -42,11 +42,19 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
   let lastSeekSent = 0;
   /** `serverTime` del último estado visto antes de perder la conexión: el primero con un `serverTime` mayor ya es de después de volver. */
   let staleAt: number | null = null;
+  /** Este seguidor está pausado por la sala (no suena todavía, o se cortó la conexión): reanuda cuando la sala suene. */
+  let heldByRoom = false;
 
   const expected = (now: JamNow, v: JamView) => positionAt(now, clock() + v.offsetMs);
-  const pauseIfSounding = () => {
+  /**
+   * Pausa a un seguidor porque la sala no suena. Se recuerda en `heldByRoom`: el estado del reproductor recién cambia cuando el
+   * navegador confirma la pausa (más tarde), así que no sirve para decidir si hay que reanudar.
+   */
+  const holdForRoom = () => {
     const p = player.getState();
-    if (sounding(p.status)) p.togglePlay();
+    if (heldByRoom || !sounding(p.status)) return;
+    heldByRoom = true;
+    p.togglePlay();
   };
   /** Corta el audio y descarta también una carga que todavía está resolviendo la fuente (no deja audio fantasma). */
   const stopAudio = () => player.getState().stop();
@@ -55,6 +63,7 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     inside = true;
     loadedItemId = null;
     staleAt = null;
+    heldByRoom = false;
     personal = player.getState().snapshot();
     d.setPersistenceSuspended(true);
     stopAudio();
@@ -66,6 +75,7 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     inside = false;
     loadedItemId = null;
     staleAt = null;
+    heldByRoom = false;
     stopAudio();
     const cur = player.getState();
     if (personal) cur.hydrate({ ...personal, volume: cur.volume, muted: cur.muted });
@@ -81,10 +91,12 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
   }
 
   function followerSync(now: JamNow, v: JamView) {
-    if (now.status === 'paused') return pauseIfSounding();
+    if (now.status === 'paused') return holdForRoom();
     if (now.status !== 'playing') return; // loading: el admin todavía no suena
-    const p = player.getState();
-    if (p.status === 'paused') p.togglePlay();
+    if (heldByRoom) {
+      heldByRoom = false;
+      player.getState().togglePlay(); // togglePlay mira el audio real, no el estado, que puede estar atrasado
+    }
     drift(now, v);
   }
 
@@ -105,7 +117,7 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     if (v.status === 'reconnecting') {
       // El admin sigue con su audio mientras reconecta (no se reinicia la canción); un seguidor se pausa.
       staleAt ??= s.serverTime;
-      if (!admin) pauseIfSounding();
+      if (!admin) holdForRoom();
       return;
     }
     // El primer estado con un reloj de sala posterior al que había al caerse es el de después de volver.
@@ -115,10 +127,12 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     if (!now || !(admin || s.mode === 'everyone')) {
       if (loadedItemId !== null || player.getState().status === 'loading' || sounding(player.getState().status)) stopAudio();
       loadedItemId = null;
+      heldByRoom = false;
       return;
     }
     if (loadedItemId !== now.item.itemId) {
       loadedItemId = now.item.itemId;
+      heldByRoom = false;
       // Un admin nuevo (traspaso) o que vuelve a unirse retoma donde va la sala; si la canción recién empieza, la posición es 0.
       player.getState().playAt(now.item.track, expected(now, v));
       return;
@@ -141,7 +155,7 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
   /** Un seguidor: su audio recién empezó (o se reanudó). Solo debe sonar si la sala está sonando, y en su posición. */
   function followerPlayer(cur: PlayerState, prev: PlayerState, now: JamNow, v: JamView) {
     if (cur.status !== 'playing' || prev.status === 'playing') return;
-    if (now.status !== 'playing') pauseIfSounding();
+    if (now.status !== 'playing') holdForRoom();
     else drift(now, v);
   }
 

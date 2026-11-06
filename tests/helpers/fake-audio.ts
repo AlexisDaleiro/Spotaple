@@ -15,9 +15,21 @@ export class FakeAudio extends EventTarget implements AudioLike {
     queueMicrotask(() => this.dispatchEvent(new Event('playing')));
     return Promise.resolve();
   }
+  /** true: el evento 'pause' no sale solo (un navegador real lo dispara más tarde); se dispara con `firePause()`. */
+  manualPause = false;
+  pendingPause = false;
   pause() {
     if (this.paused) return;
     this.paused = true;
+    if (this.manualPause) {
+      this.pendingPause = true;
+      return;
+    }
+    this.dispatchEvent(new Event('pause'));
+  }
+  firePause() {
+    if (!this.pendingPause) return;
+    this.pendingPause = false;
     this.dispatchEvent(new Event('pause'));
   }
   /** Simula que la fuente se cargó: duración conocida. */

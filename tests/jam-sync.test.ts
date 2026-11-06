@@ -363,4 +363,18 @@ describe('un seguidor no suena si la sala no está sonando (Important del reviso
     expect(audio.paused).toBe(false);
     expect(s().status).toBe('playing');
   });
+
+  it('reanuda aunque la sala empiece a sonar antes de que el navegador confirme la pausa (hallado con el .exe empaquetado)', async () => {
+    const { s, audio, setView } = setup();
+    audio.manualPause = true; // como en un navegador real: el evento 'pause' llega después de pause()
+    setView(view('u-mara', everyone(withSong(base()))));
+    await flush(); // el audio del seguidor empieza y, con la sala cargando, se lo pausa
+    expect(audio.paused).toBe(true);
+    expect(s().status).toBe('playing'); // todavía no llegó el evento 'pause'
+    setView(view('u-mara', everyone(anchored(withSong(base()), 5)))); // la sala empieza a sonar antes de esa confirmación
+    audio.firePause();
+    await flush();
+    expect(audio.paused).toBe(false);
+    expect(s().status).toBe('playing');
+  });
 });
