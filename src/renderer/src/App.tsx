@@ -13,6 +13,7 @@ import { TopBar } from './components/TopBar';
 import { AlbumPage } from './pages/AlbumPage';
 import { ArtistPage } from './pages/ArtistPage';
 import { HomePage } from './pages/Home';
+import { JamPage } from './pages/Jam';
 import { LibraryPage } from './pages/Library';
 import { PlaylistPage } from './pages/PlaylistPage';
 import { PlaylistsPage } from './pages/Playlists';
@@ -34,6 +35,8 @@ function Page({ route }: { route: Route }) {
       return <AlbumPage id={route.id} />;
     case 'artist':
       return <ArtistPage id={route.id} />;
+    case 'jam':
+      return <JamPage />;
   }
 }
 

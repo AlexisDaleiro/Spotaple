@@ -164,6 +164,30 @@ await step(`J7. el admin sale: ${KIND === 'local' ? 'la sala local termina' : 'M
   }, 8000, 'Mara pasa a admin');
 });
 
+await step('J8. por la interfaz: crear sala, unirse con la invitación y cambiar dónde suena', async () => {
+  await call(B.page, 'jam.leave');
+  await A.page.locator('.nav-item[title="Jam"]').click();
+  await A.page.locator('.jam-name input').fill('Ana');
+  if (KIND === 'internet') await A.page.locator('.jam-kind__opt', { hasText: 'Internet' }).click();
+  await A.page.locator('.jam-card .btn', { hasText: 'Crear sala' }).click();
+  await A.page.waitForSelector('.jam-panel', { timeout: 10000 });
+  const shown = await A.page.locator('.jam-invite__input').inputValue();
+  invite = KIND === 'local' ? shown.replace(/^[^:]+/, '127.0.0.1') : shown;
+  await B.page.locator('.nav-item[title="Jam"]').click();
+  await B.page.locator('.jam-name input').fill('Mara');
+  await B.page.locator('.jam-card input[placeholder^="K7M2P"]').fill(invite);
+  await B.page.locator('.jam-card .btn', { hasText: 'Unirse' }).click();
+  await B.page.waitForSelector('.jam-panel', { timeout: 10000 });
+  await waitFor(async () => (await A.page.locator('.jam-member').count()) === 2, 5000, 'el panel del admin lista a 2 miembros');
+  const sw = A.page.locator('.jam-switch[role="switch"]');
+  // La sala arranca en el último modo que usó el admin (jam_last_mode), así que se verifica que el switch lo invierta.
+  const before = (await sw.getAttribute('aria-checked')) === 'true';
+  await sw.click();
+  await waitFor(async () => ((await sw.getAttribute('aria-checked')) === 'true') === !before, 4000, 'el switch cambia de modo');
+  await waitFor(async () => (await B.page.locator('.jam-switch').innerText()).includes(before ? 'la PC del admin' : 'todas las PCs'), 4000, 'Mara ve dónde suena ahora');
+  return `${before ? 'Todas' : 'Solo admin'} → ${before ? 'Solo admin' : 'Todas'}`;
+});
+
 for (const x of [A, B]) await x.app.close().catch(() => undefined);
 for (const d of dirs) rmSync(d, { recursive: true, force: true });
 const failed = results.filter((r) => !r.ok);

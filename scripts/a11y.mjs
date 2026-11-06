@@ -58,6 +58,18 @@ await page.waitForSelector('.hero__title');
 await page.waitForSelector('.tracklist__body .row');
 await audit('Página de álbum');
 
+await page.locator('.nav-item[title="Jam"]').click();
+await page.waitForSelector('.jam-card');
+await audit('Jam (sin sala)');
+await page.locator('.jam-name input').fill('Ana');
+await page.locator('.jam-card .btn', { hasText: 'Crear sala' }).click();
+await page.waitForSelector('.jam-panel');
+await audit('Jam (en sala)');
+await page.locator('.jam-actions .btn--danger').click();
+await page.waitForSelector('.dialog');
+await page.locator('.dialog .btn--danger').click();
+await page.waitForSelector('.jam-card', { timeout: 8000 });
+
 await app.close();
 rmSync(userData, { recursive: true, force: true });
 console.log(total ? `\n${total} problemas de accesibilidad detectados` : '\nSin problemas detectados por axe-core');

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import { jamErrorMessage } from '@shared/jam/errors';
 import type { JamView } from '@shared/jam/types';
 import { api } from '../api';
+import { toast } from './ui';
 
 interface JamStore {
   /** Lo último que informó main; null hasta la primera carga. */
@@ -15,11 +17,26 @@ export const inRoom = (v: JamView | null): boolean => v !== null && v.state !== 
 
 export const isAdmin = (v: JamView | null): boolean => v !== null && v.state !== null && v.state.adminId === v.selfId;
 
-/** Carga la vista actual y se suscribe a los cambios que empuja main. */
+/** Qué avisarle a la persona al pasar de la vista `prev` a `next` (o null si no hay nada que decir). */
+export function jamNotice(prev: JamView | null, next: JamView): { message: string; kind: 'info' | 'error' } | null {
+  if (next.error && next.error.n !== prev?.error?.n) return { message: jamErrorMessage(next.error.code), kind: 'error' };
+  // Fallar al crear o unirse lo informa la propia llamada: aquí solo cuenta una sala que ya estaba viva.
+  if (inRoom(prev) && next.status === 'ended') {
+    if (next.reason === 'closed') return { message: jamErrorMessage('closed'), kind: 'info' };
+    return { message: next.reason ? jamErrorMessage(next.reason) : 'Se perdió la conexión con la sala.', kind: 'error' };
+  }
+  return null;
+}
+
+/** Carga la vista actual y se suscribe a los cambios que empuja main (con sus avisos). */
 export async function startJamBridge(): Promise<void> {
   try {
     useJam.getState().set(await api.jam.view());
-    await api.jam.subscribe((view) => useJam.getState().set(view));
+    await api.jam.subscribe((view) => {
+      const notice = jamNotice(useJam.getState().view, view);
+      useJam.getState().set(view);
+      if (notice) toast(notice.message, notice.kind);
+    });
   } catch {
     /* sin sala o sin puente: el jam simplemente no aparece */
   }

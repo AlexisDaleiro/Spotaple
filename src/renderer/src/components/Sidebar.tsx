@@ -1,18 +1,20 @@
-import { Heart, House, Library, ListMusic, Plus, Search } from 'lucide-react';
+import { Heart, House, Library, ListMusic, Plus, Radio, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cx } from '../lib/format';
+import { inRoom, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate, useNav, type Route } from '../stores/nav';
 import { useUi } from '../stores/ui';
 import { PlaylistCover } from './Shelf';
 
-function NavItem({ icon, label, active, onClick }: { icon: ReactNode; label: string; active: boolean; onClick: () => void }) {
+function NavItem({ icon, label, active, onClick, className, badge }: { icon: ReactNode; label: string; active: boolean; onClick: () => void; className?: string; badge?: ReactNode }) {
   return (
-    <button type="button" className={cx('nav-item', active && 'is-active')} aria-current={active ? 'page' : undefined} title={label} onClick={onClick}>
+    <button type="button" className={cx('nav-item', active && 'is-active', className)} aria-current={active ? 'page' : undefined} title={label} onClick={onClick}>
       <span className="nav-item__icon" aria-hidden="true">
         {icon}
       </span>
       <span className="nav-item__label">{label}</span>
+      {badge}
     </button>
   );
 }
@@ -38,6 +40,7 @@ export function Sidebar() {
   const route = useNav((s) => s.route);
   const playlists = useLibrary((s) => s.playlists);
   const favCount = useLibrary((s) => s.favoriteIds.size);
+  const jam = useJam((s) => s.view);
   const go = (r: Route) => () => navigate(r);
   const onFavorites = route.page === 'library' && route.tab !== 'history';
 
@@ -56,6 +59,14 @@ export function Sidebar() {
         />
         <NavItem icon={<Library size={20} />} label="Biblioteca" active={route.page === 'library'} onClick={go({ page: 'library' })} />
         <NavItem icon={<ListMusic size={20} />} label="Playlists" active={route.page === 'playlists'} onClick={go({ page: 'playlists' })} />
+        <NavItem
+          className="jam-entry"
+          icon={<Radio size={20} />}
+          label="Jam"
+          active={route.page === 'jam'}
+          onClick={go({ page: 'jam' })}
+          badge={inRoom(jam) ? <span className="jam-dot" role="img" aria-label={`Sala ${jam?.state?.code} activa`} /> : undefined}
+        />
       </div>
 
       <div className="sidebar__lists">
