@@ -1,5 +1,5 @@
 import { Music } from 'lucide-react';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { cx, hueFrom, thumbUrl } from '../lib/format';
 
 interface Props {
@@ -14,10 +14,11 @@ interface Props {
 
 /** Portada con marcador estable: la caja tiene tamaño fijo, así que cargar la imagen no mueve el diseño. */
 export function Cover({ src, size, round, label, className }: Props) {
-  const [state, setState] = useState<'loading' | 'ready' | 'failed'>(src ? 'loading' : 'failed');
-  useEffect(() => setState(src ? 'loading' : 'failed'), [src]);
-
   const url = thumbUrl(src, size === 'fill' ? 320 : size);
+  // El resultado va atado a la URL que lo produjo, sin efecto que lo reinicie: con la imagen en caché
+  // `onLoad` dispara antes que cualquier efecto, y un reinicio posterior la dejaba invisible (opacity 0).
+  const [done, setDone] = useState<{ url?: string; ok: boolean }>();
+  const state = !url ? 'failed' : done?.url !== url ? 'loading' : done.ok ? 'ready' : 'failed';
   const style = {
     '--hue': hueFrom(label ?? src ?? 'x'),
     ...(size === 'fill' ? {} : { width: size, height: size }),
@@ -34,8 +35,8 @@ export function Cover({ src, size, round, label, className }: Props) {
           decoding="async"
           draggable={false}
           className={state === 'ready' ? 'is-ready' : undefined}
-          onLoad={() => setState('ready')}
-          onError={() => setState('failed')}
+          onLoad={() => setDone({ url, ok: true })}
+          onError={() => setDone({ url, ok: false })}
         />
       )}
     </div>

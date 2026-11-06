@@ -208,6 +208,25 @@ await step('A6. pantalla de inicio con datos', async () => {
   await shot('15-inicio-con-datos');
 });
 
+await step('A7. volver a una pantalla ya visitada no deja portadas invisibles (imagen en caché)', async () => {
+  // "Atascada" = la imagen cargó pero nunca recibió .is-ready, así que sigue con opacity 0.
+  const stuck = () =>
+    page.evaluate(() => [...document.querySelectorAll('.cover img')].filter((i) => i.complete && i.naturalWidth > 0 && !i.classList.contains('is-ready')).length);
+  for (let n = 1; n <= 8; n++) {
+    await page.locator('.nav-item[title="Playlists"]').click();
+    await sleep(250);
+    await page.locator('.nav-item[title="Inicio"]').click();
+    await page.waitForSelector('.quick__tile');
+    await sleep(600);
+    await imagesLoaded();
+    const bad = await stuck();
+    if (bad) throw new Error(`vuelta ${n}: ${bad} portada(s) cargadas pero invisibles`);
+  }
+  const total = await page.locator('.cover img').count();
+  if (!total) throw new Error('no había portadas que comprobar');
+  return `8 idas y vueltas, ${total} portadas visibles`;
+});
+
 // ── proxy y caídas de red
 await step('B0. el tráfico de YouTube respeta el proxy configurado', async () => {
   const hosts = [...hostsSeen].sort();
