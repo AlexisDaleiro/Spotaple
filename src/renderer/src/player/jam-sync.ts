@@ -23,6 +23,9 @@ export interface JamSyncDeps {
 /** Si el audio real del admin se desvía tanto de lo anclado (salto manual, corte de buffer), la sala se reancla. */
 const ADMIN_RESEEK_S = 1.5;
 const sounding = (status: PlayerState['status']) => status === 'playing' || status === 'buffering';
+/** Cuántos pedidos salen de una vez y cada cuánto sale el resto (20 + ~16 por segundo, bajo el límite de 30). */
+const BURST = 20;
+const SPACING_MS = 60;
 
 /**
  * Conductor de la sala: hace que el reproductor de esta PC suene lo que la sala dice (si le toca) y, si esta PC
@@ -174,7 +177,8 @@ export function createJamHook(d: { getView(): JamView | null; send(msg: JamOutMs
                   .reverse()
                   .map((track) => ({ t: 'queue.add' as const, track, at: 'next' as const })),
               ];
-      for (const m of msgs) d.send(m);
+      // El servidor corta a quien manda más de 30 mensajes por segundo: lo que pasa de BURST se reparte en el tiempo.
+      msgs.forEach((m, i) => void (i < BURST ? d.send(m) : setTimeout(() => d.send(m), (i - BURST + 1) * SPACING_MS)));
     },
   };
 }

@@ -209,6 +209,20 @@ describe('createJamHook', () => {
     expect([none.active(), ended.active(), live.active()]).toEqual([false, false, true]);
   });
 
+  it('un pedido grande (un álbum) se reparte en el tiempo para no pasar el límite de 30 mensajes por segundo', () => {
+    vi.useFakeTimers();
+    try {
+      const sent: JamOutMsg[] = [];
+      createJamHook({ getView: () => view('u-mara', base()), send: (m) => void sent.push(m) }).request(tracks(45), 'end');
+      expect(sent).toHaveLength(20);
+      vi.advanceTimersByTime(60 * 25);
+      expect(sent).toHaveLength(45);
+      expect(sent.at(-1)).toEqual({ t: 'queue.add', track: track(44) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('un miembro pide al final aunque pida "next"; el admin respeta "next" y conserva el orden', () => {
     const sent: JamOutMsg[] = [];
     const send = (m: JamOutMsg) => void sent.push(m);

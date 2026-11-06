@@ -4,6 +4,7 @@ import type { ArtistRef, Track } from '@shared/types';
 import { artistsText, cx, rowDuration } from '../lib/format';
 import type { ReorderItem } from '../lib/useReorder';
 import { player, usePlayer } from '../player/instance';
+import { inRoom, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
 import type { MenuItem } from '../stores/ui';
@@ -62,10 +63,12 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
   // null = no es la canción actual; si lo es, su estado.
   const status = usePlayer((s) => (s.items[s.index]?.track.id === track.id ? s.status : null));
   const fav = useLibrary((s) => s.favoriteIds.has(track.id));
+  const inJam = useJam((s) => inRoom(s.view));
   const current = status !== null && status !== 'idle';
   const sounding = status === 'playing' || status === 'buffering';
 
-  const activate = () => (current ? player().togglePlay() : onPlay());
+  // En una sala, tocar la fila de lo que suena no pausa tu audio (solo el admin controla): pide la canción como cualquier otra.
+  const activate = () => (current && !inJam ? player().togglePlay() : onPlay());
   const menuOpts = { onPlay, extra: menuExtra };
 
   const onKeyDown = (e: KeyboardEvent<HTMLLIElement>) => {
@@ -131,7 +134,7 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
       )}
 
       <div className="row__actions">
-        <IconButton size="sm" tabIndex={-1} className="row__queue" icon={<ListPlus size={16} />} label="Agregar a la cola" onClick={stop(() => player().addToQueue([track]))} />
+        <IconButton size="sm" tabIndex={-1} className="row__queue" icon={<ListPlus size={16} />} label={inJam ? 'Pedir a la sala' : 'Agregar a la cola'} onClick={stop(() => player().addToQueue([track]))} />
         <IconButton
           size="sm"
           tabIndex={-1}

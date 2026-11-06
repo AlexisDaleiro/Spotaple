@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactM
 import type { Track } from '@shared/types';
 import { cx } from '../lib/format';
 import { player } from '../player/instance';
+import { inRoom, isAdmin, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
 import { useUi, type MenuItem } from '../stores/ui';
@@ -44,11 +45,22 @@ export function trackMenuItems(track: Track, opts: TrackMenuOptions = {}): MenuI
     })),
   ];
 
+  // Dentro de una sala "agregar a la cola" es pedir a la sala (el reproductor lo enruta); "como siguiente" es cosa del admin.
+  const jam = useJam.getState().view;
+  const queueItems: MenuItem[] = inRoom(jam)
+    ? [
+        { label: 'Pedir a la sala', icon: <ListPlus size={15} />, onSelect: () => (player().addToQueue([track]), void 0) },
+        ...(isAdmin(jam) ? [{ label: 'Pedir como siguiente', icon: <ListEnd size={15} />, onSelect: () => (player().playNext([track]), void 0) }] : []),
+      ]
+    : [
+        ...(opts.onPlay ? [{ label: 'Reproducir desde esta canción', icon: <Play size={15} />, onSelect: opts.onPlay }] : []),
+        { label: 'Reproducir a continuación', icon: <ListEnd size={15} />, onSelect: () => (player().playNext([track]), void 0) },
+        { label: 'Agregar a la cola', icon: <ListPlus size={15} />, onSelect: () => (player().addToQueue([track]), void 0) },
+      ];
+
   return [
     ...(opts.extra?.length ? [...opts.extra, { separator: true } as MenuItem] : []),
-    ...(opts.onPlay ? [{ label: 'Reproducir desde esta canción', icon: <Play size={15} />, onSelect: opts.onPlay }] : []),
-    { label: 'Reproducir a continuación', icon: <ListEnd size={15} />, onSelect: () => (player().playNext([track]), void 0) },
-    { label: 'Agregar a la cola', icon: <ListPlus size={15} />, onSelect: () => (player().addToQueue([track]), void 0) },
+    ...queueItems,
     { separator: true },
     {
       label: fav ? 'Quitar de favoritos' : 'Agregar a favoritos',

@@ -110,7 +110,8 @@ await step('J2. Mara pide una canción: llega al admin en ≤ 3 s y suena solo e
   await send(B.page, { t: 'queue.add', track: songs[0] });
   await waitFor(async () => (await view(A.page)).state?.now?.item.track.id === songs[0].id, 3000, 'la canción llega al admin');
   await waitFor(async () => (await label(A.page)) === 'Pausar', 60000, 'suena en la PC del admin');
-  if ((await B.page.locator('.player__title').count()) !== 0) throw new Error('la PC del miembro cargó la canción en modo "Solo admin"');
+  // La barra de Mara muestra lo que suena en la sala, pero su audio no suena en modo "Solo admin".
+  if ((await B.page.locator('.player__title').innerText()) !== songs[0].title) throw new Error('Mara no ve qué suena en la sala');
   if ((await label(B.page)) !== 'Reproducir') throw new Error('la PC del miembro está sonando en modo "Solo admin"');
   return songs[0].title;
 });
@@ -186,6 +187,27 @@ await step('J8. por la interfaz: crear sala, unirse con la invitación y cambiar
   await waitFor(async () => ((await sw.getAttribute('aria-checked')) === 'true') === !before, 4000, 'el switch cambia de modo');
   await waitFor(async () => (await B.page.locator('.jam-switch').innerText()).includes(before ? 'la PC del admin' : 'todas las PCs'), 4000, 'Mara ve dónde suena ahora');
   return `${before ? 'Todas' : 'Solo admin'} → ${before ? 'Solo admin' : 'Todas'}`;
+});
+
+await step('J9. por la interfaz: barra del reproductor y cola de la sala', async () => {
+  await send(B.page, { t: 'queue.add', track: songs[0] });
+  await send(B.page, { t: 'queue.add', track: songs[1] });
+  await waitFor(async () => (await A.page.locator('.jam-req').innerText()).includes('Mara'), 5000, 'el admin ve quién pidió la canción');
+  await waitFor(async () => (await B.page.locator('.player__title').innerText()) === songs[0].title, 5000, 'Mara ve la canción de la sala');
+  if (!(await B.page.locator('.play-btn').isDisabled())) throw new Error('Mara puede pausar: solo debería poder el admin');
+  if (await A.page.locator('.play-btn').isDisabled()) throw new Error('el admin no puede pausar');
+  await B.page.locator('.jam-like').click();
+  await waitFor(async () => (await A.page.locator('.jam-like').innerText()).trim() === '1', 4000, 'el admin ve 1 like');
+  if ((await B.page.locator('.jam-like').getAttribute('aria-pressed')) !== 'true') throw new Error('el like de Mara no quedó marcado');
+  await A.page.locator('button[aria-label="Mostrar la cola"]').click();
+  await A.page.waitForSelector('.queue[aria-label="Cola de la sala"]');
+  await waitFor(async () => (await A.page.locator('.queue .qrow').count()) === 2, 4000, 'la cola muestra la que suena y 1 en espera');
+  const rows = await A.page.locator('.queue .qrow__sub').allInnerTexts();
+  if (!rows.every((t) => t.includes('Pedida por Mara'))) throw new Error(`falta quién pidió: ${rows.join(' | ')}`);
+  // Mara pidió la canción que suena: su botón de saltar salta directo.
+  await B.page.locator('.jam-skip').click();
+  await waitFor(async () => (await view(A.page)).state?.now?.item.track.id === songs[1].id, 4000, 'la sala pasó a la 2.ª');
+  return `1 like · ${rows.length} filas con quién pidió · salto directo del que pidió`;
 });
 
 for (const x of [A, B]) await x.app.close().catch(() => undefined);

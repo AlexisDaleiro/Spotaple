@@ -1,8 +1,12 @@
-import { Heart, ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { Heart, ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
 import { useState } from 'react';
+import { skipThreshold } from '@shared/jam/engine';
+import type { JamView } from '@shared/jam/types';
+import { api } from '../api';
 import { nextIndex } from '../player/queue';
 import { artistsText, cx, formatTime } from '../lib/format';
 import { player, usePlayer } from '../player/instance';
+import { inRoom, isAdmin, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
 import { useUi } from '../stores/ui';
@@ -54,14 +58,14 @@ function Slider({ value, max, step = 1, label, valueText, disabled, live, onComm
   );
 }
 
-function Progress() {
+function Progress({ locked }: { locked?: boolean }) {
   const position = usePlayer((s) => s.position);
   const duration = usePlayer((s) => s.duration);
   const status = usePlayer((s) => s.status);
   const hasItem = usePlayer((s) => s.index >= 0);
   const [scrubbing, setScrubbing] = useState<number | null>(null);
   const shown = scrubbing ?? position;
-  const seekable = hasItem && duration > 0 && status !== 'loading';
+  const seekable = hasItem && duration > 0 && status !== 'loading' && !locked;
   return (
     <div className="progress">
       <span className="progress__time" aria-hidden="true">
@@ -89,8 +93,60 @@ function Progress() {
   );
 }
 
+const sendJam = (msg: unknown) => void api.jam.send(msg).catch(() => undefined);
+
+/** Votar para saltar y dar like: solo con una sala viva y una canción sonando. */
+function JamButtons({ view }: { view: JamView }) {
+  const state = view.state!;
+  const now = state.now!;
+  const connected = new Set(state.members.filter((m) => m.connected).map((m) => m.id));
+  const votes = now.skipVotes.filter((id) => connected.has(id)).length;
+  const need = skipThreshold(state);
+  // El admin y quien pidió la canción la saltan directo; el resto vota.
+  const direct = isAdmin(view) || now.item.addedBy === view.selfId;
+  const voted = now.skipVotes.includes(view.selfId);
+  const liked = now.likes.includes(view.selfId);
+  const skipLabel = direct ? 'Saltar esta canción' : `Votar para saltar (${votes} de ${need})`;
+  return (
+    <>
+      <button
+        type="button"
+        className={cx('jam-counter-btn', 'jam-skip', voted && 'is-on')}
+        aria-label={skipLabel}
+        title={skipLabel}
+        aria-pressed={direct ? undefined : voted}
+        onClick={() => sendJam({ t: 'vote.skip' })}
+      >
+        <Vote size={17} aria-hidden="true" />
+        {!direct && (
+          <span>
+            {votes}/{need}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className={cx('jam-counter-btn', 'jam-like', liked && 'is-on')}
+        aria-label={`Me gusta esta elección (${now.likes.length})`}
+        title="Me gusta esta elección"
+        aria-pressed={liked}
+        onClick={() => sendJam({ t: 'like.toggle' })}
+      >
+        <ThumbsUp size={17} fill={liked ? 'currentColor' : 'none'} aria-hidden="true" />
+        <span>{now.likes.length}</span>
+      </button>
+    </>
+  );
+}
+
 export function PlayerBar() {
-  const item = usePlayer((s) => s.items[s.index]);
+  const localItem = usePlayer((s) => s.items[s.index]);
+  const view = useJam((s) => s.view);
+  const room = inRoom(view) ? view : null;
+  const admin = isAdmin(room);
+  const now = room?.state?.now ?? null;
+  // En una sala se muestra la canción de la sala, aunque el reproductor local de un miembro esté vacío ("Solo admin").
+  const item = room ? (now ? { track: now.item.track } : undefined) : localItem;
   const status = usePlayer((s) => s.status);
   const error = usePlayer((s) => s.error);
   const shuffle = usePlayer((s) => s.shuffle);
@@ -100,6 +156,9 @@ export function PlayerBar() {
   const hasNext = usePlayer((s) => nextIndex(s.items.length, s.index, s.repeat, false) !== null);
   const queueOpen = useUi((s) => s.queueOpen);
   const fav = useLibrary((s) => (item ? s.favoriteIds.has(item.track.id) : false));
+  // En una sala solo el admin controla la reproducción.
+  const locked = room !== null && !admin;
+  const lockTitle = 'Solo el admin controla la reproducción';
 
   const loading = status === 'loading';
   const sounding = status === 'playing' || status === 'buffering';
@@ -123,7 +182,7 @@ export function PlayerBar() {
                   {item.track.title}
                 </span>
               )}
-              {status === 'error' && error ? (
+              {status === 'error' && error && !locked ? (
                 <span className="player__error" role="alert">
                   <span className="player__error-msg" title={error.message}>
                     {error.message}
@@ -137,6 +196,7 @@ export function PlayerBar() {
                   <ArtistLinks artists={item.track.artists} />
                 </span>
               )}
+              {room && now && <span className="jam-req">Pedida por {room.state?.members.find((m) => m.id === now.item.addedBy)?.name ?? 'alguien'}</span>}
             </div>
             <IconButton
               className={cx('player__fav', fav && 'is-faved')}
@@ -149,37 +209,45 @@ export function PlayerBar() {
         ) : (
           <div className="player__idle">
             <span className="player__idle-cover" aria-hidden="true" />
-            <span>Elegí una canción para empezar</span>
+            <span>{room ? 'Nadie pidió nada todavía' : 'Elegí una canción para empezar'}</span>
           </div>
         )}
       </div>
 
       <div className="player__center">
         <div className="player__controls">
-          <IconButton icon={<Shuffle size={17} />} label={shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'} pressed={shuffle} onClick={() => player().toggleShuffle()} />
-          <IconButton icon={<SkipBack size={19} fill="currentColor" />} label="Canción anterior" disabled={!item} onClick={() => player().prev()} />
+          <IconButton icon={<Shuffle size={17} />} label={shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'} pressed={shuffle} disabled={room !== null} onClick={() => player().toggleShuffle()} />
+          <IconButton icon={<SkipBack size={19} fill="currentColor" />} label="Canción anterior" disabled={!item || room !== null} onClick={() => player().prev()} />
           <button
             type="button"
             className="play-btn"
             aria-label={sounding ? 'Pausar' : 'Reproducir'}
-            title={sounding ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
-            disabled={!item}
+            title={locked ? lockTitle : sounding ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
+            disabled={locked || !item}
             onClick={() => player().togglePlay()}
           >
             {loading ? <Spinner size={18} /> : sounding ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="play-btn__glyph" />}
           </button>
-          <IconButton icon={<SkipForward size={19} fill="currentColor" />} label="Canción siguiente" disabled={!item || !hasNext} onClick={() => player().next()} />
+          <IconButton
+            icon={<SkipForward size={19} fill="currentColor" />}
+            label="Canción siguiente"
+            {...(locked ? { title: lockTitle } : {})}
+            disabled={room ? !admin || !now : !item || !hasNext}
+            onClick={() => (room ? sendJam({ t: 'transport', action: 'next' }) : player().next())}
+          />
           <IconButton
             icon={repeat === 'one' ? <Repeat1 size={17} /> : <Repeat size={17} />}
             label={repeatLabel}
             pressed={repeat !== 'off'}
+            disabled={room !== null}
             onClick={() => player().cycleRepeat()}
           />
         </div>
-        <Progress />
+        <Progress locked={locked} />
       </div>
 
       <div className="player__right">
+        {room && now && <JamButtons view={room} />}
         <IconButton icon={<ListMusic size={18} />} label={queueOpen ? 'Ocultar la cola' : 'Mostrar la cola'} pressed={queueOpen} onClick={() => useUi.getState().toggleQueue()} />
         <div className="volume">
           <IconButton icon={<VolIcon size={18} />} label={muted ? 'Activar sonido' : 'Silenciar'} onClick={() => player().toggleMute()} />

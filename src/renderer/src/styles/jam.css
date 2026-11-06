@@ -214,6 +214,38 @@
   flex-wrap: wrap;
   gap: var(--s-5);
 }
+/* Barra del reproductor y cola dentro de una sala */
+.jam-req {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jam-counter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 32px;
+  padding: 0 var(--s-5);
+  border-radius: var(--r-pill);
+  color: var(--fg-1);
+  font: 600 var(--fs-sm) / 1 var(--font);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+.jam-counter-btn:hover {
+  background: var(--hover);
+  color: var(--fg-0);
+}
+.jam-counter-btn.is-on {
+  color: var(--accent);
+}
 .jam-dot {
   flex: none;
   width: 8px;
