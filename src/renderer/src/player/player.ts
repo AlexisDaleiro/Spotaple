@@ -44,9 +44,19 @@ export interface PlayerApi {
   recordPlay(track: Track): Promise<void>;
 }
 
+/**
+ * Gancho de la sala del jam. Con la sala activa, pedir canciones no toca la cola propia sino la de la sala:
+ * `how` indica dónde van ('next' y 'now' solo los puede pedir el admin; la sala lo valida).
+ */
+export interface JamHook {
+  active(): boolean;
+  request(tracks: Track[], how: 'end' | 'next' | 'now'): void;
+}
+
 export interface PlayerDeps {
   audio: AudioLike;
   api: PlayerApi;
+  jam?: JamHook;
   notify?: (message: string, kind?: 'info' | 'error') => void;
   urlFor?: (trackId: string) => string;
 }
@@ -65,6 +75,8 @@ export interface PlayerState extends QueueState {
 export interface PlayerActions {
   /** Reemplaza la cola y reproduce desde `start` ("reproducir desde esta canción"). */
   playTracks(tracks: Track[], start?: number): void;
+  /** Reemplaza la cola por esta canción y arranca en `startSec`. Lo usa el conductor de la sala; no pasa por el gancho jam. */
+  playAt(track: Track, startSec: number): void;
   /** Salta a un ítem de la cola actual. */
   playIndex(index: number): void;
   playNext(tracks: Track[]): void;
@@ -96,6 +108,7 @@ export function createPlayer(deps: PlayerDeps) {
   const { audio, api } = deps;
   const urlFor = deps.urlFor ?? audioUrl;
   const notify = deps.notify ?? (() => undefined);
+  const jam = deps.jam;
 
   const store = createStore<PlayerState & PlayerActions>((set, get) => {
     // --- estado interno de la "única instancia responsable de la reproducción"
@@ -275,21 +288,29 @@ export function createPlayer(deps: PlayerDeps) {
 
       playTracks(tracks, start = 0) {
         if (!tracks.length) return;
+        // En una sala, "reproducir" una lista es pedir solo la canción elegida: no se inunda la cola de todos.
+        if (jam?.active()) return jam.request([tracks[Math.min(Math.max(start, 0), tracks.length - 1)]!], 'end');
         let q: QueueState = { items: makeItems(tracks), index: Math.min(Math.max(start, 0), tracks.length - 1), original: null };
         if (get().shuffle) q = enableShuffle(q);
         commit(q);
         void go(q.index, { user: true });
+      },
+      playAt(track, startSec) {
+        commit({ items: makeItems([track]), index: 0, original: null });
+        void go(0, { user: false, startAt: startSec });
       },
       playIndex(index) {
         if (index >= 0 && index < get().items.length) void go(index, { user: true });
       },
       playNext(tracks) {
         if (!tracks.length) return;
+        if (jam?.active()) return jam.request(tracks, 'next');
         commit(insertNext(qs(), makeItems(tracks)));
         settleEmpty();
       },
       addToQueue(tracks) {
         if (!tracks.length) return;
+        if (jam?.active()) return jam.request(tracks, 'end');
         commit(append(qs(), makeItems(tracks)));
         settleEmpty();
       },
