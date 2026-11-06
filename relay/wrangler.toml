@@ -1,0 +1,12 @@
+name = "spotaple-jam"
+main = "src/worker.ts"
+compatibility_date = "2025-06-01"
+
+# Una sala = un Durable Object (por código). SQLite es lo que admite el plan gratuito.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

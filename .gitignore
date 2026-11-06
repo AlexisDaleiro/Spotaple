@@ -6,3 +6,5 @@ dist
 .e2e
 *.log
 .relay
+relay/node_modules
+relay/.wrangler

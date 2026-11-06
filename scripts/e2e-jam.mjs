@@ -23,6 +23,8 @@ async function step(name, fn) {
   } catch (e) {
     results.push({ name, ok: false });
     console.log(`FAIL  ${name} — ${String(e.message).split('\n')[0]}`);
+    // E2E_VERBOSE=1: qué ven las dos apps en el momento de fallar (para diagnosticar sin adivinar).
+    if (process.env.E2E_VERBOSE) console.log('      ', JSON.stringify(await snapshot().catch((err) => String(err))));
   }
 }
 const waitFor = async (fn, ms, what) => {
@@ -70,6 +72,23 @@ const position = async (page) => {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 };
 const mara = (st) => st?.members.find((m) => m.name === 'Mara');
+async function snapshot() {
+  const one = async (x) => {
+    const v = await view(x.page);
+    return {
+      status: v.status,
+      reason: v.reason,
+      mode: v.state?.mode,
+      now: v.state?.now ? `${v.state.now.item.track.title} (${v.state.now.status})` : null,
+      queue: v.state?.queue.length,
+      members: v.state?.members.map((m) => `${m.name}${m.connected ? '' : ' (desconectada)'}: ${m.likesReceived} likes`),
+      boton: await label(x.page),
+      titulo: await x.page.locator('.player__title').allInnerTexts(),
+      error: await x.page.locator('.player__error-msg').allInnerTexts(),
+    };
+  };
+  return { admin: await one(A), miembro: await one(B) };
+}
 
 let A = await launch();
 let B = await launch();
