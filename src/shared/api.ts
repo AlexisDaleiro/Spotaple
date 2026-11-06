@@ -9,6 +9,7 @@ import type {
   SearchResults,
   Track,
 } from './types';
+import type { JamView } from './jam/types';
 
 /** Esquema de la URL que sirve el audio. El renderer solo conoce el videoId. */
 export const AUDIO_SCHEME = 'spotaple-audio';
@@ -37,6 +38,13 @@ export const IPC = {
   recordPlay: 'lib:record-play',
   loadPlayerState: 'state:load',
   savePlayerState: 'state:save',
+  jamCreate: 'jam:create',
+  jamJoin: 'jam:join',
+  jamLeave: 'jam:leave',
+  jamSend: 'jam:send',
+  jamView: 'jam:view',
+  /** Único evento main→renderer: la vista de la sala. */
+  jamState: 'jam:state',
 } as const;
 
 /** API que el preload expone en `window.spotaple`. Cada método lanza `Error` con `.code` si falla. */
@@ -72,6 +80,18 @@ export interface SpotapleApi {
   state: {
     load(): Promise<PersistedPlayerState | null>;
     save(state: PersistedPlayerState): Promise<void>;
+  };
+  jam: {
+    /** Crea una sala (local o por internet) y queda como admin. Lanza `Error` con un mensaje listo para mostrar. */
+    create(o: { kind: 'local' | 'internet'; name: string }): Promise<JamView>;
+    /** Se une con lo que la persona pegó (código de internet o `ip:puerto/CODIGO`). */
+    join(o: { invite: string; name: string }): Promise<JamView>;
+    leave(): Promise<void>;
+    /** Mensaje de la sala (cola, votos, likes, transporte…); main lo valida de nuevo. */
+    send(msg: unknown): Promise<void>;
+    view(): Promise<JamView>;
+    /** Recibe cada cambio de la vista. Un solo oyente: suscribirse otra vez reemplaza al anterior. */
+    subscribe(cb: (view: JamView) => void): Promise<void>;
   };
   platform: 'win32' | 'darwin' | 'linux';
 }

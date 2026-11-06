@@ -4,6 +4,7 @@ import type { IpcResult, PreparedAudio } from '../shared/types';
 import type { Store } from './db/store';
 import type { MusicProvider } from './music/provider';
 import { classify, MusicError } from './music/youtube/errors';
+import type { JamSession } from './jam/session';
 import { id, int, sanitizePlayerState, sanitizeTrack, str } from './validate';
 
 /** Solo la página de la propia app puede invocar el IPC. */
@@ -13,8 +14,8 @@ function trusted(e: IpcMainInvokeEvent, allowedOrigin: string | undefined) {
   if (!ok) throw new MusicError('unknown', 'Origen no autorizado.');
 }
 
-export function registerIpc(deps: { store: Store; provider: MusicProvider; rendererOrigin?: string }) {
-  const { store, provider, rendererOrigin } = deps;
+export function registerIpc(deps: { store: Store; provider: MusicProvider; jam: JamSession; rendererOrigin?: string }) {
+  const { store, provider, jam, rendererOrigin } = deps;
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) => {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<R>> => {
@@ -62,4 +63,18 @@ export function registerIpc(deps: { store: Store; provider: MusicProvider; rende
   handle(IPC.recordPlay, (t: unknown) => store.recordPlay(sanitizeTrack(t)));
   handle(IPC.loadPlayerState, () => store.loadPlayerState());
   handle(IPC.savePlayerState, (s: unknown) => store.savePlayerState(sanitizePlayerState(s)));
+
+  // Jam: el nombre y los mensajes de sala se validan dentro de la sesión; aquí solo la forma de los argumentos.
+  handle(IPC.jamCreate, (o: unknown) => {
+    const x = (o ?? {}) as { kind?: unknown; name?: unknown };
+    if (x.kind !== 'local' && x.kind !== 'internet') throw new MusicError('unknown', 'Solicitud inválida.');
+    return jam.create({ kind: x.kind, name: typeof x.name === 'string' ? x.name : '' });
+  });
+  handle(IPC.jamJoin, (o: unknown) => {
+    const x = (o ?? {}) as { invite?: unknown; name?: unknown };
+    return jam.join({ invite: str(x.invite, 200), name: typeof x.name === 'string' ? x.name : '' });
+  });
+  handle(IPC.jamLeave, () => jam.leave());
+  handle(IPC.jamSend, (m: unknown) => jam.send(m));
+  handle(IPC.jamView, () => jam.view());
 }

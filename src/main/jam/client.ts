@@ -1,8 +1,8 @@
 import { estimateOffset, type ClockSample } from '../../shared/jam/clock';
 import { encode } from '../../shared/jam/protocol';
-import { PROTOCOL, type ClientMsg, type JamErrorCode, type JamState, type ServerMsg } from '../../shared/jam/types';
+import { PROTOCOL, type ClientMsg, type JamConnStatus, type JamErrorCode, type JamState, type ServerMsg } from '../../shared/jam/types';
 
-export type JamConnStatus = 'connecting' | 'connected' | 'reconnecting' | 'ended';
+export type { JamConnStatus };
 
 export interface JamClientOpts {
   url: string;
@@ -22,6 +22,8 @@ export interface JamClientEvents {
   onStatus(s: JamConnStatus, reason?: JamErrorCode): void;
   /** Errores que no terminan la sesión (por ejemplo `duplicate`). */
   onError?(code: JamErrorCode): void;
+  /** Cada vez que se afina la estimación del reloj de la sala (ms, sala menos local). */
+  onOffset?(offsetMs: number): void;
 }
 
 const BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
@@ -179,6 +181,7 @@ export class JamClient {
     this.pending.delete(id);
     this.samples.push({ sentAt, serverTime, receivedAt: this.clock() });
     this.offset = estimateOffset(this.samples);
+    this.e.onOffset?.(this.offset);
   }
 
   private stopSync(): void {

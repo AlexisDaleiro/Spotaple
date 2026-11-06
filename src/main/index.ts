@@ -1,11 +1,13 @@
 import { app, BrowserWindow, Menu, net, protocol, session, shell } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUDIO_SCHEME } from '../shared/api';
+import { AUDIO_SCHEME, IPC } from '../shared/api';
 import { buildCsp } from '../shared/csp';
+import { JAM_RELAY_URL } from '../shared/jam/config';
 import { createAudioHandler } from './audio-protocol';
 import { createStore } from './db/store';
 import { registerIpc } from './ipc';
+import { createJamSession } from './jam/session';
 import { withoutCredentials } from './net-fetch';
 import { createYouTubeProvider } from './music/youtube/provider';
 
@@ -77,13 +79,32 @@ app.whenReady().then(() => {
   const netFetch = withoutCredentials(net.fetch as unknown as typeof fetch);
   const provider = createYouTubeProvider({ cacheDir: join(userData, 'yt-cache'), fetch: netFetch });
   protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch));
-  registerIpc({ store, provider, rendererOrigin: rendererUrl });
+  // La red del jam vive aquí, no en el renderer: la CSP de la interfaz sigue sin permitir conexiones directas.
+  const jam = createJamSession({
+    settings: { get: <V>(key: string) => store.getSetting<V>(key), set: (key, value) => store.setSetting(key, value) },
+    relayUrl: process.env['SPOTAPLE_JAM_RELAY'] ?? JAM_RELAY_URL,
+    emit: (view) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.jamState, view)),
+  });
+  registerIpc({ store, provider, jam, rendererOrigin: rendererUrl });
 
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-  app.on('before-quit', () => store.close());
+  // Antes de cerrar, el admin de una sala local la cierra para que los miembros vean "La sala terminó".
+  let quitting = false;
+  app.on('before-quit', (e) => {
+    if (quitting) return;
+    quitting = true;
+    e.preventDefault();
+    void jam
+      .leave()
+      .catch(() => undefined)
+      .finally(() => {
+        store.close();
+        app.quit();
+      });
+  });
 });
 
 app.on('second-instance', () => {

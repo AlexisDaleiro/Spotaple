@@ -78,14 +78,18 @@ export function startNodeHost(o: NodeHostOpts): Promise<NodeHost> {
       resolve({
         port: (server.address() as AddressInfo).port,
         dropConnections: () => sockets.forEach((ws) => ws.terminate()),
-        stop: () =>
-          new Promise<void>((done) => {
-            clearInterval(sweeper);
-            sockets.forEach((ws) => ws.terminate());
-            wss.close();
+        stop: async () => {
+          clearInterval(sweeper);
+          // Cierre ordenado: lo que ya se envió (por ejemplo "la sala terminó") llega antes de cortar.
+          sockets.forEach((ws) => ws.close(1001));
+          for (let i = 0; i < 15 && sockets.size > 0; i++) await new Promise((r) => setTimeout(r, 20));
+          sockets.forEach((ws) => ws.terminate());
+          wss.close();
+          await new Promise<void>((done) => {
             server.close(() => done());
             server.closeAllConnections();
-          }),
+          });
+        },
       });
     });
   });

@@ -107,3 +107,21 @@ export type ServerMsg =
   | { t: 'state'; state: JamState }
   | { t: 'pong'; id: number; serverTime: number }
   | { t: 'error'; code: JamErrorCode };
+
+export type JamConnStatus = 'connecting' | 'connected' | 'reconnecting' | 'ended';
+
+/** Lo que el renderer ve de la sala: su estado, más la conexión y la identidad propia. */
+export interface JamView {
+  status: 'idle' | JamConnStatus;
+  /** Acompaña a `'ended'`: por qué terminó (sin motivo = no se pudo conectar o se perdió la conexión). */
+  reason?: JamErrorCode;
+  kind: 'local' | 'internet' | null;
+  invite: string | null;
+  selfId: string;
+  name: string;
+  /** Reloj de la sala menos reloj local, en ms. */
+  offsetMs: number;
+  state: JamState | null;
+  /** Último error que no terminó la sesión; `n` crece con cada uno para que la interfaz avise cada vez. */
+  error?: { code: JamErrorCode; n: number };
+}

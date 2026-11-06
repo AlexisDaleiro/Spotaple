@@ -32,6 +32,19 @@ const bridge: SpotapleBridge = {
     load: () => call(IPC.loadPlayerState),
     save: (s) => call(IPC.savePlayerState, s),
   },
+  jam: {
+    create: (o) => call(IPC.jamCreate, o),
+    join: (o) => call(IPC.jamJoin, o),
+    leave: () => call(IPC.jamLeave),
+    send: (msg) => call(IPC.jamSend, msg),
+    view: () => call(IPC.jamView),
+    // Único evento main→renderer: la vista de la sala. Un solo oyente; suscribirse otra vez reemplaza al anterior.
+    subscribe: (cb) => {
+      ipcRenderer.removeAllListeners(IPC.jamState);
+      ipcRenderer.on(IPC.jamState, (_e, view) => cb(view));
+      return Promise.resolve({ ok: true, data: undefined });
+    },
+  },
   platform: process.platform as 'win32' | 'darwin' | 'linux',
 };
 
