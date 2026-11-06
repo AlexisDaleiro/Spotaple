@@ -162,3 +162,206 @@ describe('disconnect / leave / close', () => {
     expect(send(closed, 'u-mara', { t: 'queue.add', track: T(1) }).error).toBe('closed');
   });
 });
+
+/** Ana (admin), Mara, Eli, Luz y Juan conectados; Luz pidió la que suena (T1) y en cola quedan T2, T3 y T4. */
+const five = () => {
+  let s = room();
+  for (const [id, at] of [['u-mara', 2000], ['u-eli', 2100], ['u-luz', 2200], ['u-juan', 2300]] as const) s = join(s, id, id, at);
+  s = add(s, 'u-luz', 1);
+  for (const n of [2, 3, 4]) s = add(s, 'u-mara', n);
+  return s;
+};
+const nowId = (s: JamState) => s.now!.item.itemId;
+const playing = (s: JamState, at = 50_000, pos = 3) => send(s, 'admin-1', { t: 'playing', itemId: nowId(s), positionSec: pos }, at).state;
+const nowTrack = (s: JamState) => s.now?.item.track.id;
+
+describe('playing', () => {
+  it('el admin ancla el reloj y reinicia los fallos', () => {
+    const p = playing(five(), 50_000, 3);
+    expect(p.now).toMatchObject({ status: 'playing', anchorMs: 47_000 });
+    expect(p.failures).toBe(0);
+  });
+
+  it('un miembro no puede informar y un itemId ajeno se ignora sin error', () => {
+    const s = five();
+    expect(send(s, 'u-mara', { t: 'playing', itemId: nowId(s), positionSec: 3 }).error).toBe('forbidden');
+    const r = send(s, 'admin-1', { t: 'playing', itemId: 'otro', positionSec: 3 });
+    expect(r.error).toBeUndefined();
+    expect(r.state).toBe(s);
+  });
+});
+
+describe('ended (Review Focus 2)', () => {
+  it('avanza una sola vez aunque llegue repetido', () => {
+    const s = five();
+    const first = nowId(s);
+    const a = send(s, 'admin-1', { t: 'ended', itemId: first }).state;
+    expect(nowTrack(a)).toBe(T(2).id);
+    const b = send(a, 'admin-1', { t: 'ended', itemId: first });
+    expect(b.error).toBeUndefined();
+    expect(b.state).toBe(a);
+    expect(nowTrack(b.state)).toBe(T(2).id);
+  });
+
+  it('con la cola vacía deja la sala ociosa', () => {
+    const s = add(withMara(), 'u-mara', 1);
+    expect(send(s, 'admin-1', { t: 'ended', itemId: nowId(s) }).state.now).toBeNull();
+  });
+
+  it('solo lo informa el admin', () => {
+    const s = five();
+    expect(send(s, 'u-mara', { t: 'ended', itemId: nowId(s) }).error).toBe('forbidden');
+  });
+});
+
+describe('unavailable', () => {
+  const fail1 = (s: JamState) => send(s, 'admin-1', { t: 'unavailable', itemId: nowId(s) }).state;
+  const halted = () => fail1(fail1(fail1(five())));
+
+  it('avanza dos veces y a la tercera detiene la sala sin tocar el resto de la cola', () => {
+    const one = fail1(five());
+    expect(one).toMatchObject({ failures: 1, halted: false });
+    expect(nowTrack(one)).toBe(T(2).id);
+    const h = halted();
+    expect(h).toMatchObject({ failures: 3, halted: true, now: null });
+    expect(ids(h)).toEqual([T(4).id]);
+  });
+
+  it('un playing entre fallos reinicia el contador', () => {
+    const s = fail1(playing(fail1(five())));
+    expect(s.failures).toBe(1);
+  });
+
+  it('detenida no arranca sola y el admin la destraba', () => {
+    const h = halted();
+    const added = add(h, 'u-mara', 9);
+    expect(added.now).toBeNull();
+    expect(ids(added)).toEqual([T(4).id, T(9).id]);
+    const next = send(h, 'admin-1', { t: 'transport', action: 'next' }).state;
+    expect(next.halted).toBe(false);
+    expect(nowTrack(next)).toBe(T(4).id);
+  });
+});
+
+describe('transport', () => {
+  it('pausa, reanuda y salta con el reloj de la sala', () => {
+    let s = playing(five(), 50_000, 3);
+    s = send(s, 'admin-1', { t: 'transport', action: 'pause' }, 60_000).state;
+    expect(s.now).toMatchObject({ status: 'paused', pausedAtSec: 13 });
+    s = send(s, 'admin-1', { t: 'transport', action: 'play' }, 70_000).state;
+    expect(s.now).toMatchObject({ status: 'playing', anchorMs: 57_000 });
+    s = send(s, 'admin-1', { t: 'transport', action: 'seek', positionSec: 100 }, 80_000).state;
+    expect(s.now?.anchorMs).toBe(-20_000);
+    s = send(s, 'admin-1', { t: 'transport', action: 'pause' }, 81_000).state;
+    s = send(s, 'admin-1', { t: 'transport', action: 'seek', positionSec: 5 }, 82_000).state;
+    expect(s.now).toMatchObject({ status: 'paused', pausedAtSec: 5 });
+  });
+
+  it('pausar mientras carga es inválido, un miembro no controla y next avanza', () => {
+    const s = five();
+    expect(send(s, 'admin-1', { t: 'transport', action: 'pause' }).error).toBe('bad_request');
+    expect(send(s, 'u-mara', { t: 'transport', action: 'next' }).error).toBe('forbidden');
+    expect(nowTrack(send(s, 'admin-1', { t: 'transport', action: 'next' }).state)).toBe(T(2).id);
+  });
+});
+
+describe('vote.skip', () => {
+  const vote = (s: JamState, from: string) => send(s, from, { t: 'vote.skip' }).state;
+  const drop = (s: JamState, id: string, at: number) => run(s, { type: 'disconnect', memberId: id }, at).state;
+
+  it('salta al reunir más de la mitad de los conectados y los votos repetidos no suman', () => {
+    let s = vote(vote(five(), 'u-mara'), 'u-mara');
+    expect(s.now?.skipVotes).toEqual(['u-mara']);
+    s = vote(s, 'u-eli');
+    expect(nowTrack(s)).toBe(T(1).id);
+    s = vote(s, 'u-juan');
+    expect(nowTrack(s)).toBe(T(2).id);
+    expect(s.now?.skipVotes).toEqual([]);
+  });
+
+  it('el admin y quien la pidió saltan directo', () => {
+    expect(nowTrack(vote(five(), 'admin-1'))).toBe(T(2).id);
+    expect(nowTrack(vote(five(), 'u-luz'))).toBe(T(2).id);
+  });
+
+  it('recalcula el umbral cuando se van miembros', () => {
+    let s = vote(vote(five(), 'u-mara'), 'u-eli');
+    s = drop(s, 'u-juan', 9000);
+    expect(nowTrack(s)).toBe(T(1).id);
+    s = drop(s, 'u-luz', 9100);
+    expect(nowTrack(s)).toBe(T(2).id);
+  });
+
+  it('los votos de desconectados no cuentan', () => {
+    let s = drop(vote(five(), 'u-mara'), 'u-mara', 9000);
+    s = vote(vote(s, 'u-eli'), 'u-juan');
+    expect(nowTrack(s)).toBe(T(1).id);
+  });
+
+  it('sin canción actual da not_found', () => {
+    expect(send(withMara(), 'u-mara', { t: 'vote.skip' }).error).toBe('not_found');
+  });
+});
+
+describe('like.toggle', () => {
+  const likes = (s: JamState, id: string) => s.members.find((m) => m.id === id)?.likesReceived;
+
+  it('suma y quita el like y acredita a quien pidió la canción', () => {
+    let s = send(five(), 'u-mara', { t: 'like.toggle' }).state;
+    expect(s.now?.likes).toEqual(['u-mara']);
+    expect(likes(s, 'u-luz')).toBe(1);
+    s = send(s, 'u-mara', { t: 'like.toggle' }).state;
+    expect(s.now?.likes).toEqual([]);
+    expect(likes(s, 'u-luz')).toBe(0);
+  });
+
+  it('sin canción actual da not_found y el total se conserva al avanzar', () => {
+    expect(send(withMara(), 'u-mara', { t: 'like.toggle' }).error).toBe('not_found');
+    let s = send(five(), 'u-mara', { t: 'like.toggle' }).state;
+    s = send(s, 'admin-1', { t: 'transport', action: 'next' }).state;
+    expect(likes(s, 'u-luz')).toBe(1);
+  });
+});
+
+describe('tick', () => {
+  const lost = (transfer: boolean) => {
+    const s = join(join(room(transfer), 'u-mara', 'Mara', 2000), 'u-juan', 'Juan', 3000);
+    return run(s, { type: 'disconnect', memberId: 'admin-1' }, 5000).state;
+  };
+
+  it('traspasa el rol al conectado más antiguo al vencer la gracia (relé)', () => {
+    const s = lost(true);
+    expect(run(s, { type: 'tick' }, 64_999).state).toBe(s);
+    const t = run(s, { type: 'tick' }, 65_000).state;
+    expect(t.adminId).toBe('u-mara');
+    expect(t.adminLostAt).toBeNull();
+  });
+
+  it('la sala local termina al vencer la gracia', () => {
+    expect(run(lost(false), { type: 'tick' }, 65_000).state.closed).toBe(true);
+  });
+
+  it('quita a los no-admin desconectados hace 10 minutos y conserva sus ítems', () => {
+    let s = add(add(withMara(), 'u-mara', 1), 'u-mara', 2);
+    s = run(s, { type: 'disconnect', memberId: 'u-mara' }, 10_000).state;
+    expect(run(s, { type: 'tick' }, 609_999).state.members.map((m) => m.id)).toEqual(['admin-1', 'u-mara']);
+    const t = run(s, { type: 'tick' }, 610_000).state;
+    expect(t.members.map((m) => m.id)).toEqual(['admin-1']);
+    expect(ids(t)).toEqual([T(2).id]);
+  });
+});
+
+describe('admin a mitad de canción (Review Focus 5)', () => {
+  it('queda en pausa congelada y se reancla al volver, sin tocar la cola', () => {
+    let s = playing(five(), 50_000, 3);
+    s = run(s, { type: 'disconnect', memberId: 'admin-1' }, 60_000).state;
+    expect(s.now).toMatchObject({ status: 'paused', pausedAtSec: 13 });
+    s = run(s, { type: 'join', memberId: 'admin-1', name: 'Ana' }, 70_000).state;
+    expect(s.adminId).toBe('admin-1');
+    expect(s.now?.status).toBe('paused');
+    expect(ids(s)).toEqual([T(2).id, T(3).id, T(4).id]);
+    s = send(s, 'admin-1', { t: 'playing', itemId: nowId(s), positionSec: 14 }, 71_000).state;
+    expect(s.now).toMatchObject({ status: 'playing', anchorMs: 57_000 });
+    expect(ids(s)).toEqual([T(2).id, T(3).id, T(4).id]);
+  });
+});
