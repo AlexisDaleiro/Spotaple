@@ -1,0 +1,35 @@
+import type { ArtistRef, Track } from './types';
+
+/**
+ * Valida una canción que llega de fuera (el renderer, o un miembro de una sala del jam): los títulos y
+ * URLs vienen de una fuente remota, así que se tratan como datos. Código puro, sin Electron ni Node:
+ * lo comparten main y el relé.
+ */
+const bad = () => new Error('Solicitud inválida.');
+
+const str = (v: unknown, max: number): string => {
+  if (typeof v !== 'string' || v.length === 0 || v.length > max) throw bad();
+  return v;
+};
+
+export function sanitizeTrack(v: unknown): Track {
+  const t = v as Partial<Track> | null;
+  if (!t || typeof t !== 'object') throw bad();
+  const trackId = str(t.id, 24);
+  if (!/^[\w-]{6,24}$/.test(trackId)) throw bad();
+  if (!Array.isArray(t.artists) || t.artists.length > 12) throw bad();
+  const artists: ArtistRef[] = t.artists.map((a) => ({
+    id: typeof a?.id === 'string' && a.id.length <= 64 ? a.id : undefined,
+    name: str(a?.name, 200),
+  }));
+  // Solo https: nada de file:, data: ni javascript: llega a la base de datos.
+  const thumb = typeof t.thumbnail === 'string' && t.thumbnail.startsWith('https://') && t.thumbnail.length <= 600 ? t.thumbnail : undefined;
+  return {
+    id: trackId,
+    title: str(t.title, 300),
+    artists,
+    album: t.album?.title ? { id: typeof t.album.id === 'string' ? t.album.id.slice(0, 64) : undefined, title: str(t.album.title, 300) } : undefined,
+    durationSec: typeof t.durationSec === 'number' && t.durationSec >= 0 ? Math.round(t.durationSec) : undefined,
+    thumbnail: thumb,
+  };
+}
