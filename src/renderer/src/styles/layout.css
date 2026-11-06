@@ -1,0 +1,480 @@
+/* ───────── Estructura de la ventana ─────────
+   ┌──────────────────────────── titlebar (búsqueda + navegación) ────────────────────────────┐
+   │ lateral │             contenido (scroll)              │ cola (opcional, abre/cierra)    │
+   └──────────────────────────── reproductor persistente ─────────────────────────────────────┘ */
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) auto;
+  grid-template-rows: var(--title-h) minmax(0, 1fr) var(--player-h);
+  grid-template-areas:
+    'title title title'
+    'side main queue'
+    'player player player';
+  background: var(--bg-0);
+}
+
+/* ───────── Barra superior (también es la zona de arrastre de la ventana) ───────── */
+.titlebar {
+  grid-area: title;
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: 0 calc(100vw - env(titlebar-area-width, 100vw)) 0 var(--s-6);
+  -webkit-app-region: drag;
+  min-width: 0;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: calc(var(--sidebar-w) - var(--s-6) - var(--s-5));
+  flex: none;
+}
+.brand__mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  flex: none;
+}
+.brand__name {
+  font: 700 var(--fs-xl) / 1 var(--font-display);
+  letter-spacing: var(--track-title);
+}
+.titlebar__nav {
+  display: flex;
+  gap: var(--s-3);
+  flex: none;
+}
+@media (max-width: 1020px) {
+  .brand {
+    width: 40px;
+  }
+  .brand__name {
+    display: none;
+  }
+}
+
+/* ───────── Lateral ───────── */
+.sidebar {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-height: 0;
+  padding: 0 0 var(--gap) var(--gap);
+}
+.sidebar__main,
+.sidebar__lists {
+  background: var(--bg-1);
+  border-radius: var(--r-lg);
+}
+.sidebar__main {
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar__lists {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-5) var(--s-5) var(--s-3) var(--s-6);
+  color: var(--fg-2);
+  font: 600 var(--fs-xs) / 1 var(--font);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.sidebar__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--s-3) var(--s-3);
+}
+
+/* Riel de iconos (~960 px). `!important` porque components.css se carga después y define `display`. */
+@media (max-width: 1020px) {
+  .sidebar__head span,
+  .nav-item__label,
+  .pl-item__text {
+    display: none !important;
+  }
+  .sidebar__head {
+    justify-content: center;
+    padding: var(--s-4) 0;
+  }
+  .nav-item,
+  .pl-item {
+    justify-content: center;
+    padding: 0 !important;
+  }
+}
+.sidebar__scroll {
+  overflow-x: hidden;
+}
+
+/* ───────── Contenido ───────── */
+.main {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 var(--gap) var(--gap);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 240px), var(--bg-1);
+}
+.main__scroll {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  container-type: inline-size;
+  container-name: main;
+}
+.page-enter {
+  animation: page-in var(--dur-slow) var(--ease);
+  min-height: 100%;
+}
+.page {
+  padding: var(--s-8) var(--s-9) var(--s-10);
+  min-height: 100%;
+  transition: opacity var(--dur) var(--ease);
+}
+.page.is-stale {
+  opacity: 0.55;
+}
+@container main (max-width: 640px) {
+  .page {
+    padding: var(--s-7) var(--s-6) var(--s-9);
+  }
+}
+.page__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-6);
+  margin-bottom: var(--s-6);
+}
+.page__head .h1 {
+  margin: 0;
+}
+.page--home .empty {
+  padding-top: 8vh;
+}
+
+/* Cabecera de álbum / artista / playlist */
+.hero {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-8);
+  margin: 0 0 var(--s-8);
+}
+.hero__cover {
+  flex: none;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-cover);
+  overflow: hidden;
+  width: 200px;
+  height: 200px;
+}
+.hero__cover .cover--round {
+  box-shadow: none;
+}
+.hero__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.hero__kind {
+  font: 600 var(--fs-xs) / 1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-1);
+}
+.hero__title {
+  font: 800 var(--fs-hero) / 1.05 var(--font-display);
+  letter-spacing: var(--track-display);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.hero__rename {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-5);
+  text-align: left;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.hero__rename svg {
+  opacity: 0;
+  color: var(--fg-2);
+  flex: none;
+  transition: opacity var(--dur-fast);
+}
+.hero__rename:hover svg,
+.hero__rename:focus-visible svg {
+  opacity: 1;
+}
+.hero__meta {
+  color: var(--fg-1);
+  font-size: var(--fs-md);
+}
+.hero__desc {
+  color: var(--fg-1);
+  max-width: 62ch;
+  margin-top: var(--s-2);
+  font-size: var(--fs-md);
+}
+.hero__desc.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hero__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  margin-top: var(--s-5);
+}
+@container main (max-width: 680px) {
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-6);
+  }
+  .hero__cover {
+    width: 150px;
+    height: 150px;
+  }
+}
+
+/* ───────── Cola ───────── */
+.queue {
+  grid-area: queue;
+  width: var(--queue-w);
+  margin: 0 var(--gap) var(--gap) 0;
+  background: var(--bg-1);
+  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  animation: slide-in var(--dur-slow) var(--ease);
+}
+.queue__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-6) var(--s-5) var(--s-3) var(--s-6);
+}
+.queue__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--s-3) var(--s-6);
+}
+.queue__section {
+  font: 600 var(--fs-xs) / 1 var(--font);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+  padding: var(--s-5) var(--s-4) var(--s-3);
+}
+.queue__section--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.queue__section--row h3 {
+  font: inherit;
+  letter-spacing: inherit;
+}
+.queue__section--row .link {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-sm);
+}
+.queue__hint {
+  color: var(--fg-2);
+  padding: var(--s-3) var(--s-4);
+  font-size: var(--fs-sm);
+}
+
+/* ───────── Reproductor persistente ───────── */
+.player {
+  grid-area: player;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(300px, 580px) minmax(180px, 1fr);
+  align-items: center;
+  gap: var(--s-6);
+  padding: 0 var(--s-6);
+  background: var(--bg-0);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.player__now {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  min-width: 0;
+}
+.player__cover {
+  border-radius: var(--r-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.player__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.player__title {
+  font: 600 var(--fs-lg) / 1.25 var(--font);
+  letter-spacing: var(--track-title);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player__artist {
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player__error {
+  display: flex;
+  gap: var(--s-4);
+  align-items: baseline;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.player__error-msg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player__idle {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  color: var(--fg-2);
+  font-size: var(--fs-md);
+}
+.player__idle-cover {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  border: 1px dashed var(--line-strong);
+  flex: none;
+}
+.player__center {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.player__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+}
+.player__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.volume {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  position: relative;
+}
+.progress__time {
+  width: 40px;
+  font: 400 var(--fs-xs) / 1 var(--font);
+  letter-spacing: var(--track-xs);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.progress__time:first-child {
+  text-align: right;
+}
+.progress__buffer {
+  position: absolute;
+  right: -22px;
+  color: var(--fg-2);
+  display: grid;
+}
+@media (max-width: 1020px) {
+  .player {
+    /* El centro cede ancho al título de la canción; la derecha solo necesita cola + volumen */
+    grid-template-columns: minmax(170px, 1.35fr) minmax(280px, 470px) minmax(130px, 0.65fr);
+    gap: var(--s-5);
+  }
+  .slider--volume {
+    width: 64px !important;
+  }
+  .player__fav {
+    display: none;
+  }
+}
+
+/* Avisos flotantes sobre el reproductor */
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--player-h) + var(--s-6));
+  transform: translateX(-50%);
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-4);
+  pointer-events: none;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+}
+
+.fatal {
+  height: 100vh;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: var(--s-4);
+  padding: var(--s-9);
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: var(--font);
+}
+.fatal p {
+  color: var(--fg-1);
+}

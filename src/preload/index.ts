@@ -1,0 +1,38 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import { IPC, type SpotapleBridge } from '../shared/api';
+
+const call = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
+
+// Superficie explícita y limitada: el renderer no recibe ipcRenderer ni Node.
+const bridge: SpotapleBridge = {
+  music: {
+    search: (q) => call(IPC.search, q),
+    album: (id) => call(IPC.album, id),
+    artist: (id) => call(IPC.artist, id),
+    prepare: (id) => call(IPC.prepare, id),
+    invalidate: (id) => call(IPC.invalidate, id),
+  },
+  library: {
+    favorites: () => call(IPC.favorites),
+    favoriteIds: () => call(IPC.favoriteIds),
+    toggleFavorite: (t) => call(IPC.toggleFavorite, t),
+    playlists: () => call(IPC.playlists),
+    playlist: (id) => call(IPC.playlist, id),
+    createPlaylist: (name) => call(IPC.createPlaylist, name),
+    renamePlaylist: (id, name) => call(IPC.renamePlaylist, id, name),
+    deletePlaylist: (id) => call(IPC.deletePlaylist, id),
+    addToPlaylist: (id, tracks) => call(IPC.addToPlaylist, id, tracks),
+    removeFromPlaylist: (id, itemId) => call(IPC.removeFromPlaylist, id, itemId),
+    reorderPlaylist: (id, order) => call(IPC.reorderPlaylist, id, order),
+    recentPlays: (n) => call(IPC.recentPlays, n),
+    recordSelection: (t) => call(IPC.recordSelection, t),
+    recordPlay: (t) => call(IPC.recordPlay, t),
+  },
+  state: {
+    load: () => call(IPC.loadPlayerState),
+    save: (s) => call(IPC.savePlayerState, s),
+  },
+  platform: process.platform as 'win32' | 'darwin' | 'linux',
+};
+
+contextBridge.exposeInMainWorld('spotapleBridge', bridge);

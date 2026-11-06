@@ -1,0 +1,115 @@
+/*
+ * Sistema visual de Spotaple — "grafito + un acento".
+ *
+ * Dirección: la facilidad y familiaridad de Spotify (lateral, búsqueda, lista de canciones,
+ * reproductor inferior) con la contención de Apple: tipografía de sistema con seguimiento ajustado
+ * por tamaño, superficies grafito apenas diferenciadas, un único acento coral usado solo donde
+ * significa algo (estado activo, canción en curso, acción principal), movimiento breve con curva de
+ * desaceleración y retroalimentación inmediata al presionar.
+ *
+ * Contraste (WCAG AA, sobre --bg-1): fg-0 16:1 · fg-1 9:1 · fg-2 5.4:1 · accent 6.2:1.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Superficies */
+  --bg-0: #0c0d0f; /* marco: barra superior, lateral, reproductor */
+  --bg-1: #131418; /* paneles de contenido */
+  --bg-2: #1b1c21; /* tarjetas, campos */
+  --bg-3: #24262c; /* hover sobre superficies */
+  --bg-4: #2e3037; /* presionado / pista de sliders */
+  --hover: rgba(255, 255, 255, 0.06);
+  --press: rgba(255, 255, 255, 0.1);
+  --selected: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --scrim: rgba(6, 7, 9, 0.64);
+
+  /* Texto */
+  --fg-0: #f5f6f8;
+  --fg-1: #b7bbc4;
+  --fg-2: #8f949e;
+  --fg-on-light: #101114;
+
+  /* Único acento + estados semánticos */
+  --accent: #ff5d73;
+  --accent-hover: #ff7a8d;
+  --accent-press: #e9475d;
+  --accent-ink: #1c0a0e;
+  --accent-soft: rgba(255, 93, 115, 0.14);
+  --danger: #ff8080;
+  --danger-soft: rgba(255, 128, 128, 0.14);
+  --ok: #62d9a3;
+
+  /* Tipografía: la del sistema (Segoe UI Variable en Windows 11 trae tamaño óptico propio) */
+  --font: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'SF Pro Text', sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'SF Pro Display', sans-serif;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 16px;
+  --fs-2xl: 20px;
+  --fs-3xl: 28px;
+  --fs-hero: clamp(30px, 4.4vw, 54px);
+  /* El seguimiento baja al crecer el texto y sube un poco en lo pequeño */
+  --track-xs: 0.04em;
+  --track-body: 0;
+  --track-title: -0.02em;
+  --track-display: -0.03em;
+
+  /* Espaciado (base 4px) */
+  --s-1: 2px;
+  --s-2: 4px;
+  --s-3: 6px;
+  --s-4: 8px;
+  --s-5: 12px;
+  --s-6: 16px;
+  --s-7: 20px;
+  --s-8: 24px;
+  --s-9: 32px;
+  --s-10: 48px;
+
+  /* Radios */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* Movimiento: salidas rápidas con desaceleración suave */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 110ms;
+  --dur: 200ms;
+  --dur-slow: 340ms;
+
+  /* Profundidad: solo donde aporta (menús, diálogos, portadas grandes) */
+  --shadow-pop: 0 16px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line-strong);
+  --shadow-cover: 0 10px 28px rgba(0, 0, 0, 0.42);
+
+  /* Medidas de la ventana */
+  --title-h: 48px;
+  --player-h: 84px;
+  --sidebar-w: 236px;
+  --queue-w: 328px;
+  --gap: 8px;
+
+  --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--accent);
+}
+
+/* Ventana estrecha (~960 px): el lateral pasa a ser un riel de iconos */
+@media (max-width: 1020px) {
+  :root {
+    --sidebar-w: 72px;
+    --queue-w: 304px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --line: rgba(255, 255, 255, 0.28);
+    --line-strong: rgba(255, 255, 255, 0.5);
+    --fg-2: #b4b8c0;
+  }
+}

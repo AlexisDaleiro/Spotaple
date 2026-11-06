@@ -1,0 +1,138 @@
+# Spotaple
+
+Reproductor de música de escritorio para Windows, de uso personal y funcionamiento local. Buscás una canción, la escuchás por streaming desde internet y la organizás en playlists y favoritos que quedan guardados en tu equipo.
+
+> **Integración no oficial.** La música llega a través de [YouTube.js](https://github.com/LuanRT/YouTube.js) (`youtubei.js`), que usa la API interna de YouTube. No hay garantía de acceso a todo el catálogo ni de reproducción siempre libre de errores. Ver [Límites de la integración](#límites-de-la-integración).
+
+## Cómo ejecutarlo
+
+Requisitos: Windows 10/11, Node.js 22.12 o más nuevo (probado con 24) y conexión a internet.
+
+```bash
+npm install
+npm run dev        # desarrollo, con recarga en caliente
+npm run build      # compila main, preload y renderer en ./out
+npm run start      # ejecuta lo compilado
+npm run pack       # versión sin instalar: release/win-unpacked/Spotaple.exe
+npm run dist       # instalador NSIS + versión portable en ./release
+```
+
+La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple\spotaple.db`.
+
+## Qué incluye
+
+- **Inicio** con lo que escuchaste, tus favoritas y tus playlists; estado vacío con sugerencias de búsqueda.
+- **Búsqueda** de canciones, artistas y álbumes (en paralelo, con resultados parciales si una parte falla).
+- **Álbum y artista** con portada, canciones y discografía. "Reproducir desde esta canción" y "Agregar a la cola" son acciones distintas y visibles.
+- **Biblioteca**: favoritos e historial (solo lo que *empezó a sonar*).
+- **Playlists**: crear, renombrar, agregar y quitar canciones, reordenar (arrastrando o por menú) y eliminar con confirmación cuando tiene contenido.
+- **Reproductor persistente**: play/pausa, anterior/siguiente, posición, volumen, silencio, aleatorio, repetición (toda la cola / una), cola editable en panel lateral, teclas multimedia y tarjeta del sistema.
+- **Persistencia**: cola, canción actual, posición, volumen y modos se restauran al abrir; la reproducción solo arranca con una acción tuya.
+
+No hay descarga offline, crossfade, reproducción sin pausas ni ecualizador: **no están implementados** y la interfaz no los muestra.
+
+### Atajos
+
+| Tecla | Acción |
+|---|---|
+| `Ctrl+K` o `/` | Enfocar la búsqueda |
+| `Espacio` | Reproducir / pausar (si el foco no está en un campo o botón) |
+| `Ctrl+→` / `Ctrl+←` | Siguiente / anterior |
+| `Shift+→` / `Shift+←` | Adelantar / retroceder 10 s |
+| `Ctrl+↑` / `Ctrl+↓` | Volumen |
+| `M` | Silenciar |
+| `Q` | Mostrar / ocultar la cola |
+| `Alt+←` / `Alt+→` | Atrás / adelante |
+| `Enter`, `Menú contextual` / `Shift+F10` sobre una canción | Reproducir desde ahí / abrir el menú |
+
+## Arquitectura
+
+```
+src/
+  shared/      tipos y contrato IPC (única fuente de verdad), política CSP
+  main/        proceso local (Node): ventana, base de datos, proveedor musical, protocolo de audio
+    db/          store.ts — SQLite (node:sqlite), migraciones, historial, playlists
+    music/       provider.ts — contrato MusicProvider; youtube/ — implementación con YouTube.js
+    audio-protocol.ts   spotaple-audio://track/<id> → audio con Range
+    validate.ts  validación de todo lo que llega del renderer
+  preload/     puente contextBridge: superficie explícita y limitada
+  renderer/    React + TypeScript
+    src/player/  queue.ts (lógica pura de cola), player.ts (estado y audio), instance.ts (singleton)
+    src/stores/  navegación, biblioteca, búsqueda, interfaz
+    src/styles/  tokens → base → layout → componentes
+tests/         pruebas automáticas (vitest)
+scripts/       recorridos reales (e2e), accesibilidad, comprobación de YouTube
+```
+
+**Cambiar de proveedor musical** solo exige otra implementación de `MusicProvider` (`search`, `getAlbum`, `getArtist`, `resolveAudio`, `invalidate`); ni la interfaz ni la base de datos conocen YouTube.
+
+### Cómo se reproduce una canción
+
+1. La interfaz pide `prepare(videoId)` por IPC. El proceso local resuelve la fuente con YouTube.js y devuelve solo `{ trackId, mimeType, durationSec }`.
+2. El `<audio>` único de la app apunta a `spotaple-audio://track/<videoId>`.
+3. El proceso local atiende cada pedido con `Range` reenviándolo a googlevideo. **La URL real del audio nunca llega a la interfaz ni se guarda.** Si caduca (403/404/410), se descarta, se resuelve de nuevo y se reintenta una vez.
+4. Se guardan identificadores duraderos (`videoId`, ids de álbum y artista) y metadatos para reconstruir la biblioteca sin red; las URLs de reproducción se tratan como temporales.
+
+El estado de reproducción es una máquina única (`idle · loading · playing · paused · buffering · ended · error`) fuera de React: cambiar de pantalla no reinicia ni duplica el audio, y si elegís varias canciones rápido, gana la última.
+
+## Límites de la integración
+
+Verificado contra `youtubei.js` 18.3.0 (noviembre de 2026):
+
+- **Evaluador de JavaScript obligatorio.** YouTube.js no trae intérprete: descifrar las URLs exige ejecutar fragmentos del reproductor de YouTube (código remoto). Se ejecutan en un contexto de V8 **vacío** (`node:vm`: sin `require`, `process`, `fetch` ni sistema de archivos), con tiempo máximo y devolviendo solo JSON — ver `src/main/music/youtube/eval.ts`. `node:vm` no es una frontera de seguridad fuerte frente a un exploit de V8; si el riesgo cambia, habría que moverlo a un proceso sin privilegios.
+- **Token de origen (PO token).** Con la mayoría de los clientes de InnerTube (`YTMUSIC`, `ANDROID_VR`, `IOS`, `TV_SIMPLY`), googlevideo responde **403 pasado ~1 MiB**, lo que cortaría cada canción a los ~65 s. Hoy solo el cliente **`VISIONOS`** entrega el archivo completo sin token. La app lo comprueba de verdad antes de usar una fuente (pide un byte del medio) y prueba los clientes en orden; si ninguno sirve, muestra un error claro.
+- **Puede dejar de funcionar.** Si YouTube cambia ese comportamiento, la reproducción se corta hasta actualizar `youtubei.js` o aportar un PO token (opción `po_token` de `Innertube.create`, ver la [guía](https://ytjs.dev/guide/getting-started)). Para diagnosticarlo: `npm run check:youtube` muestra qué clientes siguen sirviendo audio completo.
+- **Datos incompletos.** La página de un artista no informa duraciones; el tema de un álbum llega sin portada ni artista (se completan desde el álbum). Si falta la duración, la fila queda en blanco y se completa al reproducir.
+- **Contenido no disponible** (borrado, privado, restringido por región) se informa con un mensaje claro; en una cola se salta a la siguiente, con un tope de 3 saltos seguidos.
+- MusicBrainz y Discogs no se usan: no apareció ninguna necesidad que YouTube.js no resuelva.
+
+## Seguridad
+
+- `contextIsolation`, `sandbox`, sin `nodeIntegration`; el renderer solo ve `window.spotapleBridge` (métodos concretos, sin `ipcRenderer`).
+- Política CSP: scripts propios, portadas solo de los dominios de imágenes de YouTube Music, audio solo por `spotaple-audio:`; sin conexiones directas a internet desde la interfaz.
+- El IPC acepta únicamente llamadas de la propia página, y **todo** dato recibido se valida (formas, largos, `https` en portadas) antes de tocar la base.
+- Títulos, artistas y portadas remotos se tratan como datos: React los escapa y no se usa HTML crudo.
+- Navegación y ventanas nuevas bloqueadas; permisos del navegador denegados.
+- No hay cuentas ni secretos: nada de sesión de YouTube se guarda ni se registra.
+
+## Datos locales
+
+SQLite (`node:sqlite`, incluido en Electron: no hay módulos nativos que reconstruir) con migraciones por `user_version`.
+
+| Tabla | Contenido |
+|---|---|
+| `tracks` | metadatos de cada canción vista (id, título, artistas, álbum, duración, portada) |
+| `favorites` | canciones favoritas |
+| `playlists`, `playlist_items` | listas propias y su orden |
+| `plays` | canciones que **realmente empezaron a sonar** |
+| `selections` | canciones que solo se eligieron (pueden no haber sonado) |
+| `settings` | estado del reproductor (cola, índice, posición, volumen, modos) |
+
+Las playlists pertenecen a esta app; la sincronización con una cuenta de YouTube queda para más adelante.
+
+## Sistema visual
+
+Dirección: **la familiaridad de Spotify con la contención de Apple.** Tema oscuro en grafito con superficies apenas diferenciadas; **un único acento coral** que solo aparece donde significa algo (canción en curso, estados activos, acción principal); tipografía del sistema (Segoe UI Variable) con seguimiento más cerrado cuanto más grande; portadas protagonistas; densidad compacta con áreas cómodas. Todo sale de variables en `src/renderer/src/styles/tokens.css`.
+
+Movimiento breve con curva de desaceleración, respuesta inmediata al presionar, y `prefers-reduced-motion`, `prefers-reduced-transparency` y `prefers-contrast` respetados. Contrastes verificados (AA) y auditoría automática con axe-core sin problemas.
+
+## Pruebas
+
+**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js y el aislamiento del evaluador.
+
+**Reales** (contra YouTube; requieren internet y `npm run build`):
+
+| Comando | Verifica |
+|---|---|
+| `npm run e2e` | abrir → buscar → **reproducir de verdad** → pausa/continuar → saltar de posición → cola → navegar → minimizar → playlist y favoritos → cerrar y reabrir → tamaños de ventana. `SPOTAPLE_EXE=ruta\Spotaple.exe` lo prueba sobre la versión empaquetada. |
+| `npm run e2e:ui` | artista, álbum, menú, atajos, arrastrar la cola, diálogos, y recuperación ante caídas de red (con un proxy que se corta) y contenido inexistente. |
+| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales. |
+| `npm run check:youtube` | qué clientes de YouTube entregan hoy el audio completo. |
+
+Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real ni se ejecutó el instalador NSIS (sí la versión sin instalar).
+
+## Diagnóstico
+
+- `SPOTAPLE_DEBUG=1` imprime una línea por pedido de audio (sin URLs ni credenciales).
+- En la consola de la interfaz: `localStorage.debugAudio = '1'` y recargar traza los eventos del audio.
+- `SPOTAPLE_USER_DATA=<carpeta>` usa otra carpeta de datos (así se prueba sin tocar tu biblioteca).
