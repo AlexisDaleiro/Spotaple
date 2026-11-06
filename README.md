@@ -14,10 +14,12 @@ npm run dev        # desarrollo, con recarga en caliente
 npm run build      # compila main, preload y renderer en ./out
 npm run start      # ejecuta lo compilado
 npm run pack       # versión sin instalar: release/win-unpacked/Spotaple.exe
-npm run dist       # instalador NSIS + versión portable en ./release
+npm run dist       # el único ejecutable para repartir: release/Spotaple 0.1.0.exe (portable)
 ```
 
 La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple\spotaple.db`.
+
+**Para usarlo sin instalar ni compilar:** descargá `Spotaple-<versión>.exe` desde la página de **Releases** del repositorio. Es un solo archivo portable (no hay instalador): se ejecuta con doble clic. No está firmado, así que Windows puede mostrar «Windows protegió tu PC»: tocá «Más información» y «Ejecutar de todas formas». La carpeta `release/win-unpacked/` es interna del build y solo la usan las pruebas e2e: no se reparte.
 
 ## Qué incluye
 
@@ -164,7 +166,7 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 | `npm run check:jam` | si dos PCs (o esta y el relé) pueden hablarse por WebSocket: `listen`, `connect <ip>:<puerto>` y `url <ws://…>`. |
 | `npm run check:relay -- <ws(s)://relé>` | dos clientes contra el relé: crear y unir sala, ping/pong, canción compartida, likes, cambio de modo y traspaso de admin. Cierra la sala de prueba al terminar; no reproduce audio. |
 
-Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real ni se ejecutó el instalador NSIS (sí la versión sin instalar). El modo Jam se verificó en una sola PC con dos instancias: red local, relé Node, Cloudflare con `wrangler dev` y el relé desplegado `spotaple-jam.alexisdaleiro.workers.dev`. El 6 de noviembre de 2026 pasaron los 9 pasos de `e2e:jam` contra Cloudflare por internet con la URL predeterminada de la app, tanto desde el proyecto como con el ejecutable empaquetado. **No se probó** en una red de oficina real ni con un proxy que solo deje salir por HTTP.
+Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real. Ya no se genera instalador NSIS: lo que se reparte es el portable, y las pruebas e2e corren sobre su carpeta interna `win-unpacked`. El modo Jam se verificó en una sola PC con dos instancias: red local, relé Node, Cloudflare con `wrangler dev` y el relé desplegado `spotaple-jam.alexisdaleiro.workers.dev`. El 6 de noviembre de 2026 pasaron los 9 pasos de `e2e:jam` contra Cloudflare por internet con la URL predeterminada de la app, tanto desde el proyecto como con el ejecutable empaquetado. **No se probó** en una red de oficina real ni con un proxy que solo deje salir por HTTP.
 
 ## Diagnóstico
 
