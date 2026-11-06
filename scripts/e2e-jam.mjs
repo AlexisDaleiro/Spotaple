@@ -42,6 +42,7 @@ const waitFor = async (fn, ms, what) => {
 };
 
 const dirs = [];
+const launchedApps = [];
 async function launch(userData = mkdtempSync(join(tmpdir(), 'spotaple-e2e-jam-'))) {
   if (!dirs.includes(userData)) dirs.push(userData);
   const exe = process.env.SPOTAPLE_EXE;
@@ -50,10 +51,14 @@ async function launch(userData = mkdtempSync(join(tmpdir(), 'spotaple-e2e-jam-')
     args: exe ? [] : ['.'],
     env: { ...process.env, SPOTAPLE_USER_DATA: userData },
   });
+  launchedApps.push(app);
   const page = await app.firstWindow();
   page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
   await page.waitForSelector('.titlebar');
-  await page.locator('button[aria-label="Silenciar"]').click();
+  // Al reabrir la misma carpeta de datos, el silencio puede estar restaurado.
+  const mute = page.locator('button[aria-label="Silenciar"]');
+  if (await mute.isVisible()) await mute.click();
+  await page.locator('button[aria-label="Activar sonido"]').waitFor();
   return { app, page, dir: userData };
 }
 
@@ -210,8 +215,9 @@ await step('J9. por la interfaz: barra del reproductor y cola de la sala', async
   return `1 like · ${rows.length} filas con quién pidió · salto directo del que pidió`;
 });
 
-for (const x of [A, B]) await x.app.close().catch(() => undefined);
-for (const d of dirs) rmSync(d, { recursive: true, force: true });
+// Incluye las instancias que llegaron a abrirse aunque launch fallara antes de devolverlas.
+for (const app of launchedApps) await app.close().catch(() => undefined);
+for (const d of dirs) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} pasos OK`);
 process.exit(failed.length ? 1 : 0);

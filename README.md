@@ -52,7 +52,7 @@ Una sala compartida: cada persona pide canciones desde su propia PC y suenan don
 
 - **Crear o unirse:** barra lateral → **Jam**. Quien crea la sala es el admin y elige cómo se conectan:
   - **Red local:** el admin hospeda la sala en su PC y los demás se unen con `ip:puerto/CÓDIGO`. No usa ningún servidor externo. La primera vez Windows pregunta por el firewall: permití el acceso en redes privadas. Algunas redes Wi-Fi aíslan los equipos entre sí; ahí no funciona.
-  - **Internet:** las apps se conectan a un relé y se unen con un código de 5 caracteres. Funciona aunque la red no deje conectar PCs entre sí. El relé se despliega una vez: ver [`relay/README.md`](relay/README.md).
+  - **Internet:** las apps se conectan al relé de Cloudflare ya configurado y se unen con un código de 5 caracteres. Funciona aunque la red no deje conectar PCs entre sí. Para mantener el relé o usar uno propio: ver [`relay/README.md`](relay/README.md).
 - **Dónde suena** (switch del admin): **solo en la PC del admin** o **en todas las PCs**. En "Todas" cada PC baja su propio audio de YouTube y se sincroniza con la del admin; entre PCs solo viaja el control (qué canción, en qué segundo), nunca audio.
 - **Cola compartida:** cualquiera pide canciones (botón +, clic derecho o doble clic) y entran por orden. El admin reordena y quita; cada persona quita lo que pidió.
 - **Votos y likes:** una canción se salta cuando vota más de la mitad de las personas conectadas (el admin y quien la pidió la saltan directo). El like es un "buena elección" y suma a quien la pidió.
@@ -162,8 +162,9 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 | `npm run e2e:jam` | dos instancias de Electron (admin y miembro) con música real: crear sala y unirse, pedir canciones, like, saltar, pasar a "Todas" y comprobar la sincronía, cerrar y reabrir, y lo mismo por la interfaz. `JAM_KIND=internet` con `SPOTAPLE_JAM_RELAY=ws://127.0.0.1:8788` lo prueba contra un relé (`npm run relay:node -- 8788` o `wrangler dev`); `E2E_VERBOSE=1` muestra qué ve cada app si un paso falla. |
 | `npm run check:youtube` | qué clientes de YouTube entregan hoy el audio completo. |
 | `npm run check:jam` | si dos PCs (o esta y el relé) pueden hablarse por WebSocket: `listen`, `connect <ip>:<puerto>` y `url <ws://…>`. |
+| `npm run check:relay -- <ws(s)://relé>` | dos clientes contra el relé: crear y unir sala, ping/pong, canción compartida, likes, cambio de modo y traspaso de admin. Cierra la sala de prueba al terminar; no reproduce audio. |
 
-Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real ni se ejecutó el instalador NSIS (sí la versión sin instalar). El modo Jam se verificó en una sola PC con dos instancias (red local, relé Node y relé de Cloudflare corriendo con `wrangler dev`); **no se probó** en una red de oficina real, con un proxy que solo deje salir por HTTP ni contra el relé desplegado en Cloudflare.
+Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real ni se ejecutó el instalador NSIS (sí la versión sin instalar). El modo Jam se verificó en una sola PC con dos instancias: red local, relé Node, Cloudflare con `wrangler dev` y el relé desplegado `spotaple-jam.alexisdaleiro.workers.dev`. El 6 de noviembre de 2026 pasaron los 9 pasos de `e2e:jam` contra Cloudflare por internet con la URL predeterminada de la app, tanto desde el proyecto como con el ejecutable empaquetado. **No se probó** en una red de oficina real ni con un proxy que solo deje salir por HTTP.
 
 ## Diagnóstico
 
