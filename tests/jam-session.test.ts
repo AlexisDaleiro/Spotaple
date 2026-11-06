@@ -94,6 +94,22 @@ describe('createJamSession', () => {
     expect(a.session.view().error?.n).toBe(1);
   });
 
+  it('al cerrar la app un miembro queda desconectado (no sale) y vuelve con la misma identidad', async () => {
+    const a = make();
+    const created = await a.session.create({ kind: 'local', name: 'Ana' });
+    const b = make();
+    await b.session.join({ invite: loopback(created.invite!), name: 'Mara' });
+    await until(() => a.session.view().state?.members.length === 2);
+    await b.session.leave({ quit: true });
+    await until(() => a.session.view().state?.members.find((m) => m.name === 'Mara')?.connected === false);
+    expect(a.session.view().state?.members).toHaveLength(2);
+
+    const again = make(b.settings);
+    await again.session.join({ invite: loopback(created.invite!), name: 'Mara' });
+    await until(() => a.session.view().state?.members.find((m) => m.name === 'Mara')?.connected === true);
+    expect(a.session.view().state?.members).toHaveLength(2);
+  });
+
   it('leave deja la sesión ociosa y sin estado', async () => {
     const a = make();
     await a.session.create({ kind: 'local', name: 'Ana' });

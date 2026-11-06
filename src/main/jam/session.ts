@@ -140,7 +140,8 @@ export function createJamSession(d: JamSessionDeps) {
     return start({ url: parsed.url, kind: parsed.kind, invite, name, create: false });
   }
 
-  async function leave(): Promise<void> {
+  /** `quit`: se cierra la app. Para la sala eso es una caída y no una salida: el miembro queda desconectado y puede volver con sus likes. */
+  async function leave(o?: { quit?: boolean }): Promise<void> {
     const c = client;
     // El admin de una sala local cierra la sala y espera a que los miembros reciban "La sala terminó" antes de apagar el servidor.
     if (c && host && view.status === 'connected' && view.state?.adminId === view.selfId) {
@@ -150,7 +151,8 @@ export function createJamSession(d: JamSessionDeps) {
     }
     client = null;
     gen++;
-    c?.leave();
+    if (o?.quit) c?.close();
+    else c?.leave();
     await stopHost();
     view = idle();
     d.emit(view);

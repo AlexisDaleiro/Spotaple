@@ -20,7 +20,8 @@
     "check:youtube": "node scripts/probe.mjs",
     "pack": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder --win",
-    "check:jam": "node scripts/jam-probe.mjs"
+    "check:jam": "node scripts/jam-probe.mjs",
+    "e2e:jam": "node scripts/e2e-jam.mjs"
   },
   "build": {
     "appId": "com.alexis.spotaple",

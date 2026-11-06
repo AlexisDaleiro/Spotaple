@@ -98,7 +98,7 @@ app.whenReady().then(() => {
     quitting = true;
     e.preventDefault();
     void jam
-      .leave()
+      .leave({ quit: true })
       .catch(() => undefined)
       .finally(() => {
         store.close();
