@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classify, MESSAGES, playabilityError, withTimeout } from '../src/main/music/youtube/errors';
 import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapTrack, searchItems, txt } from '../src/main/music/youtube/mappers';
 import { evaluatePlayerScript } from '../src/main/music/youtube/eval';
+import { withoutCredentials } from '../src/main/net-fetch';
 
 /** Nodos simulados con la forma verificada de youtubei.js 18.3.0. */
 const text = (s: string) => ({ toString: () => s });
@@ -124,6 +125,18 @@ describe('errores', () => {
     }
     expect(classify(new Error('fetch failed')).message).toBe(MESSAGES.network);
   });
+  it('clasifica los fallos de la red de Chromium (net::ERR_…) como conexión', () => {
+    for (const msg of ['net::ERR_INTERNET_DISCONNECTED', 'net::ERR_NAME_NOT_RESOLVED', 'net::ERR_PROXY_CONNECTION_FAILED', 'net::ERR_TUNNEL_CONNECTION_FAILED', 'net::ERR_CONNECTION_RESET', 'Failed to fetch']) {
+      const e = classify(new TypeError(msg));
+      expect(e.code, msg).toBe('network');
+      expect(e.message, msg).toBe(MESSAGES.network);
+    }
+  });
+  it('un certificado no confiable (red que inspecciona el tráfico) tiene su propio mensaje', () => {
+    const e = classify(new TypeError('net::ERR_CERT_AUTHORITY_INVALID'));
+    expect(e.code).toBe('network');
+    expect(e.message).toBe(MESSAGES.certificate);
+  });
   it('clasifica cambios de la API interna como "parse"', () => {
     expect(classify(new Error('Failed to extract n decipher function')).code).toBe('parse');
     expect(classify(new Error('Unexpected response shape')).code).toBe('parse');
@@ -142,6 +155,22 @@ describe('errores', () => {
   it('withTimeout rechaza si tarda demasiado', async () => {
     await expect(withTimeout(new Promise(() => undefined), 20)).rejects.toMatchObject({ name: 'TimeoutError' });
     await expect(withTimeout(Promise.resolve(7), 20)).resolves.toBe(7);
+  });
+});
+
+describe('red del proceso local', () => {
+  it('withoutCredentials fuerza credentials:"omit" aunque YouTube.js pida "include", y conserva el resto', async () => {
+    let seen: RequestInit | undefined;
+    const inner = (async (_input: unknown, init?: RequestInit) => ((seen = init), new Response('ok'))) as unknown as typeof fetch;
+    const res = await withoutCredentials(inner)('https://example.test/x', { credentials: 'include', headers: { Range: 'bytes=0-' }, method: 'POST' });
+    expect(await res.text()).toBe('ok');
+    expect(seen).toMatchObject({ credentials: 'omit', method: 'POST', headers: { Range: 'bytes=0-' } });
+  });
+  it('funciona sin init', async () => {
+    let seen: RequestInit | undefined;
+    const inner = (async (_i: unknown, init?: RequestInit) => ((seen = init), new Response())) as unknown as typeof fetch;
+    await withoutCredentials(inner)('https://example.test/');
+    expect(seen).toEqual({ credentials: 'omit' });
   });
 });
 

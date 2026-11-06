@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, net, protocol, session, shell } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { AUDIO_SCHEME } from '../shared/api';
@@ -6,6 +6,7 @@ import { buildCsp } from '../shared/csp';
 import { createAudioHandler } from './audio-protocol';
 import { createStore } from './db/store';
 import { registerIpc } from './ipc';
+import { withoutCredentials } from './net-fetch';
 import { createYouTubeProvider } from './music/youtube/provider';
 
 // Permite aislar los datos (pruebas e2e) sin tocar la biblioteca real del usuario.
@@ -64,13 +65,18 @@ app.whenReady().then(() => {
   mkdirSync(userData, { recursive: true });
 
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  // La política solo se aplica a las páginas de la app, no a lo que pidan YouTube.js o el audio.
   session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
-    cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [buildCsp(isDev)] } });
+    const own = details.url.startsWith('file://') || (rendererUrl !== undefined && details.url.startsWith(rendererUrl));
+    cb(own ? { responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [buildCsp(isDev)] } } : {});
   });
 
   const store = createStore(join(userData, 'spotaple.db'));
-  const provider = createYouTubeProvider({ cacheDir: join(userData, 'yt-cache') });
-  protocol.handle(AUDIO_SCHEME, createAudioHandler(provider));
+  // Toda la red del proceso local va por Chromium: respeta el proxy del sistema (PAC, autenticación
+  // integrada) y los certificados de Windows. Sin proxy sale directo, igual que antes.
+  const netFetch = withoutCredentials(net.fetch as unknown as typeof fetch);
+  const provider = createYouTubeProvider({ cacheDir: join(userData, 'yt-cache'), fetch: netFetch });
+  protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch));
   registerIpc({ store, provider, rendererOrigin: rendererUrl });
 
   createWindow();

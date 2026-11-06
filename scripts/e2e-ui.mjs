@@ -43,10 +43,12 @@ const waitFor = async (fn, ms, what) => {
 // ── proxy local con interruptor: simula caídas de red del proceso principal (fetch de Node)
 let online = true;
 const tunnels = new Set();
+const hostsSeen = new Set();
 const proxy = http.createServer((_, res) => (res.writeHead(502), res.end()));
 proxy.on('connect', (req, client, head) => {
-  if (!online) return client.destroy();
   const [host, port] = req.url.split(':');
+  hostsSeen.add(host);
+  if (!online) return client.destroy();
   const upstream = net.connect(Number(port) || 443, host, () => {
     client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     upstream.write(head);
@@ -68,10 +70,11 @@ const setOnline = (v) => {
 
 const userData = mkdtempSync(join(tmpdir(), 'spotaple-e2e-ui-'));
 const exe = process.env.SPOTAPLE_EXE;
+// La app usa la red de Chromium (net.fetch): se le indica el proxy como lo haría el sistema.
 const app = await electron.launch({
   executablePath: exe ?? electronPath,
-  args: exe ? [] : ['.'],
-  env: { ...process.env, SPOTAPLE_USER_DATA: userData, NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl },
+  args: [...(exe ? [] : ['.']), `--proxy-server=${proxyUrl}`],
+  env: { ...process.env, SPOTAPLE_USER_DATA: userData },
 });
 const page = await app.firstWindow();
 page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
@@ -205,7 +208,16 @@ await step('A6. pantalla de inicio con datos', async () => {
   await shot('15-inicio-con-datos');
 });
 
-// ── caídas de red
+// ── proxy y caídas de red
+await step('B0. el tráfico de YouTube respeta el proxy configurado', async () => {
+  const hosts = [...hostsSeen].sort();
+  const yt = hosts.filter((h) => /youtube\.com$/.test(h));
+  const gv = hosts.filter((h) => /googlevideo\.com$/.test(h));
+  if (!yt.length) throw new Error(`la API de YouTube no pasó por el proxy (hosts: ${hosts.join(', ')})`);
+  if (!gv.length) throw new Error(`el audio no pasó por el proxy (hosts: ${hosts.join(', ')})`);
+  return `API: ${yt.join(', ')} · audio: ${gv.length} servidor(es) googlevideo`;
+});
+
 await step('B1. búsqueda sin conexión: mensaje claro y reintento que recupera', async () => {
   await page.locator('.nav-item[title="Inicio"]').click();
   setOnline(false);

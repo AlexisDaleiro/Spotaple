@@ -42,6 +42,8 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     clientPromise ??= withTimeout(
       Innertube.create({
         retrieve_player: true,
+        // Red de Chromium en la app (proxy y certificados del sistema); sin esto, el fetch de Node.
+        fetch: opts.fetch,
         cache: opts.cacheDir ? new UniversalCache(true, opts.cacheDir) : undefined,
       }),
       REQUEST_TIMEOUT_MS * 2,

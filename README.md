@@ -86,6 +86,19 @@ Verificado contra `youtubei.js` 18.3.0 (noviembre de 2026):
 - **Contenido no disponible** (borrado, privado, restringido por región) se informa con un mensaje claro; en una cola se salta a la siguiente, con un tope de 3 saltos seguidos.
 - MusicBrainz y Discogs no se usan: no apareció ninguna necesidad que YouTube.js no resuelva.
 
+## Red y proxy
+
+Todo el tráfico del proceso local (API de YouTube, descifrado y audio) usa `net.fetch` de Electron, es decir, la red de Chromium:
+
+- respeta el **proxy del sistema** de Windows (incluidos PAC/WPAD y la autenticación integrada de Windows);
+- usa los **certificados instalados en Windows**, que importa en redes que inspeccionan el tráfico TLS;
+- sin proxy sale directo, igual que antes;
+- no guarda cookies de YouTube (`credentials: 'omit'`).
+
+Los fallos de red (`net::ERR_…`) se muestran como «Sin conexión…» en 1–2 s. Un certificado rechazado muestra un mensaje propio que menciona a IT, porque reintentar no lo arregla.
+
+Verificado con `npm run e2e:ui`: arranca la app con un proxy local (`--proxy-server`), comprueba que la API de YouTube y el audio pasan por él, lo corta y confirma que la app avisa y se recupera. **No verificado:** un proxy corporativo real con PAC o autenticación NTLM/Kerberos.
+
 ## Seguridad
 
 - `contextIsolation`, `sandbox`, sin `nodeIntegration`; el renderer solo ve `window.spotapleBridge` (métodos concretos, sin `ipcRenderer`).
@@ -125,7 +138,7 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 | Comando | Verifica |
 |---|---|
 | `npm run e2e` | abrir → buscar → **reproducir de verdad** → pausa/continuar → saltar de posición → cola → navegar → minimizar → playlist y favoritos → cerrar y reabrir → tamaños de ventana. `SPOTAPLE_EXE=ruta\Spotaple.exe` lo prueba sobre la versión empaquetada. |
-| `npm run e2e:ui` | artista, álbum, menú, atajos, arrastrar la cola, diálogos, y recuperación ante caídas de red (con un proxy que se corta) y contenido inexistente. |
+| `npm run e2e:ui` | artista, álbum, menú, atajos, arrastrar la cola, diálogos, uso del proxy configurado, recuperación ante caídas de red (el proxy se corta) y contenido inexistente. |
 | `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales. |
 | `npm run check:youtube` | qué clientes de YouTube entregan hoy el audio completo. |
 

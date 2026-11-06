@@ -25,6 +25,7 @@ const NETWORK_CODES = new Set([
 
 export const MESSAGES = {
   network: 'Sin conexión con el servicio de música. Revisá tu internet y probá de nuevo.',
+  certificate: 'La conexión segura con YouTube fue rechazada (certificado no confiable). En una red de trabajo suele ser un filtro que inspecciona el tráfico: consultá con tu área de IT.',
   unavailable: 'Esta canción no está disponible para reproducir.',
   blocked: 'YouTube no entregó el audio completo de esta canción. Suele ser un cambio reciente en su servicio; probá de nuevo más tarde.',
   region: 'Esta canción no está disponible en tu región.',
@@ -38,6 +39,10 @@ export function classify(e: unknown): MusicError {
   const err = e as { message?: string; code?: string; cause?: { code?: string; message?: string }; name?: string } | null;
   const text = `${err?.message ?? ''} ${err?.cause?.message ?? ''}`.toLowerCase();
   const code = err?.code ?? err?.cause?.code;
+  // La red de Chromium (net.fetch) informa "net::ERR_…". Un certificado no confiable suele ser una red
+  // corporativa que inspecciona el tráfico: el mensaje lo dice, porque reintentar no lo arregla.
+  if (/net::err_(cert|ssl)/.test(text)) return new MusicError('network', MESSAGES.certificate);
+  if (/net::err_|failed to fetch/.test(text)) return new MusicError('network', MESSAGES.network);
   if (
     (code && NETWORK_CODES.has(code)) ||
     text.includes('fetch failed') ||
