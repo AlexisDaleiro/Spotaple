@@ -21,7 +21,8 @@
     "pack": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder --win",
     "check:jam": "node scripts/jam-probe.mjs",
-    "e2e:jam": "node scripts/e2e-jam.mjs"
+    "e2e:jam": "node scripts/e2e-jam.mjs",
+    "relay:node": "node scripts/relay-node.mjs"
   },
   "build": {
     "appId": "com.alexis.spotaple",

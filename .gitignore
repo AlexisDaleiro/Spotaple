@@ -5,3 +5,4 @@ dist
 .unlighthouse
 .e2e
 *.log
+.relay
