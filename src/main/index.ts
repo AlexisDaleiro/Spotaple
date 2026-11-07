@@ -77,7 +77,11 @@ app.whenReady().then(() => {
   // Toda la red del proceso local va por Chromium: respeta el proxy del sistema (PAC, autenticación
   // integrada) y los certificados de Windows. Sin proxy sale directo, igual que antes.
   const netFetch = withoutCredentials(net.fetch as unknown as typeof fetch);
-  const provider = createYouTubeProvider({ cacheDir: join(userData, 'yt-cache'), fetch: netFetch });
+  const provider = createYouTubeProvider({
+    cacheDir: join(userData, 'yt-cache'),
+    fetch: netFetch,
+    getQuality: () => store.getAppSettings().streamQuality,
+  });
   protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch));
   // La red del jam vive aquí, no en el renderer: la CSP de la interfaz sigue sin permitir conexiones directas.
   const jam = createJamSession({

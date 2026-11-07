@@ -1,7 +1,10 @@
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js';
 import type { AlbumDetail, ArtistDetail, ArtistRef, SearchResults } from '../../../shared/types';
+import type { StreamQuality } from '../../../shared/settings';
 import type { MusicProvider, ResolvedAudio } from '../provider';
+import { createAudioCache } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
+import { chooseAudioFormat } from './format';
 import { classify, MESSAGES, MusicError, playabilityError, withTimeout } from './errors';
 import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapTrack, searchItems, txt } from './mappers';
 
@@ -27,10 +30,13 @@ export interface YouTubeProviderOptions {
   cacheDir?: string;
   now?: () => number;
   fetch?: typeof fetch;
+  /** Calidad de streaming vigente; se lee en cada resolución, así que cambiar el ajuste vale desde la siguiente canción. */
+  getQuality?: () => StreamQuality;
 }
 
 export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicProvider {
   const now = opts.now ?? Date.now;
+  const getQuality = opts.getQuality ?? ((): StreamQuality => 'high');
   const fetchImpl = opts.fetch ?? fetch;
   // YouTube.js escribe en consola cada nodo desconocido de la API interna; no es información útil aquí.
   Log.setLevel(Log.Level.NONE);
@@ -57,7 +63,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     clientPromise = null;
   };
 
-  const cache = new Map<string, ResolvedAudio>();
+  const cache = createAudioCache(now);
   const inflight = new Map<string, Promise<ResolvedAudio>>();
 
   /**
@@ -75,21 +81,17 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     if (res.status !== 206) throw new MusicError('unavailable', MESSAGES.blocked);
   }
 
-  async function resolveWith(yt: Innertube, trackId: string, client: (typeof STREAM_CLIENTS)[number]): Promise<ResolvedAudio> {
+  async function resolveWith(yt: Innertube, trackId: string, client: (typeof STREAM_CLIENTS)[number], quality: StreamQuality): Promise<ResolvedAudio> {
     const info = await withTimeout(yt.getBasicInfo(trackId, { client }), REQUEST_TIMEOUT_MS);
     const bad = playabilityError(info.playability_status?.status, info.playability_status?.reason);
     if (bad) throw bad;
 
-    // Opus (WebM) primero: mejor calidad por bitrate y Chromium lo reproduce nativamente; AAC como alternativa.
+    // Opus (WebM) primero y, si no hay, otro formato; Alta pide el mejor y Ahorro el más liviano (ver format.ts).
     let format;
     try {
-      format = info.chooseFormat({ type: 'audio', quality: 'best', format: 'any', codec: 'opus' });
+      format = chooseAudioFormat(info, quality);
     } catch {
-      try {
-        format = info.chooseFormat({ type: 'audio', quality: 'best' });
-      } catch {
-        throw new MusicError('unavailable', MESSAGES.unavailable);
-      }
+      throw new MusicError('unavailable', MESSAGES.unavailable);
     }
     const url = await format.decipher(yt.session.player);
     if (!url) throw new MusicError('parse', MESSAGES.parse);
@@ -107,12 +109,12 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     };
   }
 
-  async function resolveOnce(trackId: string): Promise<ResolvedAudio> {
+  async function resolveOnce(trackId: string, quality: StreamQuality): Promise<ResolvedAudio> {
     const yt = await getClient();
     let first: MusicError | undefined;
     for (const client of STREAM_CLIENTS) {
       try {
-        return await resolveWith(yt, trackId, client);
+        return await resolveWith(yt, trackId, client, quality);
       } catch (e) {
         const err = classify(e);
         first ??= err;
@@ -123,21 +125,24 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
   }
 
   async function resolveAudio(trackId: string): Promise<ResolvedAudio> {
-    const hit = cache.get(trackId);
-    if (hit && hit.expiresAt > now()) return hit;
-    const running = inflight.get(trackId);
+    const quality = getQuality();
+    const hit = cache.get(quality, trackId);
+    if (hit) return hit;
+    // La clave incluye la calidad: una resolución en curso en Alta no sirve a un pedido en Ahorro.
+    const flightKey = `${quality}:${trackId}`;
+    const running = inflight.get(flightKey);
     if (running) return running;
 
     const job = (async () => {
       try {
         try {
-          return await resolveOnce(trackId);
+          return await resolveOnce(trackId, quality);
         } catch (e) {
           const err = classify(e);
           // Cambios de API / reproductor caducado: se recrea la sesión y se reintenta una vez.
           if (err.code === 'parse' || err.code === 'unknown') {
             resetClient();
-            return await resolveOnce(trackId);
+            return await resolveOnce(trackId, quality);
           }
           throw err;
         }
@@ -145,13 +150,13 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
         throw classify(e);
       }
     })();
-    inflight.set(trackId, job);
+    inflight.set(flightKey, job);
     try {
       const out = await job;
-      cache.set(trackId, out);
+      cache.set(quality, trackId, out);
       return out;
     } finally {
-      inflight.delete(trackId);
+      inflight.delete(flightKey);
     }
   }
 
@@ -249,5 +254,5 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     }
   }
 
-  return { search, getAlbum, getArtist, resolveAudio, invalidate: (id) => void cache.delete(id) };
+  return { search, getAlbum, getArtist, resolveAudio, invalidate: (id) => cache.invalidate(id) };
 }
