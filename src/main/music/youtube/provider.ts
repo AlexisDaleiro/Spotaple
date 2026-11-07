@@ -1,12 +1,12 @@
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js';
-import type { AlbumDetail, ArtistDetail, ArtistRef, RemotePlaylistDetail, SearchResults } from '../../../shared/types';
+import type { AlbumDetail, ArtistDetail, ArtistRef, RemotePlaylistDetail, SearchResults, Track } from '../../../shared/types';
 import type { StreamQuality } from '../../../shared/settings';
 import type { MusicProvider, ResolvedAudio } from '../provider';
 import { createAudioCache, createQualityLock } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
 import { chooseAudioFormat } from './format';
 import { classify, MESSAGES, MusicError, playabilityError, withTimeout } from './errors';
-import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from './mappers';
+import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from './mappers';
 import { collectPlaylistItems, type PlaylistPage } from './playlist';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -293,5 +293,17 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     }
   }
 
-  return { search, getAlbum, getArtist, getPlaylist, resolveAudio, invalidate: (id) => cache.invalidate(id) };
+  /** «Radio» de YouTube Music (`getUpNext` con automix): ~50 canciones, la semilla primero. Sin automix solo trae la semilla. */
+  async function getRadio(videoId: string): Promise<Track[]> {
+    try {
+      const yt = await getClient();
+      const panel: Node = await withTimeout(yt.music.getUpNext(videoId, true), REQUEST_TIMEOUT_MS);
+      const list: Node[] = Array.isArray(panel?.contents) ? panel.contents : [];
+      return list.map((i) => mapPanelTrack(i)).filter((t) => t !== null);
+    } catch (e) {
+      throw classify(e);
+    }
+  }
+
+  return { search, getAlbum, getArtist, getPlaylist, getRadio, resolveAudio, invalidate: (id) => cache.invalidate(id) };
 }

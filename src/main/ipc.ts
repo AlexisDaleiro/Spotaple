@@ -6,7 +6,8 @@ import type { Store } from './db/store';
 import type { MusicProvider } from './music/provider';
 import { classify, MusicError } from './music/youtube/errors';
 import type { JamSession } from './jam/session';
-import { id, int, sanitizePlayerState, sanitizeTrack, str } from './validate';
+import { createRadio } from './music/radio';
+import { id, int, sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack, str } from './validate';
 
 /** Solo la página de la propia app puede invocar el IPC. */
 function trusted(e: IpcMainInvokeEvent, allowedOrigin: string | undefined) {
@@ -24,6 +25,7 @@ export function registerIpc(deps: {
   rendererOrigin?: string;
 }) {
   const { store, provider, jam, onSettings, rendererOrigin } = deps;
+  const radio = createRadio({ source: provider, history: store });
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) => {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<R>> => {
@@ -43,6 +45,10 @@ export function registerIpc(deps: {
   handle(IPC.album, (x: unknown) => provider.getAlbum(id(x)));
   handle(IPC.artist, (x: unknown) => provider.getArtist(id(x)));
   handle(IPC.remotePlaylist, (x: unknown) => provider.getPlaylist(id(x)));
+  handle(IPC.radio, (o: unknown) => {
+    const r = sanitizeRadioRequest(o);
+    return radio.next(r.seed, r.excludeIds);
+  });
   handle(IPC.prepare, async (x: unknown): Promise<PreparedAudio> => {
     const trackId = id(x);
     const a = await provider.resolveAudio(trackId, { newPlay: true });
@@ -69,7 +75,7 @@ export function registerIpc(deps: {
   });
   handle(IPC.recentPlays, (n: unknown) => store.recentPlays(Math.min(100, Math.max(1, int(n)))));
   handle(IPC.recordSelection, (t: unknown) => store.recordSelection(sanitizeTrack(t)));
-  handle(IPC.recordPlay, (t: unknown) => store.recordPlay(sanitizeTrack(t)));
+  handle(IPC.recordPlay, (t: unknown, auto: unknown) => store.recordPlay(sanitizeTrack(t), auto === true));
   handle(IPC.loadPlayerState, () => store.loadPlayerState());
   handle(IPC.savePlayerState, (s: unknown) => store.savePlayerState(sanitizePlayerState(s)));
 

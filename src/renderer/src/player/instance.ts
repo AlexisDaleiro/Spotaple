@@ -34,7 +34,7 @@ export const playerStore = createPlayer({
     prepare: (id) => api.music.prepare(id),
     invalidate: (id) => api.music.invalidate(id),
     recordSelection: (t) => api.library.recordSelection(t),
-    recordPlay: (t) => api.library.recordPlay(t),
+    recordPlay: (t, auto?: boolean) => api.library.recordPlay(t, auto),
   },
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
   // Dentro de una sala, pedir canciones las manda a la sala (ver jam-sync.ts).

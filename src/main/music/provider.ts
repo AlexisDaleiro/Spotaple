@@ -1,4 +1,4 @@
-import type { AlbumDetail, ArtistDetail, RemotePlaylistDetail, SearchResults } from '../../shared/types';
+import type { AlbumDetail, ArtistDetail, RemotePlaylistDetail, SearchResults, Track } from '../../shared/types';
 
 /** Fuente de audio temporal. NUNCA se persiste: la URL caduca y se resuelve de nuevo. */
 export interface ResolvedAudio {
@@ -20,6 +20,8 @@ export interface MusicProvider {
   getArtist(id: string): Promise<ArtistDetail>;
   /** Playlist de YouTube Music con sus canciones (hasta un tope; `truncated` avisa si había más). */
   getPlaylist(id: string): Promise<RemotePlaylistDetail>;
+  /** Canciones sugeridas a partir de una canción («radio»): la propia semilla viene primero. */
+  getRadio(videoId: string): Promise<Track[]>;
   /** `newPlay`: la canción empieza ahora (usa la calidad vigente y la fija para esa reproducción). Sin él, se respeta la fijada. */
   resolveAudio(trackId: string, opts?: { newPlay?: boolean }): Promise<ResolvedAudio>;
   /** Olvida la fuente de audio guardada (la URL dejó de ser válida). */

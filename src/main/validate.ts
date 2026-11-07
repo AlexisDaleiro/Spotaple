@@ -1,5 +1,5 @@
 import { sanitizeTrack } from '../shared/track';
-import type { PersistedPlayerState } from '../shared/types';
+import type { PersistedPlayerState, Track } from '../shared/types';
 import { MusicError } from './music/youtube/errors';
 
 export { sanitizeTrack };
@@ -23,6 +23,13 @@ export const int = (v: unknown): number => {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) throw bad();
   return v;
 };
+
+/** Pedido de radio: la canción semilla y los ids que ya están en la cola (hasta 2000, con el patrón de ids). */
+export function sanitizeRadioRequest(v: unknown): { seed: Track; excludeIds: string[] } {
+  const r = v as { seed?: unknown; excludeIds?: unknown } | null;
+  if (!r || typeof r !== 'object' || !Array.isArray(r.excludeIds) || r.excludeIds.length > 2000) throw bad();
+  return { seed: sanitizeTrack(r.seed), excludeIds: r.excludeIds.map((x) => id(x)) };
+}
 
 export function sanitizePlayerState(v: unknown): PersistedPlayerState {
   const s = v as Partial<PersistedPlayerState> | null;

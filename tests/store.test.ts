@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createStore, type Store } from '../src/main/db/store';
-import { sanitizePlayerState, sanitizeTrack } from '../src/main/validate';
+import { sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack } from '../src/main/validate';
 import { DEFAULT_SETTINGS } from '../src/shared/settings';
 import type { Track } from '../src/shared/types';
 
@@ -139,6 +140,54 @@ describe('persistencia en disco entre sesiones', () => {
   });
 });
 
+describe('historial para la radio', () => {
+  it('recordPlay guarda la marca auto y la afinidad solo cuenta lo que no es automático', () => {
+    store.recordPlay(t(1));
+    store.recordPlay(t(2), true);
+    const { plays } = store.affinityInputs(10);
+    expect(plays).toHaveLength(1);
+    expect(plays[0]!.artists).toEqual(t(1).artists);
+    expect(typeof plays[0]!.playedAt).toBe('number');
+    expect(store.recentPlayIds(10)).toEqual([t(2).id, t(1).id]);
+  });
+
+  it('recentPlayIds devuelve ids distintos, respeta el límite y va de lo más reciente a lo más viejo', () => {
+    store.recordPlay(t(1));
+    store.recordPlay(t(2));
+    store.recordPlay(t(1));
+    expect(store.recentPlayIds(10)).toEqual([t(1).id, t(2).id]);
+    expect(store.recentPlayIds(1)).toEqual([t(1).id]);
+  });
+
+  it('affinityInputs trae las favoritas con sus artistas y respeta el límite de reproducciones', () => {
+    store.toggleFavorite(t(3));
+    for (let n = 1; n <= 5; n++) store.recordPlay(t(n));
+    const a = store.affinityInputs(2);
+    expect(a.favorites).toEqual([{ artists: t(3).artists }]);
+    expect(a.plays).toHaveLength(2);
+  });
+
+  it('una base creada con la migración 1 sube a la 2 sin perder reproducciones', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spotaple-radio-'));
+    const file = join(dir, 'old.db');
+    try {
+      const first = createStore(file);
+      first.recordPlay(t(1));
+      first.close();
+      const raw = new DatabaseSync(file);
+      raw.exec('ALTER TABLE plays DROP COLUMN auto; PRAGMA user_version = 1;');
+      raw.close();
+      const again = createStore(file);
+      expect(again.affinityInputs(10).plays).toHaveLength(1);
+      again.recordPlay(t(2), true);
+      expect(again.recentPlayIds(10)).toEqual([t(2).id, t(1).id]);
+      again.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('ajustes de la app', () => {
   it('una base nueva devuelve los valores por defecto', () => {
     expect(store.getAppSettings()).toEqual(DEFAULT_SETTINGS);
@@ -182,6 +231,14 @@ describe('validación de lo que llega del renderer', () => {
     expect(() => sanitizeTrack(t(1, { artists: Array.from({ length: 30 }, () => ({ name: 'x' })) }))).toThrow();
     expect(() => sanitizeTrack(null)).toThrow();
     expect(() => sanitizeTrack({ ...t(1), title: '' })).toThrow();
+  });
+  it('la petición de radio valida la semilla y los ids a excluir', () => {
+    expect(sanitizeRadioRequest({ seed: t(1), excludeIds: ['abcDEF12345'] })).toEqual({ seed: sanitizeTrack(t(1)), excludeIds: ['abcDEF12345'] });
+    expect(() => sanitizeRadioRequest(null)).toThrow();
+    expect(() => sanitizeRadioRequest({ seed: t(1), excludeIds: 'x' })).toThrow();
+    expect(() => sanitizeRadioRequest({ seed: t(1), excludeIds: Array.from({ length: 2001 }, () => 'abcDEF12345') })).toThrow();
+    expect(() => sanitizeRadioRequest({ seed: t(1), excludeIds: ['../x'] })).toThrow();
+    expect(() => sanitizeRadioRequest({ seed: { id: '../x' }, excludeIds: [] })).toThrow();
   });
   it('el estado del reproductor se acota a rangos válidos', () => {
     const s = sanitizePlayerState({ queue: [t(1)], index: 99, positionSec: -5, volume: 7, muted: 'sí', repeat: 'rara', shuffle: 1 });

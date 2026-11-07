@@ -23,6 +23,7 @@ export const IPC = {
   album: 'music:album',
   artist: 'music:artist',
   remotePlaylist: 'music:remote-playlist',
+  radio: 'music:radio',
   prepare: 'music:prepare',
   invalidate: 'music:invalidate',
   favorites: 'lib:favorites',
@@ -60,6 +61,8 @@ export interface SpotapleApi {
     artist(id: string): Promise<ArtistDetail>;
     /** Playlist de YouTube Music (id tal como lo devuelve la búsqueda). */
     remotePlaylist(id: string): Promise<RemotePlaylistDetail>;
+    /** Canciones sugeridas a partir de `seed`, sin lo que ya está en `excludeIds` ni lo escuchado hace poco. */
+    radio(seed: Track, excludeIds: string[]): Promise<Track[]>;
     /** Resuelve la fuente de audio (si hace falta) y confirma que se puede reproducir. */
     prepare(trackId: string): Promise<PreparedAudio>;
     /** Descarta la fuente guardada: la URL ya no es válida y debe resolverse de nuevo. */
@@ -81,8 +84,8 @@ export interface SpotapleApi {
     recentPlays(limit: number): Promise<Track[]>;
     /** Canción elegida por el usuario (aunque no llegue a sonar). */
     recordSelection(track: Track): Promise<void>;
-    /** Canción que realmente empezó a sonar. */
-    recordPlay(track: Track): Promise<void>;
+    /** Canción que realmente empezó a sonar. `auto`: la puso la radio y avanzó sola (no cuenta como gusto). */
+    recordPlay(track: Track, auto?: boolean): Promise<void>;
   };
   state: {
     load(): Promise<PersistedPlayerState | null>;

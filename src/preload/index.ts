@@ -10,6 +10,7 @@ const bridge: SpotapleBridge = {
     album: (id) => call(IPC.album, id),
     artist: (id) => call(IPC.artist, id),
     remotePlaylist: (id) => call(IPC.remotePlaylist, id),
+    radio: (seed, excludeIds) => call(IPC.radio, { seed, excludeIds }),
     prepare: (id) => call(IPC.prepare, id),
     invalidate: (id) => call(IPC.invalidate, id),
   },
@@ -27,7 +28,7 @@ const bridge: SpotapleBridge = {
     reorderPlaylist: (id, order) => call(IPC.reorderPlaylist, id, order),
     recentPlays: (n) => call(IPC.recentPlays, n),
     recordSelection: (t) => call(IPC.recordSelection, t),
-    recordPlay: (t) => call(IPC.recordPlay, t),
+    recordPlay: (t, auto) => call(IPC.recordPlay, t, auto),
   },
   state: {
     load: () => call(IPC.loadPlayerState),

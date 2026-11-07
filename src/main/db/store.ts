@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings';
+import type { AffinityInputs } from '../music/radio';
 import type {
   PersistedPlayerState,
   PlaylistDetail,
@@ -54,6 +55,10 @@ const MIGRATIONS: string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+  `,
+  // Marca las reproducciones que empezaron solas desde la radio: no cuentan como gusto del usuario.
+  `
+  ALTER TABLE plays ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
   `,
 ];
 
@@ -252,10 +257,11 @@ export function createStore(path: string) {
   }
 
   // ---- historial: lo que sonó vs. lo que solo se eligió
-  function recordPlay(track: Track) {
+  /** `auto`: la puso la radio y avanzó sola (no la eligió el usuario). */
+  function recordPlay(track: Track, auto = false) {
     tx(() => {
       upsertTrack(track);
-      db.prepare('INSERT INTO plays(track_id, played_at) VALUES(?,?)').run(track.id, Date.now());
+      db.prepare('INSERT INTO plays(track_id, played_at, auto) VALUES(?,?,?)').run(track.id, Date.now(), auto ? 1 : 0);
     });
   }
   function recordSelection(track: Track) {
@@ -274,6 +280,22 @@ export function createStore(path: string) {
         )
         .all(limit) as Row[]
     ).map(rowToTrack);
+  }
+  /** Ids distintos de las últimas reproducciones (automáticas o no), la más reciente primero. */
+  function recentPlayIds(limit: number): string[] {
+    return (db.prepare('SELECT track_id FROM plays GROUP BY track_id ORDER BY MAX(id) DESC LIMIT ?').all(limit) as Row[]).map((r) => String(r.track_id));
+  }
+  /** Lo que usa la radio para medir afinidad por artista: reproducciones NO automáticas (las últimas `limit`) y favoritas. */
+  function affinityInputs(limit: number): AffinityInputs {
+    const artists = (r: Row) => JSON.parse(String(r.artists)) as Track['artists'];
+    const plays = db
+      .prepare('SELECT t.artists AS artists, p.played_at AS played_at FROM plays p JOIN tracks t ON t.id = p.track_id WHERE p.auto = 0 ORDER BY p.id DESC LIMIT ?')
+      .all(limit) as Row[];
+    const favorites = db.prepare('SELECT t.artists AS artists FROM favorites f JOIN tracks t ON t.id = f.track_id').all() as Row[];
+    return {
+      plays: plays.map((r) => ({ artists: artists(r), playedAt: Number(r.played_at) })),
+      favorites: favorites.map((r) => ({ artists: artists(r) })),
+    };
   }
   function selectionCount(): number {
     return Number((db.prepare('SELECT COUNT(*) AS n FROM selections').get() as Row).n);
@@ -351,6 +373,8 @@ export function createStore(path: string) {
     setSetting,
     loadPlayerState,
     savePlayerState,
+    recentPlayIds,
+    affinityInputs,
     getAppSettings,
     setAppSettings,
     close: () => db.close(),
