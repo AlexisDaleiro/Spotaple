@@ -16,6 +16,8 @@ export interface AppSettings {
   streamQuality: StreamQuality;
   /** Al abrir la app, retoma la canción que había en pausa. */
   resumeOnOpen: boolean;
+  /** Cuando quedan pocas canciones por sonar, la cola se rellena sola con una «radio» de la canción actual. */
+  radio: boolean;
   /** Nombre por defecto en las salas. Vive en la clave `jam_name` de la tabla `settings`. */
   jamName: string;
 }
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reduceMotion: false,
   streamQuality: 'high',
   resumeOnOpen: false,
+  radio: true,
   jamName: '',
 };
 
@@ -89,6 +92,9 @@ export function parseSettings(raw: unknown): Partial<AppSettings> {
 
   const resume = get('resumeOnOpen');
   if (typeof resume === 'boolean') out.resumeOnOpen = resume;
+
+  const radio = get('radio');
+  if (typeof radio === 'boolean') out.radio = radio;
 
   const jamName = get('jamName');
   if (jamName === '') out.jamName = '';

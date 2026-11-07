@@ -167,6 +167,12 @@ export function SettingsPage() {
       </Group>
 
       <Group title="Reproducción">
+        <Toggle
+          label="Radio automática"
+          hint="Cuando se acaba lo que hay en la cola, sigue sola con canciones del mismo artista y de otros parecidos. Con la radio activada, tocar una canción suelta en la búsqueda suena sola y sigue la radio. Apagada, la reproducción se detiene al terminar la cola."
+          on={s.radio}
+          onChange={(radio) => set({ radio })}
+        />
         <Toggle label="Reanudar al abrir la app" hint="Al abrir Spotaple, la canción que estaba en pausa sigue sonando donde la dejaste." on={s.resumeOnOpen} onChange={(resumeOnOpen) => set({ resumeOnOpen })} />
       </Group>
 

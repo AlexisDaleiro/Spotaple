@@ -9,7 +9,7 @@ describe('parseSettings', () => {
   });
 
   it('descarta todo lo inválido o desconocido', () => {
-    const junk = { theme: 'neon', accent: 'red', textScale: 99, density: 'x', reduceMotion: 'yes', streamQuality: 'ultra', resumeOnOpen: 1, jamName: 42, extra: true };
+    const junk = { theme: 'neon', accent: 'red', textScale: 99, density: 'x', reduceMotion: 'yes', streamQuality: 'ultra', resumeOnOpen: 1, jamName: 42, radio: 'yes', extra: true };
     expect(parseSettings(junk)).toEqual({});
   });
 
@@ -31,6 +31,12 @@ describe('parseSettings', () => {
     expect(parseSettings([])).toEqual({});
     expect(parseSettings(JSON.parse('{"__proto__":{"theme":"claro"}}'))).toEqual({});
     expect(({} as { theme?: string }).theme).toBeUndefined();
+  });
+
+  it('radio solo acepta booleanos', () => {
+    expect(parseSettings({ radio: false })).toEqual({ radio: false });
+    expect(parseSettings({ radio: true })).toEqual({ radio: true });
+    expect(parseSettings({ radio: 'no' })).toEqual({});
   });
 
   it('textScale solo acepta los valores de TEXT_SCALES', () => {
@@ -69,6 +75,10 @@ describe('THEMES y valores por defecto', () => {
       expect(t.symbol).toMatch(/^#[0-9a-f]{6}$/);
       expect(t.accentBg).toMatch(/^#[0-9a-f]{6}$/);
     }
+  });
+
+  it('la radio automática viene activada', () => {
+    expect(DEFAULT_SETTINGS.radio).toBe(true);
   });
 
   it('el tema por defecto conserva el aspecto actual (grafito)', () => {
