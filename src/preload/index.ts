@@ -32,6 +32,10 @@ const bridge: SpotapleBridge = {
     load: () => call(IPC.loadPlayerState),
     save: (s) => call(IPC.savePlayerState, s),
   },
+  settings: {
+    get: () => call(IPC.settingsGet),
+    set: (patch) => call(IPC.settingsSet, patch),
+  },
   jam: {
     create: (o) => call(IPC.jamCreate, o),
     join: (o) => call(IPC.jamJoin, o),

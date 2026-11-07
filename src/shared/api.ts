@@ -10,6 +10,7 @@ import type {
   Track,
 } from './types';
 import type { JamView } from './jam/types';
+import type { AppSettings } from './settings';
 
 /** Esquema de la URL que sirve el audio. El renderer solo conoce el videoId. */
 export const AUDIO_SCHEME = 'spotaple-audio';
@@ -38,6 +39,8 @@ export const IPC = {
   recordPlay: 'lib:record-play',
   loadPlayerState: 'state:load',
   savePlayerState: 'state:save',
+  settingsGet: 'settings:get',
+  settingsSet: 'settings:set',
   jamCreate: 'jam:create',
   jamJoin: 'jam:join',
   jamLeave: 'jam:leave',
@@ -80,6 +83,11 @@ export interface SpotapleApi {
   state: {
     load(): Promise<PersistedPlayerState | null>;
     save(state: PersistedPlayerState): Promise<void>;
+  };
+  settings: {
+    get(): Promise<AppSettings>;
+    /** Aplica un parche parcial; main descarta lo inválido y devuelve los ajustes completos. */
+    set(patch: Partial<AppSettings>): Promise<AppSettings>;
   };
   jam: {
     /** Crea una sala (local o por internet) y queda como admin. Lanza `Error` con un mensaje listo para mostrar. */

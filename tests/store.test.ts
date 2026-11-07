@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createStore, type Store } from '../src/main/db/store';
 import { sanitizePlayerState, sanitizeTrack } from '../src/main/validate';
+import { DEFAULT_SETTINGS } from '../src/shared/settings';
 import type { Track } from '../src/shared/types';
 
 const t = (n: number, extra: Partial<Track> = {}): Track => ({
@@ -135,6 +136,38 @@ describe('persistencia en disco entre sesiones', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('ajustes de la app', () => {
+  it('una base nueva devuelve los valores por defecto', () => {
+    expect(store.getAppSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('guarda jamName en la clave jam_name y el resto en app_settings', () => {
+    const next = store.setAppSettings({ theme: 'claro', jamName: 'Ale' });
+    expect(next).toMatchObject({ theme: 'claro', jamName: 'Ale' });
+    expect(store.getSetting('jam_name')).toBe('Ale');
+    const blob = store.getSetting<Record<string, unknown>>('app_settings');
+    expect(blob).toMatchObject({ theme: 'claro' });
+    expect(blob).not.toHaveProperty('jamName');
+  });
+
+  it('lee el nombre que la sala ya guardó en jam_name', () => {
+    store.setSetting('jam_name', 'Ale');
+    expect(store.getAppSettings().jamName).toBe('Ale');
+  });
+
+  it('un JSON corrupto conserva lo válido y usa los valores por defecto en el resto', () => {
+    store.setSetting('app_settings', { theme: 'neon', textScale: 99, density: 'compact' });
+    expect(store.getAppSettings()).toEqual({ ...DEFAULT_SETTINGS, density: 'compact' });
+  });
+
+  it('un parche inválido no cambia nada', () => {
+    store.setAppSettings({ theme: 'oceano' });
+    const after = store.setAppSettings({ theme: 'neon' } as never);
+    expect(after.theme).toBe('oceano');
+    expect(store.getAppSettings().theme).toBe('oceano');
   });
 });
 

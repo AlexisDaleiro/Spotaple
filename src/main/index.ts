@@ -85,7 +85,7 @@ app.whenReady().then(() => {
     relayUrl: process.env['SPOTAPLE_JAM_RELAY'] ?? JAM_RELAY_URL,
     emit: (view) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.jamState, view)),
   });
-  registerIpc({ store, provider, jam, rendererOrigin: rendererUrl });
+  registerIpc({ store, provider, jam, onSettings: () => undefined, rendererOrigin: rendererUrl });
 
   createWindow();
   app.on('activate', () => {

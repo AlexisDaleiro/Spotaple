@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../shared/api';
+import { parseSettings, type AppSettings } from '../shared/settings';
 import type { IpcResult, PreparedAudio } from '../shared/types';
 import type { Store } from './db/store';
 import type { MusicProvider } from './music/provider';
@@ -14,8 +15,15 @@ function trusted(e: IpcMainInvokeEvent, allowedOrigin: string | undefined) {
   if (!ok) throw new MusicError('unknown', 'Origen no autorizado.');
 }
 
-export function registerIpc(deps: { store: Store; provider: MusicProvider; jam: JamSession; rendererOrigin?: string }) {
-  const { store, provider, jam, rendererOrigin } = deps;
+export function registerIpc(deps: {
+  store: Store;
+  provider: MusicProvider;
+  jam: JamSession;
+  /** Se llama con los ajustes completos después de cada cambio (p. ej. para recolorear la ventana). */
+  onSettings: (settings: AppSettings) => void;
+  rendererOrigin?: string;
+}) {
+  const { store, provider, jam, onSettings, rendererOrigin } = deps;
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) => {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<R>> => {
@@ -63,6 +71,13 @@ export function registerIpc(deps: { store: Store; provider: MusicProvider; jam: 
   handle(IPC.recordPlay, (t: unknown) => store.recordPlay(sanitizeTrack(t)));
   handle(IPC.loadPlayerState, () => store.loadPlayerState());
   handle(IPC.savePlayerState, (s: unknown) => store.savePlayerState(sanitizePlayerState(s)));
+
+  handle(IPC.settingsGet, () => store.getAppSettings());
+  handle(IPC.settingsSet, (patch: unknown) => {
+    const next = store.setAppSettings(parseSettings(patch));
+    onSettings(next);
+    return next;
+  });
 
   // Jam: el nombre y los mensajes de sala se validan dentro de la sesión; aquí solo la forma de los argumentos.
   handle(IPC.jamCreate, (o: unknown) => {

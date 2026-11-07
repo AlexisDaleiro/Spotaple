@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings';
 import type {
   PersistedPlayerState,
   PlaylistDetail,
@@ -297,6 +298,27 @@ export function createStore(path: string) {
       JSON.stringify(value),
     );
   }
+  /** Ajustes de la app. `jamName` vive en la clave `jam_name` (la sala ya la usa); el resto, en un solo JSON. */
+  const APP_SETTINGS_KEY = 'app_settings';
+  function getAppSettings(): AppSettings {
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parseSettings(getSetting(APP_SETTINGS_KEY)),
+      jamName: parseSettings({ jamName: getSetting('jam_name') }).jamName ?? DEFAULT_SETTINGS.jamName,
+    };
+  }
+  function setAppSettings(patch: Partial<AppSettings>): AppSettings {
+    const { jamName, ...rest } = parseSettings(patch);
+    tx(() => {
+      if (jamName !== undefined) setSetting('jam_name', jamName);
+      if (Object.keys(rest).length) {
+        const blob = parseSettings(getSetting(APP_SETTINGS_KEY));
+        delete blob.jamName;
+        setSetting(APP_SETTINGS_KEY, { ...blob, ...rest });
+      }
+    });
+    return getAppSettings();
+  }
   function loadPlayerState(): PersistedPlayerState | null {
     return getSetting<PersistedPlayerState>(PLAYER_STATE_KEY);
   }
@@ -329,6 +351,8 @@ export function createStore(path: string) {
     setSetting,
     loadPlayerState,
     savePlayerState,
+    getAppSettings,
+    setAppSettings,
     close: () => db.close(),
   };
 }
