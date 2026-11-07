@@ -85,6 +85,16 @@ await page.waitForSelector('.hero__title');
 await page.waitForSelector('.tracklist__body .row');
 await audit('Página de álbum');
 
+// Playlists de YouTube Music: pestaña de resultados y página de una playlist.
+await page.locator('input[aria-label^="Buscar"]').fill('Daft Punk');
+await page.locator('.tab', { hasText: 'Playlists' }).click();
+await page.waitForSelector('.card');
+await audit('Resultados con playlists');
+await page.locator('.card__body').first().click();
+await page.waitForSelector('.hero__title');
+await page.waitForSelector('.tracklist__body .row', { timeout: 30000 });
+await audit('Página de playlist (YouTube)');
+
 await page.locator('.nav-item[title="Jam"]').click();
 await page.waitForSelector('.jam-card');
 await audit('Jam (sin sala)');

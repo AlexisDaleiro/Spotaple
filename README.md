@@ -24,7 +24,7 @@ La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple
 ## Qué incluye
 
 - **Inicio** con lo que escuchaste, tus favoritas y tus playlists; estado vacío con sugerencias de búsqueda.
-- **Búsqueda** de canciones, artistas y álbumes (en paralelo, con resultados parciales si una parte falla).
+- **Búsqueda** de canciones, artistas, álbumes y playlists de YouTube Music (en paralelo, con resultados parciales si una parte falla). Una playlist se abre en su página, se reproduce entera, se agrega a la cola o se guarda como playlist propia con «Guardar en mi biblioteca».
 - **Álbum y artista** con portada, canciones y discografía. "Reproducir desde esta canción" y "Agregar a la cola" son acciones distintas y visibles.
 - **Biblioteca**: favoritos e historial (solo lo que *empezó a sonar*).
 - **Playlists**: crear, renombrar, agregar y quitar canciones, reordenar (arrastrando o por menú) y eliminar con confirmación cuando tiene contenido.
@@ -104,6 +104,7 @@ Verificado contra `youtubei.js` 18.3.0 (noviembre de 2026):
 - **Token de origen (PO token).** Con la mayoría de los clientes de InnerTube (`YTMUSIC`, `ANDROID_VR`, `IOS`, `TV_SIMPLY`), googlevideo responde **403 pasado ~1 MiB**, lo que cortaría cada canción a los ~65 s. Hoy solo el cliente **`VISIONOS`** entrega el archivo completo sin token. La app lo comprueba de verdad antes de usar una fuente (pide un byte del medio) y prueba los clientes en orden; si ninguno sirve, muestra un error claro.
 - **Puede dejar de funcionar.** Si YouTube cambia ese comportamiento, la reproducción se corta hasta actualizar `youtubei.js` o aportar un PO token (opción `po_token` de `Innertube.create`, ver la [guía](https://ytjs.dev/guide/getting-started)). Para diagnosticarlo: `npm run check:youtube` muestra qué clientes siguen sirviendo audio completo.
 - **Datos incompletos.** La página de un artista no informa duraciones; el tema de un álbum llega sin portada ni artista (se completan desde el álbum). Si falta la duración, la fila queda en blanco y se completa al reproducir.
+- **Playlists de YouTube.** Se muestran hasta 200 canciones, con aviso si hay más. La búsqueda no informa cuántas canciones tiene cada una y la cabecera de la playlist no trae al autor: solo se ve cuando se llega desde una tarjeta de la búsqueda. Los videos de canal (que llegan sin ficha de canción) también se reproducen; los privados o eliminados se omiten.
 - **Contenido no disponible** (borrado, privado, restringido por región) se informa con un mensaje claro; en una cola se salta a la siguiente, con un tope de 3 saltos seguidos.
 - MusicBrainz y Discogs no se usan: no apareció ninguna necesidad que YouTube.js no resuelva.
 
@@ -153,7 +154,7 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 
 ## Pruebas
 
-**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js, el aislamiento del evaluador, el modo Jam (motor de sala, protocolo, reloj, servidores, cliente, sesión y conductor del reproductor), los ajustes (validación, guardado, acento derivado y aplicación al documento) y la calidad de streaming (formato elegido y caché por calidad).
+**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js, el aislamiento del evaluador, el modo Jam (motor de sala, protocolo, reloj, servidores, cliente, sesión y conductor del reproductor), los ajustes (validación, guardado, acento derivado y aplicación al documento), la calidad de streaming (formato elegido y caché por calidad) y las playlists de YouTube (mapeo de ítems de tipo desconocido y carga por páginas con tope).
 
 **Reales** (contra YouTube; requieren internet y `npm run build`):
 
@@ -161,8 +162,9 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 |---|---|
 | `npm run e2e` | abrir → buscar → **reproducir de verdad** → pausa/continuar → saltar de posición → cola → navegar → minimizar → playlist y favoritos → cerrar y reabrir → tamaños de ventana. `SPOTAPLE_EXE=ruta\Spotaple.exe` lo prueba sobre la versión empaquetada. |
 | `npm run e2e:ui` | artista, álbum, menú, atajos, arrastrar la cola, diálogos, uso del proxy configurado, recuperación ante caídas de red (el proxy se corta) y contenido inexistente. |
-| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales (incluidas las del Jam y Ajustes; Inicio y Ajustes también con cada tema). |
+| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales (incluidas las del Jam, Ajustes y una playlist de YouTube; Inicio y Ajustes también con cada tema). |
 | `npm run e2e:settings` | Ajustes de verdad: cambiar de tema (y el color de la barra de título nativa), acento, texto, densidad y animaciones; persistencia al cerrar y reabrir; ajustes corruptos en la base; con internet, «Reanudar al abrir» y que «Ahorro de datos» baje un formato más liviano (`NO_NETWORK=1` salta ese paso). |
+| `npm run e2e:playlists` | playlists de la búsqueda: pestaña y tarjetas, abrir una, reproducirla entera (la cola trae todas), una lista de videos de canal y guardarla como playlist propia con doble clic (se crea una sola). |
 | `npm run e2e:jam` | dos instancias de Electron (admin y miembro) con música real: crear sala y unirse, pedir canciones, like, saltar, pasar a "Todas" y comprobar la sincronía, cerrar y reabrir, y lo mismo por la interfaz. `JAM_KIND=internet` con `SPOTAPLE_JAM_RELAY=ws://127.0.0.1:8788` lo prueba contra un relé (`npm run relay:node -- 8788` o `wrangler dev`); `E2E_VERBOSE=1` muestra qué ve cada app si un paso falla. |
 | `npm run check:youtube` | qué clientes de YouTube entregan hoy el audio completo. |
 | `npm run check:jam` | si dos PCs (o esta y el relé) pueden hablarse por WebSocket: `listen`, `connect <ip>:<puerto>` y `url <ws://…>`. |

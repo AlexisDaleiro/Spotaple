@@ -17,6 +17,7 @@
     "e2e": "node scripts/e2e.mjs",
     "e2e:ui": "node scripts/e2e-ui.mjs",
     "e2e:settings": "node scripts/e2e-settings.mjs",
+    "e2e:playlists": "node scripts/e2e-playlists.mjs",
     "a11y": "node scripts/a11y.mjs",
     "check:youtube": "node scripts/probe.mjs",
     "pack": "electron-vite build && electron-builder --dir",
