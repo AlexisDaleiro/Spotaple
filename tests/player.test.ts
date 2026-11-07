@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PersistedPlayerState, PreparedAudio, Track } from '../src/shared/types';
-import { createPlayer, type AudioLike, type PlayerApi } from '../src/renderer/src/player/player';
+import { createPlayer, type AudioLike, type PlayerApi, type PlayerDeps, type RadioHook } from '../src/renderer/src/player/player';
 
 /** Audio simulado: reproduce eventos como lo haría un HTMLAudioElement. */
 class FakeAudio extends EventTarget implements AudioLike {
@@ -40,7 +40,7 @@ const tracks = (n: number) => Array.from({ length: n }, (_, i) => track(i));
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const ok = (id: string): PreparedAudio => ({ trackId: id, mimeType: 'audio/webm' });
 
-function setup(prepare?: PlayerApi['prepare']) {
+function setup(prepare?: PlayerApi['prepare'], extra: Partial<PlayerDeps> = {}) {
   const audio = new FakeAudio();
   const api = {
     prepare: vi.fn(prepare ?? (async (id: string) => ok(id))),
@@ -49,7 +49,7 @@ function setup(prepare?: PlayerApi['prepare']) {
     recordPlay: vi.fn(async () => undefined),
   };
   const notify = vi.fn();
-  const store = createPlayer({ audio, api, notify, urlFor: (id) => `test://${id}` });
+  const store = createPlayer({ audio, api, notify, urlFor: (id) => `test://${id}`, ...extra });
   return { audio, api, notify, store, s: () => store.getState() };
 }
 
@@ -59,6 +59,144 @@ const deferred = <T>() => {
   const promise = new Promise<T>((res, rej) => ((resolve = res), (reject = rej)));
   return { promise, resolve, reject };
 };
+
+describe('radio automática', () => {
+  const batch = (n: number, from = 100) => Array.from({ length: n }, (_, i) => track(from + i));
+  const radioOf = (result: () => Promise<Track[]>, on = true) => ({ enabled: () => on, fetch: vi.fn(async (_seed: Track, _ids: string[]) => result()) }) satisfies RadioHook;
+  const saved = (queue: Track[]): PersistedPlayerState => ({ queue, index: 0, positionSec: 0, volume: 0.8, muted: false, repeat: 'off', shuffle: false });
+
+  it('con la radio activa, al empezar una canción suelta se piden sugerencias y se agregan marcadas', async () => {
+    const radio = radioOf(async () => batch(5));
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+    expect(radio.fetch).toHaveBeenCalledWith(track(0), [track(0).id]);
+    expect(s().items).toHaveLength(6);
+    expect(s().items[0]!.auto).toBeUndefined();
+    expect(s().items.slice(1).every((i) => i.auto === true)).toBe(true);
+  });
+
+  it('no pide si quedan 3 o más por sonar, y sí cuando quedan menos', async () => {
+    const lots = radioOf(async () => batch(2));
+    const a = setup(undefined, { radio: lots });
+    a.s().playTracks(tracks(5), 0);
+    await flush();
+    expect(lots.fetch).not.toHaveBeenCalled();
+
+    const few = radioOf(async () => batch(2));
+    const b = setup(undefined, { radio: few });
+    b.s().playTracks(tracks(3), 1);
+    await flush();
+    expect(few.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('no pide con la radio apagada, con repetir toda la cola o una, ni dentro de una sala', async () => {
+    const off = radioOf(async () => batch(2), false);
+    setup(undefined, { radio: off }).s().playTracks([track(0)], 0);
+    await flush();
+    expect(off.fetch).not.toHaveBeenCalled();
+
+    const looping = radioOf(async () => batch(2));
+    const r = setup(undefined, { radio: looping });
+    r.s().cycleRepeat(); // todo
+    r.s().playTracks([track(0)], 0);
+    await flush();
+    r.s().cycleRepeat(); // una
+    r.s().playTracks([track(1)], 0);
+    await flush();
+    expect(looping.fetch).not.toHaveBeenCalled();
+
+    const inRoom = radioOf(async () => batch(2));
+    const j = setup(undefined, { radio: inRoom, jam: { active: () => true, request: vi.fn() } });
+    j.s().hydrate(saved([track(0)]));
+    j.s().togglePlay();
+    await flush();
+    expect(inRoom.fetch).not.toHaveBeenCalled();
+  });
+
+  it('una sola petición a la vez y no reintenta tras un fallo hasta que cambia la canción', async () => {
+    const radio = radioOf(async () => {
+      throw new Error('boom');
+    });
+    const { s, notify } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledTimes(1);
+
+    s().playIndex(0); // la misma canción otra vez: sigue bloqueada
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+
+    s().addToQueue([track(1)]);
+    s().next(); // otra canción: se vuelve a intentar
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('un error de red y una respuesta vacía son silenciosos', async () => {
+    const net = radioOf(async () => {
+      throw Object.assign(new Error('sin red'), { code: 'network' });
+    });
+    const a = setup(undefined, { radio: net });
+    a.s().playTracks([track(0)], 0);
+    await flush();
+    expect(net.fetch).toHaveBeenCalledTimes(1);
+    expect(a.notify).not.toHaveBeenCalled();
+
+    const empty = radioOf(async () => []);
+    const b = setup(undefined, { radio: empty });
+    b.s().playTracks([track(0)], 0);
+    await flush();
+    expect(b.notify).not.toHaveBeenCalled();
+    expect(b.s().items).toHaveLength(1);
+  });
+
+  it('descarta lo que ya está en la cola cuando la respuesta llega tarde', async () => {
+    const late = deferred<Track[]>();
+    const radio = radioOf(() => late.promise);
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    s().addToQueue([track(100)]); // se agrega mientras la radio todavía piensa
+    late.resolve([track(100), track(101)]);
+    await flush();
+    expect(s().items.map((i) => i.track.id)).toEqual([track(0).id, track(100).id, track(101).id]);
+  });
+
+  it('«Limpiar» la cola no dispara un relleno inmediato', async () => {
+    const radio = radioOf(async () => batch(4));
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+    s().clearUpcoming();
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+    expect(s().items).toHaveLength(1);
+  });
+
+  it('recordPlay recibe auto solo si el ítem vino de la radio y avanzó solo', async () => {
+    const radio = radioOf(async () => batch(3));
+    const { s, audio, api } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(api.recordPlay).toHaveBeenLastCalledWith(track(0), false); // la eligió el usuario
+
+    audio.ended(); // avanza sola a la primera de la radio
+    await flush();
+    expect(api.recordPlay).toHaveBeenLastCalledWith(track(100), true);
+
+    s().next(); // «siguiente» es una acción del usuario
+    await flush();
+    expect(api.recordPlay).toHaveBeenLastCalledWith(track(101), false);
+
+    s().playIndex(3); // elegida a mano
+    await flush();
+    expect(api.recordPlay).toHaveBeenLastCalledWith(track(102), false);
+  });
+});
 
 describe('estados de reproducción', () => {
   it('idle → loading → playing, y registra selección y reproducción real una sola vez', async () => {
@@ -101,7 +239,7 @@ describe('estados de reproducción', () => {
     await flush();
     expect(s().items[0]!.track.durationSec).toBe(241);
     expect(s().duration).toBe(241);
-    expect(api.recordPlay).toHaveBeenCalledWith(expect.objectContaining({ id: track(0).id, durationSec: 241 }));
+    expect(api.recordPlay).toHaveBeenCalledWith(expect.objectContaining({ id: track(0).id, durationSec: 241 }), false);
   });
 
   it('seleccionar sin que suene no cuenta como reproducción', async () => {
@@ -126,7 +264,7 @@ describe('la última elección gana', () => {
     expect(audio.src).toBe('test://track000002');
     expect(s().index).toBe(2);
     expect(api.recordPlay).toHaveBeenCalledTimes(1);
-    expect(api.recordPlay).toHaveBeenCalledWith(track(2));
+    expect(api.recordPlay).toHaveBeenCalledWith(track(2), false);
   });
 
   it('elegir rápido varias seguidas termina en la última', async () => {

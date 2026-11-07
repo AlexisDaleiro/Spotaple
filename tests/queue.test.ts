@@ -21,6 +21,15 @@ const titles = (s: QueueState) => s.items.map((i) => i.track.title);
 /** Generador pseudoaleatorio determinista para pruebas. */
 const seeded = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 
+describe('makeItems', () => {
+  it('marca como auto las canciones que puso la radio y no agrega la propiedad al resto', () => {
+    const auto = makeItems([track(1), track(2)], true);
+    expect(auto.every((i) => i.auto === true)).toBe(true);
+    const normal = makeItems([track(1)]);
+    expect('auto' in normal[0]!).toBe(false);
+  });
+});
+
 describe('nextIndex / prevIndex', () => {
   it('avanza y se detiene al final cuando no hay repetición', () => {
     expect(nextIndex(3, 0, 'off', true)).toBe(1);

@@ -4,6 +4,8 @@ import type { RepeatMode, Track } from '@shared/types';
 export interface QueueItem {
   uid: string;
   track: Track;
+  /** La agregó la radio automática (no el usuario). */
+  auto?: boolean;
 }
 
 export interface QueueState {
@@ -15,8 +17,8 @@ export interface QueueState {
 }
 
 let counter = 0;
-export const newItem = (track: Track): QueueItem => ({ uid: `q${++counter}`, track });
-export const makeItems = (tracks: Track[]): QueueItem[] => tracks.map(newItem);
+export const newItem = (track: Track, auto = false): QueueItem => ({ uid: `q${++counter}`, track, ...(auto ? { auto: true } : {}) });
+export const makeItems = (tracks: Track[], auto = false): QueueItem[] => tracks.map((t) => newItem(t, auto));
 
 export function shuffled<T>(arr: T[], rand: () => number = Math.random): T[] {
   const a = [...arr];

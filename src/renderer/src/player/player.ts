@@ -41,7 +41,8 @@ export interface PlayerApi {
   prepare(trackId: string): Promise<PreparedAudio>;
   invalidate(trackId: string): Promise<void>;
   recordSelection(track: Track): Promise<void>;
-  recordPlay(track: Track): Promise<void>;
+  /** `auto`: la canción la puso la radio y avanzó sola (no la eligió el usuario). */
+  recordPlay(track: Track, auto?: boolean): Promise<void>;
 }
 
 /**
@@ -53,10 +54,20 @@ export interface JamHook {
   request(tracks: Track[], how: 'end' | 'next' | 'now'): void;
 }
 
+/**
+ * Radio automática: cuando quedan pocas canciones por sonar, el reproductor pide sugerencias a partir de la
+ * canción actual (`excludeIds` = lo que ya está en la cola). `enabled` lee el ajuste en cada decisión.
+ */
+export interface RadioHook {
+  enabled(): boolean;
+  fetch(seed: Track, excludeIds: string[]): Promise<Track[]>;
+}
+
 export interface PlayerDeps {
   audio: AudioLike;
   api: PlayerApi;
   jam?: JamHook;
+  radio?: RadioHook;
   notify?: (message: string, kind?: 'info' | 'error') => void;
   urlFor?: (trackId: string) => string;
 }
@@ -102,6 +113,8 @@ export interface PlayerActions {
 export type PlayerStore = ReturnType<typeof createPlayer>;
 
 const MAX_AUTO_SKIPS = 3;
+/** La radio se pide cuando quedan menos de tantas canciones por sonar. */
+const RADIO_REFILL_BELOW = 3;
 const RESTART_THRESHOLD_S = 3;
 
 const isAbort = (e: unknown) => (e as { name?: string })?.name === 'AbortError';
@@ -111,6 +124,7 @@ export function createPlayer(deps: PlayerDeps) {
   const urlFor = deps.urlFor ?? audioUrl;
   const notify = deps.notify ?? (() => undefined);
   const jam = deps.jam;
+  const radio = deps.radio;
 
   const store = createStore<PlayerState & PlayerActions>((set, get) => {
     // --- estado interno de la "única instancia responsable de la reproducción"
@@ -120,6 +134,9 @@ export function createPlayer(deps: PlayerDeps) {
     let recordedFor: string | null = null; // ítem ya registrado en "sonó"
     let retriedUid: string | null = null;
     let autoSkips = 0;
+    let radioBusy = false; // hay un pedido de radio en curso
+    let radioBlockedUid: string | null = null; // canción para la que la radio falló o no dio nada: no se reintenta
+    let playedAuto = false; // la reproducción en curso la puso la radio y avanzó sola
 
     const cur = (): QueueItem | undefined => get().items[get().index];
     const quiet = (p: Promise<unknown>) => void p.catch(() => undefined);
@@ -128,6 +145,37 @@ export function createPlayer(deps: PlayerDeps) {
       audio.volume = volume * volume; // curva perceptual: el volumen se oye más natural que lineal
       audio.muted = muted;
     };
+
+    /**
+     * Radio automática: si quedan menos de 3 por sonar, la radio está activada, no hay sala ni repetición, y no hay un
+     * pedido en curso ni falló ya para esta canción, pide sugerencias y las agrega al final marcadas como `auto`.
+     */
+    function maybeRefill() {
+      const item = cur();
+      const s = get();
+      if (!radio || !item || !radio.enabled() || jam?.active() || s.repeat !== 'off') return;
+      if (s.items.length - s.index - 1 >= RADIO_REFILL_BELOW || radioBusy || radioBlockedUid === item.uid) return;
+      radioBusy = true;
+      radio.fetch(item.track, s.items.map((i) => i.track.id)).then(
+        (tracks) => {
+          radioBusy = false;
+          if (jam?.active() || !radio.enabled()) return; // cambió el contexto mientras llegaba
+          const have = new Set(get().items.map((i) => i.track.id));
+          const fresh = tracks.filter((t) => !have.has(t.id)); // la cola pudo cambiar mientras tanto
+          if (!fresh.length) {
+            radioBlockedUid = item.uid;
+            return;
+          }
+          commit(append(qs(), makeItems(fresh, true)));
+        },
+        (e) => {
+          radioBusy = false;
+          radioBlockedUid = item.uid;
+          // Sin internet no hay nada que avisar: la cola simplemente termina.
+          if ((e as { code?: string } | null)?.code !== 'network') notify('No pudimos sumar canciones sugeridas.');
+        },
+      );
+    }
 
     function patchDuration(uid: string, durationSec: number) {
       const patch = (list: QueueItem[]) => list.map((i) => (i.uid === uid ? { ...i, track: { ...i.track, durationSec } } : i));
@@ -163,6 +211,8 @@ export function createPlayer(deps: PlayerDeps) {
       loadedUid = null;
       set({ index, status: 'loading', error: null, position: opts.startAt ?? 0, duration: item.track.durationSec ?? 0 });
       audio.pause(); // lo que sonaba se corta ya; la elección nueva no espera
+      playedAuto = item.auto === true && !opts.user;
+      maybeRefill();
       if (opts.user) quiet(api.recordSelection(item.track));
 
       let prepared: PreparedAudio;
@@ -214,7 +264,7 @@ export function createPlayer(deps: PlayerDeps) {
       autoSkips = 0;
       if (recordedFor !== item.uid) {
         recordedFor = item.uid; // empezó a sonar de verdad
-        quiet(api.recordPlay(item.track));
+        quiet(api.recordPlay(item.track, playedAuto));
       }
     });
     on('pause', () => {
