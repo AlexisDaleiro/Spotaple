@@ -36,7 +36,8 @@ interface CardProps {
 export function MediaCard({ cover, name, subtitle, round, onOpen, onPlay, onContextMenu, coverNode }: CardProps) {
   return (
     <div className="card" onContextMenu={onContextMenu}>
-      <button type="button" className="card__body" onClick={onOpen} aria-label={`${name}. ${subtitle}`}>
+      {/* Sin aria-label: el nombre sale del contenido (título y subtítulo). Un aria-label con otro separador no contiene el texto visible. */}
+      <button type="button" className="card__body" onClick={onOpen}>
         <span className="card__cover">{coverNode ?? <Cover src={cover} size="fill" round={round} label={name} />}</span>
         <span className="card__title">{name}</span>
         <span className="card__sub">{subtitle}</span>
