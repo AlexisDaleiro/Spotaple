@@ -59,6 +59,10 @@ await page.locator('button[aria-label="Mostrar la cola"]').click();
 await page.waitForSelector('.queue .qrow');
 await audit('Búsqueda + cola + reproduciendo');
 
+// La radio automática rellena la cola sola: con el separador a la vista, se audita de nuevo.
+await page.waitForSelector('.queue__divider', { timeout: 30000 });
+await audit('Cola con radio automática');
+
 // Tema claro con un acento claro (Amarillo) y una canción sonando: el acento también es texto e icono y tiene que leerse (AA).
 await page.locator('.nav-item[title="Ajustes"]').click();
 await page.locator('.set-opt', { hasText: /^Claro$/ }).click();
