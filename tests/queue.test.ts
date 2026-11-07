@@ -5,6 +5,7 @@ import {
   clearUpcoming,
   disableShuffle,
   enableShuffle,
+  insertBeforeAuto,
   insertNext,
   makeItems,
   moveItem,
@@ -27,6 +28,31 @@ describe('makeItems', () => {
     expect(auto.every((i) => i.auto === true)).toBe(true);
     const normal = makeItems([track(1)]);
     expect('auto' in normal[0]!).toBe(false);
+  });
+});
+
+describe('insertBeforeAuto', () => {
+  it('pone lo que agrega el usuario antes de las canciones de la radio', () => {
+    const withRadio = append(state(2), makeItems([track(10), track(11)], true));
+    expect(titles(insertBeforeAuto(withRadio, makeItems([track(20)])))).toEqual(['Canción 0', 'Canción 1', 'Canción 20', 'Canción 10', 'Canción 11']);
+  });
+
+  it('sin radio en la cola va al final, como append', () => {
+    expect(titles(insertBeforeAuto(state(2), makeItems([track(20)])))).toEqual(['Canción 0', 'Canción 1', 'Canción 20']);
+  });
+
+  it('ignora las canciones de la radio que ya sonaron (antes de la actual)', () => {
+    const items = [...makeItems([track(10)], true), ...makeItems([track(0), track(1)]), ...makeItems([track(11)], true)];
+    const s: QueueState = { items, index: 1, original: null };
+    expect(titles(insertBeforeAuto(s, makeItems([track(20)])))).toEqual(['Canción 10', 'Canción 0', 'Canción 1', 'Canción 20', 'Canción 11']);
+  });
+
+  it('con aleatorio activo también queda antes de la radio en el orden original', () => {
+    const withRadio = append(state(2), makeItems([track(10)], true));
+    const shuffledState = enableShuffle(withRadio, seeded(7));
+    const r = insertBeforeAuto(shuffledState, makeItems([track(20)]));
+    const original = r.original!.map((i) => i.track.title);
+    expect(original.indexOf('Canción 20')).toBeLessThan(original.indexOf('Canción 10'));
   });
 });
 

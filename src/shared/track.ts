@@ -7,6 +7,15 @@ import type { ArtistRef, Track } from './types';
  */
 const bad = () => new Error('Solicitud inválida.');
 
+/** Clave estable de un artista: su `channel_id` si lo tiene, si no el nombre en minúsculas. */
+export const artistKey = (a: ArtistRef): string => a.id ?? a.name.trim().toLowerCase();
+
+/**
+ * «La misma canción» para no repetirla: título + artista principal. Una misma canción puede tener varios ids de
+ * YouTube (la de álbum y la del video), así que comparar por id no alcanza.
+ */
+export const songKey = (t: Pick<Track, 'title' | 'artists'>): string => `${t.title.trim().toLowerCase()}|${t.artists[0] ? artistKey(t.artists[0]) : ''}`;
+
 const str = (v: unknown, max: number): string => {
   if (typeof v !== 'string' || v.length === 0 || v.length > max) throw bad();
   return v;

@@ -85,6 +85,25 @@ export function append(s: QueueState, add: QueueItem[]): QueueState {
   return { items: [...s.items, ...add], index: s.index, original: s.original ? [...s.original, ...add] : null };
 }
 
+/**
+ * «Agregar a la cola» del usuario: antes de las canciones que puso la radio, que siguen siendo «lo último».
+ * Solo cuentan las de la radio que vienen después de la canción actual (las que ya sonaron no importan).
+ */
+export function insertBeforeAuto(s: QueueState, add: QueueItem[]): QueueState {
+  const firstAuto = (list: QueueItem[], from: number) => {
+    const i = list.findIndex((it, k) => k >= from && it.auto);
+    return i < 0 ? list.length : i;
+  };
+  const at = firstAuto(s.items, s.index + 1);
+  let original = s.original;
+  if (original) {
+    const currentUid = s.items[s.index]?.uid;
+    const o = firstAuto(original, currentUid ? original.findIndex((i) => i.uid === currentUid) + 1 : 0);
+    original = [...original.slice(0, o), ...add, ...original.slice(o)];
+  }
+  return { items: [...s.items.slice(0, at), ...add, ...s.items.slice(at)], index: s.index, original };
+}
+
 /** Quita un ítem. `wasCurrent` avisa si era la canción en curso (el índice pasa a apuntar a la siguiente). */
 export function removeItem(s: QueueState, uid: string): { state: QueueState; wasCurrent: boolean } {
   const at = s.items.findIndex((i) => i.uid === uid);

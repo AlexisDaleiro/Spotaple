@@ -165,6 +165,86 @@ describe('radio automática', () => {
     expect(s().items.map((i) => i.track.id)).toEqual([track(0).id, track(100).id, track(101).id]);
   });
 
+  it('una respuesta tardía de una canción que ya no está en la cola se descarta y se pide para la actual', async () => {
+    const late = deferred<Track[]>();
+    let call = 0;
+    const radio = radioOf(() => (++call === 1 ? late.promise : Promise.resolve(batch(2, 200))));
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    s().playTracks([track(1)], 0); // reemplaza la cola; el pedido de la primera sigue en camino
+    await flush();
+    late.resolve(batch(2, 100));
+    await flush();
+    await flush();
+    expect(s().items.map((i) => i.track.id)).toEqual([track(1).id, track(200).id, track(201).id]);
+    expect(radio.fetch).toHaveBeenCalledTimes(2);
+    expect(radio.fetch).toHaveBeenLastCalledWith(track(1), [track(1).id]);
+  });
+
+  it('«Limpiar» descarta la respuesta que venía en camino', async () => {
+    const late = deferred<Track[]>();
+    const radio = radioOf(() => late.promise);
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    s().clearUpcoming();
+    late.resolve(batch(3));
+    await flush();
+    await flush();
+    expect(s().items).toHaveLength(1);
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('descarta otra versión de una canción de la cola (mismo título y artista, otro id)', async () => {
+    const twin: Track = { ...track(100), title: track(0).title };
+    const radio = radioOf(async () => [twin, track(101)]);
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(s().items.map((i) => i.track.id)).toEqual([track(0).id, track(101).id]);
+  });
+
+  it('al apagar la repetición, una canción que sonaba sola recibe la radio', async () => {
+    const radio = radioOf(async () => batch(3));
+    const { s } = setup(undefined, { radio });
+    s().cycleRepeat(); // toda la cola
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(radio.fetch).not.toHaveBeenCalled();
+    s().cycleRepeat(); // una
+    s().cycleRepeat(); // desactivada
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+    expect(s().items).toHaveLength(4);
+  });
+
+  it('si la cola termina y la radio se activó mientras tanto, pide y sigue sola', async () => {
+    let on = false;
+    // Un lote de 5: al retomar quedan 4 por sonar (≥ 3) y no hace falta pedir otra vez.
+    const radio = { enabled: () => on, fetch: vi.fn(async (_seed: Track, _ids: string[]) => batch(5)) } satisfies RadioHook;
+    const { s, audio } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(radio.fetch).not.toHaveBeenCalled();
+    on = true;
+    audio.ended();
+    await flush();
+    await flush();
+    expect(radio.fetch).toHaveBeenCalledTimes(1);
+    expect(s().index).toBe(1);
+    expect(s().status).toBe('playing');
+  });
+
+  it('«Agregar a la cola» va antes de las canciones de la radio', async () => {
+    const radio = radioOf(async () => batch(3));
+    const { s } = setup(undefined, { radio });
+    s().playTracks([track(0)], 0);
+    await flush();
+    s().addToQueue([track(500)]);
+    expect(s().items.map((i) => i.track.id)).toEqual([track(0).id, track(500).id, track(100).id, track(101).id, track(102).id]);
+  });
+
   it('«Limpiar» la cola no dispara un relleno inmediato', async () => {
     const radio = radioOf(async () => batch(4));
     const { s } = setup(undefined, { radio });

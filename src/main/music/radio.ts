@@ -1,4 +1,7 @@
+import { artistKey, songKey } from '../../shared/track';
 import type { ArtistRef, Track } from '../../shared/types';
+
+export { artistKey };
 
 /** Todas las constantes de la radio en un solo lugar: se calibran acá. */
 export const RADIO = {
@@ -40,11 +43,7 @@ export interface RadioSource {
   getArtist(id: string): Promise<{ topSongs: Track[] }>;
 }
 
-/** Clave estable de un artista: su `channel_id` si lo tiene, si no el nombre en minúsculas. */
-export const artistKey = (a: ArtistRef): string => a.id ?? a.name.trim().toLowerCase();
-
 const primary = (t: Track): string => (t.artists[0] ? artistKey(t.artists[0]) : '');
-const titleKey = (t: Track): string => `${t.title.trim().toLowerCase()}|${primary(t)}`;
 
 /** Afinidad por artista: reproducciones con vida media + favoritas, a **cada** artista acreditado. */
 export function computeAffinity(input: AffinityInputs, now: number): Map<string, number> {
@@ -64,12 +63,12 @@ export function computeAffinity(input: AffinityInputs, now: number): Map<string,
  */
 export function rankRadio(
   candidates: Track[],
-  ctx: { exclude: ReadonlySet<string>; affinity: ReadonlyMap<string, number>; seedArtist?: ArtistRef; limit?: number },
+  ctx: { exclude: ReadonlySet<string>; excludeSongs?: ReadonlySet<string>; affinity: ReadonlyMap<string, number>; seedArtist?: ArtistRef; limit?: number },
 ): Track[] {
-  const seen = new Set<string>();
+  const seen = new Set<string>(ctx.excludeSongs);
   const kept = candidates.filter((c) => {
     if (ctx.exclude.has(c.id)) return false;
-    const key = titleKey(c);
+    const key = songKey(c);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -108,6 +107,7 @@ export function createRadio(deps: { source: RadioSource; history: RadioHistory; 
   const finish = (candidates: Track[], seed: Track, excludeIds: string[]): Track[] =>
     rankRadio(candidates, {
       exclude: new Set([seed.id, ...excludeIds, ...deps.history.recentPlayIds(RADIO.RECENT_PLAYS)]),
+      excludeSongs: new Set([songKey(seed)]), // otra versión de la que suena tampoco
       affinity: computeAffinity(deps.history.affinityInputs(RADIO.AFFINITY_PLAYS), now()),
       seedArtist: seed.artists[0],
     });

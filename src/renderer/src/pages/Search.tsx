@@ -2,7 +2,7 @@ import { Disc3, ListMusic, Mic2, Music2, Search, SearchX } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cx } from '../lib/format';
 import { playAlbum, playArtist, playRemotePlaylist } from '../lib/actions';
-import { player } from '../player/instance';
+import { player, usePlayer } from '../player/instance';
 import { navigate } from '../stores/nav';
 import { useSearch } from '../stores/search';
 import { useSettings } from '../stores/settings';
@@ -31,8 +31,11 @@ export function SearchPage({ q }: { q: string }) {
   const error = useSearch((s) => s.error);
   const run = useSearch((s) => s.run);
   const retry = useSearch((s) => s.retry);
-  // Con la radio activada una canción suelta suena sola y sigue la radio; apagada, se encolan los resultados.
+  // Con la radio activada una canción suelta suena sola y sigue la radio; apagada, o con la repetición activa (la
+  // radio no corre y la canción quedaría en bucle sola), se encolan los resultados como siempre.
   const radio = useSettings((s) => s.settings.radio);
+  const repeat = usePlayer((s) => s.repeat);
+  const soloWithRadio = radio && repeat === 'off';
   const [tab, setTab] = useState<Tab>('all');
 
   useEffect(() => run(q), [q, run]);
@@ -75,7 +78,7 @@ export function SearchPage({ q }: { q: string }) {
   const songsBlock = (list: typeof songs) => (
     <TrackList label="Canciones">
       {list.map((t, i) => (
-        <TrackRow key={t.id} track={t} index={i} onPlay={() => (radio ? player().playTracks([t], 0) : player().playTracks(songs, songs.indexOf(t)))} />
+        <TrackRow key={t.id} track={t} index={i} onPlay={() => (soloWithRadio ? player().playTracks([t], 0) : player().playTracks(songs, songs.indexOf(t)))} />
       ))}
     </TrackList>
   );

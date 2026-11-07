@@ -83,6 +83,12 @@ describe('createRadio.next', () => {
     expect(ids(await radio.next(seed, ['a1']))).toEqual(['c1']);
   });
 
+  it('descarta otras versiones de la canción que suena (mismo título y artista, otro id)', async () => {
+    const twin = t('v2xxxx', ' seed ', 'daft punk', 'UC1');
+    const { radio } = make({ getRadio: vi.fn(async () => [twin, t('o1', 'Otra', 'Otro')]) });
+    expect(ids(await radio.next(seed, []))).toEqual(['o1']);
+  });
+
   it('entrega a lo sumo un lote y lee el historial con los límites del motor', async () => {
     const many = Array.from({ length: 30 }, (_, i) => t(`n${i}`, `T${i}`, `Artista ${i}`));
     const { radio, history } = make({ getRadio: vi.fn(async () => many) });

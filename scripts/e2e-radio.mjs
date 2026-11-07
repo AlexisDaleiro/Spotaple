@@ -166,16 +166,36 @@ await step('7 con la radio apagada se encolan los resultados, sin separador', as
   return `${songs} canciones encoladas`;
 });
 
-await step('8 con «repetir toda la cola» una canción suelta no recibe radio', async () => {
+await step('8 con «repetir toda la cola» se encolan los resultados (como antes), sin radio', async () => {
   await settingsSwitch('Radio automática', true);
   const repeat = page.locator('button[aria-label^="Repetir"]');
   for (let i = 0; i < 3 && !(await repeat.getAttribute('aria-label')).includes('toda la cola'); i++) await repeat.click();
-  await playFirstSong('Charly García Demoliendo hoteles');
+  await search('Charly García Demoliendo hoteles');
+  await page.waitForSelector('.tabs', { timeout: 30000 });
+  await page.locator('.tab', { hasText: 'Canciones' }).click();
+  await page.waitForSelector('.tracklist__body .row');
+  const songs = await page.locator('.tracklist__body .row').count();
+  await page.locator('.tracklist__body .row .row__title').first().dblclick();
+  await page.waitForSelector('.play-btn[aria-label="Pausar"]', { timeout: 30000 });
   await openQueue();
-  await sleep(8000);
-  const rows = await queueRows();
-  if (rows !== 1) throw new Error(`la cola tiene ${rows} filas con la repetición activa`);
+  await waitFor(async () => (await queueRows()) === songs, 8000, `la cola con las ${songs} canciones de los resultados`);
+  await sleep(3000);
   if (await page.locator('.queue__divider').count()) throw new Error('apareció el separador con la repetición activa');
+  return `${songs} canciones encoladas`;
+});
+
+await step('9 al apagar la repetición, una canción que sonaba sola recibe la radio', async () => {
+  // Una canción suelta con la repetición activa suena en bucle sola; al apagar la repetición, la radio retoma.
+  const repeat = page.locator('button[aria-label^="Repetir"]');
+  await page.locator('.tab', { hasText: 'Canciones' }).click().catch(() => undefined);
+  // Se deja una cola de una sola canción: se quita todo lo que sigue.
+  await page.locator('.queue').getByRole('button', { name: 'Limpiar' }).click();
+  await waitFor(async () => (await queueRows()) === 1, 5000, 'la cola con solo la canción actual');
+  for (let i = 0; i < 3 && (await repeat.getAttribute('aria-label')) !== 'Repetir: desactivado'; i++) await repeat.click();
+  await page.waitForSelector('.queue__divider', { timeout: 20000 });
+  const rows = await queueRows();
+  if (rows <= 5) throw new Error(`la cola tiene solo ${rows} filas tras apagar la repetición`);
+  return `${rows} filas en la cola`;
 });
 
 await app.close().catch(() => undefined);

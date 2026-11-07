@@ -1,11 +1,13 @@
 import { createStore } from 'zustand/vanilla';
 import { audioUrl } from '@shared/api';
+import { songKey } from '@shared/track';
 import type { PersistedPlayerState, PreparedAudio, RepeatMode, Track } from '@shared/types';
 import {
   append,
   clearUpcoming,
   disableShuffle,
   enableShuffle,
+  insertBeforeAuto,
   insertNext,
   makeItems,
   moveItem,
@@ -137,6 +139,7 @@ export function createPlayer(deps: PlayerDeps) {
     let radioBusy = false; // hay un pedido de radio en curso
     let radioBlockedUid: string | null = null; // canción para la que la radio falló o no dio nada: no se reintenta
     let playedAuto = false; // la reproducción en curso la puso la radio y avanzó sola
+    let radioEpoch = 0; // sube con «Limpiar»: una respuesta de radio anterior ya no vale
 
     const cur = (): QueueItem | undefined => get().items[get().index];
     const quiet = (p: Promise<unknown>) => void p.catch(() => undefined);
@@ -156,20 +159,33 @@ export function createPlayer(deps: PlayerDeps) {
       if (!radio || !item || !radio.enabled() || jam?.active() || s.repeat !== 'off') return;
       if (s.items.length - s.index - 1 >= RADIO_REFILL_BELOW || radioBusy || radioBlockedUid === item.uid) return;
       radioBusy = true;
+      const epoch = radioEpoch;
+      // La canción para la que se pidió ya no está en la cola (la reemplazaron): esa respuesta no sirve.
+      const gone = () => !get().items.some((i) => i.uid === item.uid);
       radio.fetch(item.track, s.items.map((i) => i.track.id)).then(
         (tracks) => {
           radioBusy = false;
+          if (epoch !== radioEpoch) return; // «Limpiar» entre medio: la persona vació la cola a propósito
+          if (gone()) return maybeRefill(); // se reemplazó la cola: pedir para la canción que suena ahora
           if (jam?.active() || !radio.enabled()) return; // cambió el contexto mientras llegaba
-          const have = new Set(get().items.map((i) => i.track.id));
-          const fresh = tracks.filter((t) => !have.has(t.id)); // la cola pudo cambiar mientras tanto
+          const queue = get().items;
+          const haveIds = new Set(queue.map((i) => i.track.id));
+          const haveSongs = new Set(queue.map((i) => songKey(i.track)));
+          // La cola pudo cambiar mientras tanto, y otra versión de la misma canción (otro id) tampoco vale.
+          const fresh = tracks.filter((t) => !haveIds.has(t.id) && !haveSongs.has(songKey(t)));
           if (!fresh.length) {
             radioBlockedUid = item.uid;
             return;
           }
+          const first = queue.length;
           commit(append(qs(), makeItems(fresh, true)));
+          // La cola ya había terminado mientras llegaba la respuesta: sigue sola.
+          if (get().status === 'ended' && cur()?.uid === item.uid) void go(first, { user: false });
         },
         (e) => {
           radioBusy = false;
+          if (epoch !== radioEpoch) return;
+          if (gone()) return maybeRefill();
           radioBlockedUid = item.uid;
           // Sin internet no hay nada que avisar: la cola simplemente termina.
           if ((e as { code?: string } | null)?.code !== 'network') notify('No pudimos sumar canciones sugeridas.');
@@ -242,6 +258,8 @@ export function createPlayer(deps: PlayerDeps) {
       if (ni === null) {
         audio.pause();
         set({ status: 'ended', position: get().duration });
+        // Terminó la cola: si la radio puede seguir, la pide y retoma sola cuando llega.
+        if (auto) maybeRefill();
         return;
       }
       if (auto && ni === s.index) {
@@ -370,7 +388,7 @@ export function createPlayer(deps: PlayerDeps) {
       addToQueue(tracks) {
         if (!tracks.length) return;
         if (jam?.active()) return jam.request(tracks, 'end');
-        commit(append(qs(), makeItems(tracks)));
+        commit(insertBeforeAuto(qs(), makeItems(tracks))); // lo que pide el usuario va antes de lo que puso la radio
         settleEmpty();
       },
       removeFromQueue(uid) {
@@ -390,6 +408,7 @@ export function createPlayer(deps: PlayerDeps) {
         commit(moveItem(qs(), from, to));
       },
       clearUpcoming() {
+        radioEpoch++; // una respuesta de radio que venía en camino ya no vale
         commit(clearUpcoming(qs()));
       },
 
@@ -441,7 +460,10 @@ export function createPlayer(deps: PlayerDeps) {
       },
       cycleRepeat() {
         const order: RepeatMode[] = ['off', 'all', 'one'];
-        set({ repeat: order[(order.indexOf(get().repeat) + 1) % order.length]! });
+        const repeat = order[(order.indexOf(get().repeat) + 1) % order.length]!;
+        set({ repeat });
+        // Apagar la repetición es la forma de arreglar un «repetir» olvidado: la radio retoma desde ya.
+        if (repeat === 'off') maybeRefill();
       },
       toggleShuffle() {
         const on = !get().shuffle;
