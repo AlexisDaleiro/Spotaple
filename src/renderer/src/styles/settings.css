@@ -21,6 +21,9 @@
 .set-row + .set-row {
   border-top: 1px solid var(--line);
 }
+.set-group > .h2 {
+  margin-bottom: var(--s-5);
+}
 .set-row--inline {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;

@@ -34,10 +34,13 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 /** Opciones excluyentes: radios nativos con aspecto de botones. */
 function Choice<T extends string | number>({ legend, hint, value, options, onChange }: { legend: string; hint?: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   const name = useId();
+  const labelId = useId();
   const hintId = useId();
   return (
-    <fieldset className="set-row" aria-describedby={hint ? hintId : undefined}>
-      <legend className="set-row__label">{legend}</legend>
+    <div className="set-row" role="radiogroup" aria-labelledby={labelId} aria-describedby={hint ? hintId : undefined}>
+      <span className="set-row__label" id={labelId}>
+        {legend}
+      </span>
       {hint && (
         <p className="set-row__hint" id={hintId}>
           {hint}
@@ -51,7 +54,7 @@ function Choice<T extends string | number>({ legend, hint, value, options, onCha
           </label>
         ))}
       </div>
-    </fieldset>
+    </div>
   );
 }
 
@@ -79,13 +82,16 @@ function Toggle({ label, hint, on, onChange }: { label: string; hint: string; on
 }
 
 function AccentRow({ accent }: { accent: string | null }) {
+  const labelId = useId();
   const hintId = useId();
   // Sin acento propio, el selector parte del que usa el tema actual.
   const themeAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
   const current = accent ?? themeAccent;
   return (
-    <fieldset className="set-row" aria-describedby={hintId}>
-      <legend className="set-row__label">Color de acento</legend>
+    <div className="set-row" role="group" aria-labelledby={labelId} aria-describedby={hintId}>
+      <span className="set-row__label" id={labelId}>
+        Color de acento
+      </span>
       <p className="set-row__hint" id={hintId}>
         El color de los botones principales, la canción que suena y lo que está activo.
       </p>
@@ -98,7 +104,7 @@ function AccentRow({ accent }: { accent: string | null }) {
           Usar el del tema
         </button>
       </div>
-    </fieldset>
+    </div>
   );
 }
 
