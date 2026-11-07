@@ -41,16 +41,28 @@
   --danger-soft: rgba(255, 128, 128, 0.14);
   --ok: #62d9a3;
 
+  /* Colores que antes estaban fijos en las hojas y dependen del fondo: cada tema los define */
+  --solid-hover: #fff; /* botón sólido (fondo --fg-0) al pasar el mouse */
+  --danger-ink: #2a0c0c;
+  --danger-hover: #ff9a9a;
+  --chip-bg: rgba(255, 255, 255, 0.07);
+  --on-solid-muted: #4b4e57; /* texto atenuado sobre un fondo sólido --fg-0 */
+  --panel-tint: rgba(255, 255, 255, 0.04);
+  --scroll-bar: rgba(255, 255, 255, 0.16);
+  --scroll-thumb: rgba(255, 255, 255, 0.14);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.28);
+
   /* Tipografía: la del sistema (Segoe UI Variable en Windows 11 trae tamaño óptico propio) */
   --font: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'SF Pro Text', sans-serif;
   --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'SF Pro Display', sans-serif;
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 13px;
-  --fs-lg: 14px;
-  --fs-xl: 16px;
-  --fs-2xl: 20px;
-  --fs-3xl: 28px;
+  /* --text-scale la fija el ajuste «Tamaño del texto» (applySettings); sin él, 1 */
+  --fs-xs: calc(11px * var(--text-scale, 1));
+  --fs-sm: calc(12px * var(--text-scale, 1));
+  --fs-md: calc(13px * var(--text-scale, 1));
+  --fs-lg: calc(14px * var(--text-scale, 1));
+  --fs-xl: calc(16px * var(--text-scale, 1));
+  --fs-2xl: calc(20px * var(--text-scale, 1));
+  --fs-3xl: calc(28px * var(--text-scale, 1));
   --fs-hero: clamp(30px, 4.4vw, 54px);
   /* El seguimiento baja al crecer el texto y sube un poco en lo pequeño */
   --track-xs: 0.04em;
@@ -94,6 +106,7 @@
   --sidebar-w: 236px;
   --queue-w: 328px;
   --gap: 8px;
+  --row-h: 52px; /* alto de las filas de canciones (densidad) */
 
   --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--accent);
 }
@@ -106,10 +119,87 @@
   }
 }
 
+/* Densidad compacta (ajuste «Densidad») */
+:root[data-density='compact'] {
+  --row-h: 44px;
+  --gap: 4px;
+}
+
+/*
+ * Temas. `:root` es «Grafito». Cada tema redefine los mismos tokens; applySettings() pone data-theme en <html>.
+ * El --bg-0 de cada uno debe coincidir con THEMES[].bg de src/shared/settings.ts (color de la barra de título nativa).
+ */
+:root[data-theme='claro'] {
+  color-scheme: light;
+  --bg-0: #e8eaee;
+  --bg-1: #f6f7f9;
+  --bg-2: #ffffff;
+  --bg-3: #eceef2;
+  --bg-4: #dfe2e8;
+  --hover: rgba(0, 0, 0, 0.05);
+  --press: rgba(0, 0, 0, 0.09);
+  --selected: rgba(0, 0, 0, 0.07);
+  --line: rgba(0, 0, 0, 0.09);
+  --line-strong: rgba(0, 0, 0, 0.17);
+  --scrim: rgba(20, 22, 26, 0.45);
+  --fg-0: #14161a;
+  --fg-1: #3f434c;
+  --fg-2: #5b606a;
+  --fg-on-light: #ffffff; /* texto sobre el fondo sólido --fg-0, que aquí es oscuro */
+  --accent: #d6284a;
+  --accent-hover: #bd203f;
+  --accent-press: #a51a36;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(214, 40, 74, 0.12);
+  --danger: #c62828;
+  --danger-soft: rgba(198, 40, 40, 0.12);
+  --ok: #1b8a5a;
+  --solid-hover: #2b2f37;
+  --danger-ink: #ffffff;
+  --danger-hover: #a81f1f;
+  --chip-bg: rgba(0, 0, 0, 0.06);
+  --on-solid-muted: #c9cdd5;
+  --panel-tint: rgba(255, 255, 255, 0.6);
+  --scroll-bar: rgba(0, 0, 0, 0.2);
+  --scroll-thumb: rgba(0, 0, 0, 0.18);
+  --scroll-thumb-hover: rgba(0, 0, 0, 0.36);
+  --shadow-pop: 0 16px 44px rgba(20, 22, 26, 0.22), 0 0 0 1px var(--line-strong);
+  --shadow-cover: 0 10px 28px rgba(20, 22, 26, 0.25);
+}
+
+:root[data-theme='medianoche'] {
+  --bg-0: #000000;
+  --bg-1: #0a0a0b;
+  --bg-2: #141416;
+  --bg-3: #1c1c1f;
+  --bg-4: #26262a;
+}
+
+:root[data-theme='oceano'] {
+  --bg-0: #08121c;
+  --bg-1: #0d1a28;
+  --bg-2: #14263a;
+  --bg-3: #1b3250;
+  --bg-4: #24405f;
+  --fg-0: #eef5fb;
+  --fg-1: #aebfd1;
+  --fg-2: #8da1b8;
+  --accent: #38bdf8;
+  --accent-hover: #5ccbfa;
+  --accent-press: #1ea8e6;
+  --accent-ink: #06202e;
+  --accent-soft: rgba(56, 189, 248, 0.14);
+}
+
 @media (prefers-contrast: more) {
-  :root {
+  :root:not([data-theme='claro']) {
     --line: rgba(255, 255, 255, 0.28);
     --line-strong: rgba(255, 255, 255, 0.5);
     --fg-2: #b4b8c0;
+  }
+  :root[data-theme='claro'] {
+    --line: rgba(0, 0, 0, 0.45);
+    --line-strong: rgba(0, 0, 0, 0.7);
+    --fg-2: #3f434c;
   }
 }

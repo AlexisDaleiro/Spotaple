@@ -10,6 +10,7 @@ import { api, bridgeAvailable } from './api';
 import { persistence, playerStore, startMediaSession, startPlayerPersistence } from './player/instance';
 import { startJamSync } from './player/jam-sync';
 import { startJamBridge, useJam } from './stores/jam';
+import { settingsStore } from './stores/settings';
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -21,9 +22,18 @@ if (!bridgeAvailable) {
     </div>,
   );
 } else {
+  // Los ajustes visuales se aplican antes del primer render (sin destello del tema equivocado). `load` no falla:
+  // si no puede leerlos, rigen los de fábrica.
+  const settingsReady = settingsStore.getState().load();
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => settingsStore.getState().reapply());
+  window.addEventListener('beforeunload', () => void settingsStore.getState().flush());
+
   // Primero se restaura la cola personal; recién después el jam puede tomar el reproductor (y guardarla aparte).
   void startPlayerPersistence().then(async () => {
+    await settingsReady;
     startMediaSession();
+    // «Reanudar al abrir la app»: la sesión restaurada queda en pausa y este ajuste la retoma donde estaba.
+    if (settingsStore.getState().settings.resumeOnOpen && playerStore.getState().status === 'paused') playerStore.getState().togglePlay();
     await startJamBridge();
     startJamSync({
       player: playerStore,
@@ -35,9 +45,11 @@ if (!bridgeAvailable) {
       },
     });
   });
-  root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
+  void settingsReady.then(() =>
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    ),
   );
 }

@@ -94,7 +94,7 @@
   color: var(--fg-on-light);
 }
 .btn--solid:hover:not(:disabled) {
-  background: #fff;
+  background: var(--solid-hover);
 }
 .btn--accent {
   background: var(--accent);
@@ -116,10 +116,10 @@
 }
 .btn--danger {
   background: var(--danger);
-  color: #2a0c0c;
+  color: var(--danger-ink);
 }
 .btn--danger:hover:not(:disabled) {
-  background: #ff9a9a;
+  background: var(--danger-hover);
 }
 
 .ibtn {
@@ -167,7 +167,7 @@
   background: var(--bg-4);
 }
 .titlebar .ibtn--solid {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--chip-bg);
 }
 
 .play-btn {
@@ -186,7 +186,7 @@
 }
 .play-btn:hover:not(:disabled) {
   transform: scale(1.07);
-  background: #fff;
+  background: var(--solid-hover);
 }
 .play-btn:active:not(:disabled) {
   transform: scale(0.94);
@@ -312,7 +312,7 @@
   font-variant-numeric: tabular-nums;
 }
 .tab.is-active .tab__n {
-  color: #4b4e57;
+  color: var(--on-solid-muted);
 }
 .chips {
   display: flex;
@@ -423,7 +423,7 @@
   display: grid;
   grid-template-columns: var(--cols);
   align-items: center;
-  height: 52px;
+  height: var(--row-h);
   margin: 0 calc(var(--s-4) * -1);
   padding: 0 var(--s-4);
   border-radius: var(--r-md);
@@ -859,8 +859,8 @@
 }
 .pl-item__art--fav {
   place-items: center;
-  background: linear-gradient(135deg, var(--accent), #b3304a);
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 65%, #000));
+  color: var(--accent-ink);
 }
 .pl-item__text {
   display: flex;
