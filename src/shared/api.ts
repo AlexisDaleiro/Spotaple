@@ -6,6 +6,7 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   PreparedAudio,
+  RemotePlaylistDetail,
   SearchResults,
   Track,
 } from './types';
@@ -21,6 +22,7 @@ export const IPC = {
   search: 'music:search',
   album: 'music:album',
   artist: 'music:artist',
+  remotePlaylist: 'music:remote-playlist',
   prepare: 'music:prepare',
   invalidate: 'music:invalidate',
   favorites: 'lib:favorites',
@@ -56,6 +58,8 @@ export interface SpotapleApi {
     search(query: string): Promise<SearchResults>;
     album(id: string): Promise<AlbumDetail>;
     artist(id: string): Promise<ArtistDetail>;
+    /** Playlist de YouTube Music (id tal como lo devuelve la búsqueda). */
+    remotePlaylist(id: string): Promise<RemotePlaylistDetail>;
     /** Resuelve la fuente de audio (si hace falta) y confirma que se puede reproducir. */
     prepare(trackId: string): Promise<PreparedAudio>;
     /** Descarta la fuente guardada: la URL ya no es válida y debe resolverse de nuevo. */

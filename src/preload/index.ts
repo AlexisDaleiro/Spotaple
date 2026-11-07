@@ -9,6 +9,7 @@ const bridge: SpotapleBridge = {
     search: (q) => call(IPC.search, q),
     album: (id) => call(IPC.album, id),
     artist: (id) => call(IPC.artist, id),
+    remotePlaylist: (id) => call(IPC.remotePlaylist, id),
     prepare: (id) => call(IPC.prepare, id),
     invalidate: (id) => call(IPC.invalidate, id),
   },

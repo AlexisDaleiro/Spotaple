@@ -42,6 +42,7 @@ export function registerIpc(deps: {
   handle(IPC.search, (q: unknown) => provider.search(str(q, 200).trim() || str('', 1)));
   handle(IPC.album, (x: unknown) => provider.getAlbum(id(x)));
   handle(IPC.artist, (x: unknown) => provider.getArtist(id(x)));
+  handle(IPC.remotePlaylist, (x: unknown) => provider.getPlaylist(id(x)));
   handle(IPC.prepare, async (x: unknown): Promise<PreparedAudio> => {
     const trackId = id(x);
     const a = await provider.resolveAudio(trackId, { newPlay: true });

@@ -10,6 +10,7 @@ function setup(opts: { statuses?: number[]; length?: number | undefined } = {}) 
     search: vi.fn(),
     getAlbum: vi.fn(),
     getArtist: vi.fn(),
+    getPlaylist: vi.fn(),
     resolveAudio: vi.fn(async (): Promise<ResolvedAudio> => {
       resolves++;
       return {

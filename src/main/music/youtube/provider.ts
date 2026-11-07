@@ -1,12 +1,13 @@
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js';
-import type { AlbumDetail, ArtistDetail, ArtistRef, SearchResults } from '../../../shared/types';
+import type { AlbumDetail, ArtistDetail, ArtistRef, RemotePlaylistDetail, SearchResults } from '../../../shared/types';
 import type { StreamQuality } from '../../../shared/settings';
 import type { MusicProvider, ResolvedAudio } from '../provider';
 import { createAudioCache, createQualityLock } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
 import { chooseAudioFormat } from './format';
 import { classify, MESSAGES, MusicError, playabilityError, withTimeout } from './errors';
-import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapTrack, searchItems, txt } from './mappers';
+import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from './mappers';
+import { collectPlaylistItems, type PlaylistPage } from './playlist';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Node = any;
@@ -170,9 +171,9 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     const yt = await getClient().catch((e) => {
       throw classify(e);
     });
-    const run = (type: 'song' | 'album' | 'artist') => withTimeout(yt.music.search(query, { type }), REQUEST_TIMEOUT_MS);
-    const [songsR, albumsR, artistsR] = await Promise.allSettled([run('song'), run('album'), run('artist')]);
-    if (songsR.status === 'rejected' && albumsR.status === 'rejected' && artistsR.status === 'rejected') {
+    const run = (type: 'song' | 'album' | 'artist' | 'playlist') => withTimeout(yt.music.search(query, { type }), REQUEST_TIMEOUT_MS);
+    const [songsR, albumsR, artistsR, playlistsR] = await Promise.allSettled([run('song'), run('album'), run('artist'), run('playlist')]);
+    if (songsR.status === 'rejected' && albumsR.status === 'rejected' && artistsR.status === 'rejected' && playlistsR.status === 'rejected') {
       throw classify(songsR.reason);
     }
     const items = (r: PromiseSettledResult<Node>) => (r.status === 'fulfilled' ? searchItems(r.value) : []);
@@ -190,8 +191,11 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
         .filter((i) => i.item_type === 'artist')
         .map((i) => mapArtist(i))
         .filter((a) => a !== null),
-      playlists: [], // provisional: la Tarea 2 trae las playlists reales
-      partial: [songsR, albumsR, artistsR].some((r) => r.status === 'rejected'),
+      playlists: items(playlistsR)
+        .filter((i) => i.item_type === 'playlist')
+        .map((i) => mapRemotePlaylist(i))
+        .filter((p) => p !== null),
+      partial: [songsR, albumsR, artistsR, playlistsR].some((r) => r.status === 'rejected'),
     };
   }
 
@@ -261,5 +265,33 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     }
   }
 
-  return { search, getAlbum, getArtist, resolveAudio, invalidate: (id) => cache.invalidate(id) };
+  /** Cada continuación lleva su propio tiempo máximo: una que se cuelga corta la carga con lo ya traído. */
+  const asPage = (pg: Node): PlaylistPage => ({
+    contents: pg.contents,
+    has_continuation: Boolean(pg.has_continuation),
+    getContinuation: async () => asPage(await withTimeout(pg.getContinuation(), REQUEST_TIMEOUT_MS)),
+  });
+
+  async function getPlaylist(id: string): Promise<RemotePlaylistDetail> {
+    try {
+      const yt = await getClient();
+      const p: Node = await withTimeout(yt.music.getPlaylist(id), REQUEST_TIMEOUT_MS);
+      const h = p.header;
+      const title = txt(h?.title);
+      if (!title) throw new MusicError('parse', MESSAGES.parse);
+      const { tracks, truncated } = await collectPlaylistItems(asPage(p), mapPlaylistTrack);
+      return {
+        id,
+        title,
+        thumbnail: bestThumb(h?.thumbnail?.contents),
+        trackCount: parseTrackCount((h?.second_subtitle?.runs ?? []).map((r: Node) => txt(r?.text))),
+        tracks,
+        truncated,
+      };
+    } catch (e) {
+      throw classify(e);
+    }
+  }
+
+  return { search, getAlbum, getArtist, getPlaylist, resolveAudio, invalidate: (id) => cache.invalidate(id) };
 }
