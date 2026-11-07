@@ -152,6 +152,16 @@ export function mapPlaylistTrack(item: Node): Track | null {
   return mapTrack({ ...item, id, duration: seconds === undefined ? item.duration : { seconds } });
 }
 
+/**
+ * Canción del panel de la radio (`getUpNext`). El `PlaylistPanelVideo` trae `video_id` en vez de `id` y las miniaturas
+ * como arreglo en `thumbnail`; puede venir envuelto (`primary`). Sin `video_id` (p. ej. `AutomixPreviewVideo`) → null.
+ */
+export function mapPanelTrack(item: Node): Track | null {
+  const node = item?.primary ?? item;
+  if (!node || typeof node !== 'object') return null;
+  return mapTrack({ ...node, id: node.video_id, thumbnails: Array.isArray(node.thumbnail) ? node.thumbnail : undefined });
+}
+
 /** Cantidad de canciones de la parte «N tracks» del segundo subtítulo de una playlist (el cliente va en inglés). */
 export function parseTrackCount(textParts: string[]): number | undefined {
   for (const p of textParts) {

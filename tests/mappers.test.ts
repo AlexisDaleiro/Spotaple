@@ -1,12 +1,66 @@
 import { describe, expect, it } from 'vitest';
 import { classify, MESSAGES, playabilityError, withTimeout } from '../src/main/music/youtube/errors';
-import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from '../src/main/music/youtube/mappers';
+import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from '../src/main/music/youtube/mappers';
 import { evaluatePlayerScript } from '../src/main/music/youtube/eval';
 import { withoutCredentials } from '../src/main/net-fetch';
 
 /** Nodos simulados con la forma verificada de youtubei.js 18.3.0. */
 const text = (s: string) => ({ toString: () => s });
 const flex = (...cols: string[]) => cols.map((c) => ({ title: text(c) }));
+
+describe('mapPanelTrack', () => {
+  const panelItem = () => ({
+    video_id: 'Rgrt_8mXrK8',
+    title: text('Get Lucky (Radio Edit)'),
+    artists: [{ name: 'Daft Punk', channel_id: 'UCRr1xG' }, { name: 'Pharrell Williams' }],
+    album: { id: 'MPREb_x', name: 'Get Lucky' },
+    duration: { seconds: 249 },
+    thumbnail: [
+      { url: 'https://lh3.googleusercontent.com/a=w60-h60', width: 60 },
+      { url: 'https://lh3.googleusercontent.com/a=w226-h226', width: 226 },
+    ],
+  });
+  const expected = {
+    id: 'Rgrt_8mXrK8',
+    title: 'Get Lucky (Radio Edit)',
+    artists: [{ id: 'UCRr1xG', name: 'Daft Punk' }, { name: 'Pharrell Williams' }],
+    album: { id: 'MPREb_x', title: 'Get Lucky' },
+    durationSec: 249,
+    thumbnail: 'https://lh3.googleusercontent.com/a=w226-h226',
+  };
+
+  it('ítem del panel de la radio: id de video_id, artistas, álbum, duración y la miniatura más grande', () => {
+    expect(mapPanelTrack(panelItem())).toEqual(expected);
+  });
+
+  it('un ítem envuelto (primary) da lo mismo', () => {
+    expect(mapPanelTrack({ primary: panelItem() })).toEqual(expected);
+  });
+
+  it('video de canal: sin álbum y con miniaturas de ytimg', () => {
+    const t = mapPanelTrack({
+      video_id: '1ZNBxNpHZGc',
+      title: text('Breathe the Air'),
+      artists: [{ name: 'Gentle Lo-Fi Days', channel_id: 'UCx1' }],
+      duration: { seconds: 6835 },
+      thumbnail: [{ url: 'https://i.ytimg.com/vi/1ZNBxNpHZGc/hqdefault.jpg', width: 480 }],
+    });
+    expect(t).toEqual({
+      id: '1ZNBxNpHZGc',
+      title: 'Breathe the Air',
+      artists: [{ id: 'UCx1', name: 'Gentle Lo-Fi Days' }],
+      durationSec: 6835,
+      thumbnail: 'https://i.ytimg.com/vi/1ZNBxNpHZGc/hqdefault.jpg',
+    });
+  });
+
+  it('rechaza lo que no es una canción usable (como un AutomixPreviewVideo)', () => {
+    expect(mapPanelTrack({})).toBeNull();
+    expect(mapPanelTrack({ video_id: '../etc', title: text('x') })).toBeNull();
+    expect(mapPanelTrack({ video_id: 'abcDEF12345' })).toBeNull();
+    expect(mapPanelTrack(null)).toBeNull();
+  });
+});
 
 describe('mapRemotePlaylist', () => {
   it('playlist de búsqueda: id con prefijo VL, autor y la portada más grande', () => {
