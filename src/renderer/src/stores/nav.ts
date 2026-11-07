@@ -8,7 +8,8 @@ export type Route =
   | { page: 'playlist'; id: number }
   | { page: 'album'; id: string }
   | { page: 'artist'; id: string }
-  | { page: 'jam' };
+  | { page: 'jam' }
+  | { page: 'settings' };
 
 interface NavState {
   stack: Route[];

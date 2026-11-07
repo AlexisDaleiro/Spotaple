@@ -5,6 +5,7 @@ import './styles/base.css';
 import './styles/layout.css';
 import './styles/components.css';
 import './styles/jam.css';
+import './styles/settings.css';
 import { App } from './App';
 import { api, bridgeAvailable } from './api';
 import { persistence, playerStore, startMediaSession, startPlayerPersistence } from './player/instance';

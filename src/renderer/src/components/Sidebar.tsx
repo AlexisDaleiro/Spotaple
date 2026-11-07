@@ -1,4 +1,4 @@
-import { Heart, House, Library, ListMusic, Plus, Radio, Search } from 'lucide-react';
+import { Heart, House, Library, ListMusic, Plus, Radio, Search, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cx } from '../lib/format';
 import { inRoom, useJam } from '../stores/jam';
@@ -118,6 +118,9 @@ export function Sidebar() {
             </li>
           ))}
         </ul>
+      </div>
+      <div className="sidebar__foot">
+        <NavItem icon={<Settings size={20} />} label="Ajustes" active={route.page === 'settings'} onClick={go({ page: 'settings' })} />
       </div>
     </nav>
   );

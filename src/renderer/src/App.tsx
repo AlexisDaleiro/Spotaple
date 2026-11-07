@@ -18,6 +18,7 @@ import { LibraryPage } from './pages/Library';
 import { PlaylistPage } from './pages/PlaylistPage';
 import { PlaylistsPage } from './pages/Playlists';
 import { SearchPage } from './pages/Search';
+import { SettingsPage } from './pages/Settings';
 
 function Page({ route }: { route: Route }) {
   switch (route.page) {
@@ -37,6 +38,8 @@ function Page({ route }: { route: Route }) {
       return <ArtistPage id={route.id} />;
     case 'jam':
       return <JamPage />;
+    case 'settings':
+      return <SettingsPage />;
   }
 }
 

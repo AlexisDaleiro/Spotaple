@@ -1,0 +1,129 @@
+/* ───────── Ajustes ───────── */
+.page--settings {
+  max-width: 760px;
+}
+.set-group {
+  margin: 0 0 var(--s-9);
+}
+.set-card {
+  padding: 0 var(--s-8);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+}
+.set-row {
+  display: grid;
+  gap: var(--s-4);
+  min-width: 0;
+  margin: 0;
+  padding: var(--s-6) 0;
+  border: 0;
+}
+.set-row + .set-row {
+  border-top: 1px solid var(--line);
+}
+.set-row--inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-8);
+}
+.set-row__label {
+  padding: 0;
+  color: var(--fg-0);
+  font: 600 var(--fs-lg) / 1.3 var(--font);
+}
+.set-row__hint {
+  margin: var(--s-2) 0 0;
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.set-row .field__label,
+.set-row .set-row__label {
+  display: block;
+  margin-bottom: var(--s-3);
+}
+.set-name {
+  max-width: 320px;
+}
+
+/* Opciones excluyentes: el radio nativo queda encima (accesible y con foco) y el texto se ve como botón */
+.set-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+.set-opt {
+  position: relative;
+}
+.set-opt input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.set-opt span {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 var(--s-6);
+  border-radius: var(--r-pill);
+  background: var(--bg-3);
+  color: var(--fg-1);
+  font: 600 var(--fs-md) / 1 var(--font);
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+.set-opt:hover span {
+  color: var(--fg-0);
+}
+.set-opt input:checked + span {
+  background: var(--fg-0);
+  color: var(--fg-on-light);
+}
+.set-opt:has(input:focus-visible) span {
+  box-shadow: var(--focus-ring);
+}
+
+/* Color de acento */
+.set-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+.set-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.set-swatch:hover {
+  transform: scale(1.1);
+}
+.set-swatch[aria-pressed='true'] {
+  border-color: var(--bg-2);
+  box-shadow: 0 0 0 2px var(--fg-0);
+}
+.set-swatch:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.set-color {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+}
+
+/* Acceso a Ajustes al pie del lateral (en el riel de iconos se ve solo el icono) */
+.sidebar__foot {
+  padding: var(--s-3);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+}
