@@ -41,13 +41,18 @@ export interface ThemeInfo {
   bg: string;
   /** Color de los botones nativos de la ventana. */
   symbol: string;
+  /**
+   * Superficie contra la que se comprueba el acento cuando se usa como texto o icono (AA): en los temas oscuros
+   * la más clara (`--bg-3`) y en el claro el marco (`--bg-0`), que es la más oscura.
+   */
+  accentBg: string;
 }
 
 export const THEMES: readonly ThemeInfo[] = [
-  { id: 'grafito', label: 'Grafito', scheme: 'dark', bg: '#0c0d0f', symbol: '#b4b8c0' },
-  { id: 'claro', label: 'Claro', scheme: 'light', bg: '#e8eaee', symbol: '#42464f' },
-  { id: 'medianoche', label: 'Medianoche', scheme: 'dark', bg: '#000000', symbol: '#b4b8c0' },
-  { id: 'oceano', label: 'Océano', scheme: 'dark', bg: '#08121c', symbol: '#aebfd1' },
+  { id: 'grafito', label: 'Grafito', scheme: 'dark', bg: '#0c0d0f', symbol: '#b4b8c0', accentBg: '#24262c' },
+  { id: 'claro', label: 'Claro', scheme: 'light', bg: '#e8eaee', symbol: '#42464f', accentBg: '#e8eaee' },
+  { id: 'medianoche', label: 'Medianoche', scheme: 'dark', bg: '#000000', symbol: '#b4b8c0', accentBg: '#1c1c1f' },
+  { id: 'oceano', label: 'Océano', scheme: 'dark', bg: '#08121c', symbol: '#aebfd1', accentBg: '#1b3250' },
 ];
 
 const DENSITIES: readonly Density[] = ['comfortable', 'compact'];

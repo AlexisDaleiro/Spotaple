@@ -110,10 +110,36 @@ await step('2 temas: data-theme, color de la ventana nativa y capturas', async (
 
 await step('3 acento propio y volver al del tema', async () => {
   const { page } = session;
-  await page.locator('.set-color').fill('#1d4ed8');
-  await waitFor(async () => (await rootState(page)).accentComputed === '#1d4ed8', 3000, 'acento #1d4ed8');
+  await page.locator('.set-color').fill('#ffd60a');
+  await waitFor(async () => (await rootState(page)).accentComputed === '#ffd60a', 3000, 'acento #ffd60a (ya se lee sobre Océano: no se toca)');
   await page.locator('.btn', { hasText: 'Usar el del tema' }).click();
   await waitFor(async () => (await rootState(page)).accentInline === '', 3000, 'acento quitado');
+
+  // En el tema claro un acento claro se oscurece hasta leerse (AA) contra el marco, que es el fondo más oscuro del tema.
+  await pick(page, 'Claro');
+  await page.locator('.set-color').fill('#ffd60a');
+  await waitFor(async () => {
+    const s = await rootState(page);
+    return s.theme === 'claro' && s.accentComputed !== '#ffd60a' && s.accentComputed !== '';
+  }, 3000, 'acento oscurecido en Claro');
+  const ratio = await page.evaluate(() => {
+    const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const lum = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      const f = (c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f((n >> 16) & 255) + 0.7152 * f((n >> 8) & 255) + 0.0722 * f(n & 255);
+    };
+    const [hi, lo] = [lum(css('--accent')), lum(css('--bg-0'))].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+  });
+  if (ratio < 4.5) throw new Error(`el acento en Claro se lee con contraste ${ratio.toFixed(2)}:1 (< 4.5)`);
+  await page.locator('.btn', { hasText: 'Usar el del tema' }).click();
+  await waitFor(async () => (await rootState(page)).accentInline === '', 3000, 'acento quitado en Claro');
+  await pick(page, 'Océano');
+  await waitFor(async () => (await rootState(page)).theme === 'oceano', 3000, 'vuelve a Océano');
 });
 
 await step('4 texto, densidad y animaciones (y la página a 900×600)', async () => {
@@ -179,8 +205,36 @@ await step('7 ajustes corruptos en la base: arranca con lo válido y los valores
   session = null;
 });
 
+await step('8 el nombre de Ajustes llega a Salas y el de Salas llega a Ajustes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'spotaple-e2e-settings-jam-'));
+  let s;
+  try {
+    s = await launch(dir);
+    const { page } = s;
+    await openSettings(page);
+    await page.locator('.set-name').fill('Ale');
+    await page.locator('.set-name').press('Enter');
+    await sleep(700);
+    await page.locator('.nav-item[title="Jam"]').click();
+    await page.waitForSelector('.jam-card');
+    expectEq(await page.locator('.jam-name input').inputValue(), 'Ale', 'nombre en Salas (viene de Ajustes)');
+    await page.locator('.jam-name input').fill('Bea');
+    await page.locator('.jam-card .btn', { hasText: 'Crear sala' }).first().click();
+    await page.waitForSelector('.jam-panel', { timeout: 15000 });
+    await page.locator('.jam-actions .btn--danger').click();
+    await page.waitForSelector('.dialog');
+    await page.locator('.dialog .btn--danger').click();
+    await page.waitForSelector('.jam-card', { timeout: 8000 });
+    await openSettings(page);
+    expectEq(await page.locator('.set-name').inputValue(), 'Bea', 'nombre en Ajustes (viene de Salas)');
+  } finally {
+    await s?.app.close().catch(() => undefined);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 if (process.env.NO_NETWORK !== '1') {
-  await step('8 con internet: «Reanudar al abrir» y calidad «Ahorro» (formato más liviano)', async () => {
+  await step('9 con internet: «Reanudar al abrir» y calidad «Ahorro» (formato más liviano)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'spotaple-e2e-settings-net-'));
     try {
       let s = await launch(dir);

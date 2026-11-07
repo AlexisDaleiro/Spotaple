@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { ACCENT_VARS, contrastRatio, deriveAccent, relativeLuminance } from '../src/renderer/src/lib/accent';
 
+describe('deriveAccent según el fondo', () => {
+  const LIGHT = '#e8eaee';
+  const DARK = '#24262c';
+
+  it('no cambia un acento que ya se lee sobre el fondo', () => {
+    expect(deriveAccent('#ff5d73', DARK)!['--accent']).toBe('#ff5d73');
+  });
+
+  it('sobre un fondo claro oscurece el acento hasta 4.5:1 y el texto sobre él cumple AA', () => {
+    for (const hex of ['#ffd60a', '#38bdf8', '#ff5d73']) {
+      const v = deriveAccent(hex, LIGHT)!;
+      expect(contrastRatio(v['--accent'], LIGHT)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(v['--accent-ink'], v['--accent'])).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('sobre un fondo oscuro aclara un acento oscuro hasta 4.5:1 y el texto sobre él cumple AA', () => {
+    for (const hex of ['#1d4ed8', '#000000']) {
+      const v = deriveAccent(hex, DARK)!;
+      expect(contrastRatio(v['--accent'], DARK)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(v['--accent-ink'], v['--accent'])).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('un fondo inválido se ignora: no hay ajuste', () => {
+    expect(deriveAccent('#1d4ed8', 'red')!['--accent']).toBe('#1d4ed8');
+  });
+});
+
 describe('deriveAccent', () => {
   it('conserva el acento, deriva hover y press, y arma el tono suave', () => {
     const v = deriveAccent('#ff5d73')!;

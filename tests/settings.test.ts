@@ -67,6 +67,7 @@ describe('THEMES y valores por defecto', () => {
     for (const t of THEMES) {
       expect(t.bg).toMatch(/^#[0-9a-f]{6}$/);
       expect(t.symbol).toMatch(/^#[0-9a-f]{6}$/);
+      expect(t.accentBg).toMatch(/^#[0-9a-f]{6}$/);
     }
   });
 

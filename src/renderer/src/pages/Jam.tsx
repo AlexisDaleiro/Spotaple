@@ -3,13 +3,16 @@ import type { JamView } from '@shared/jam/types';
 import { api, errorMessage } from '../api';
 import { JamPanel } from '../components/JamPanel';
 import { inRoom, useJam } from '../stores/jam';
+import { settingsStore, useSettings } from '../stores/settings';
 
 type Where = 'create' | 'join';
 
 /** Fuera de sala: elegir un nombre y crear una sala nueva o unirse a una con su invitación. */
 function JamStart({ view }: { view: JamView | null }) {
   const ids = useId();
-  const [name, setName] = useState(view?.name ?? '');
+  // El nombre por defecto sale de Ajustes (que se actualiza al crear o unirse a una sala), no de la vista inicial de la sesión.
+  const saved = useSettings((s) => s.settings.jamName);
+  const [name, setName] = useState(saved || view?.name || '');
   const [kind, setKind] = useState<'local' | 'internet'>('local');
   const [invite, setInvite] = useState('');
   const [working, setWorking] = useState<Where | null>(null);
@@ -17,15 +20,18 @@ function JamStart({ view }: { view: JamView | null }) {
   const busy = view?.status === 'connecting' || working !== null;
 
   // El nombre recordado puede llegar después de abrir la página.
+  const remembered = saved || view?.name;
   useEffect(() => {
-    if (view?.name) setName((n) => n || view.name);
-  }, [view?.name]);
+    if (remembered) setName((n) => n || remembered);
+  }, [remembered]);
 
   const run = async (where: Where, action: () => Promise<unknown>) => {
     setError(null);
     setWorking(where);
     try {
       await action();
+      // Main ya guardó el nombre al crear o unirse: Ajustes lo muestra sin esperar a un reinicio.
+      settingsStore.setState((s) => ({ settings: { ...s.settings, jamName: name.trim() } }));
     } catch (e) {
       setError({ where, message: errorMessage(e) });
     } finally {

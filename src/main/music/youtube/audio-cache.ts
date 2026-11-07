@@ -23,3 +23,22 @@ export function createAudioCache(now: () => number) {
     },
   };
 }
+
+/**
+ * Calidad con la que empezó a sonar cada canción. Los pedidos de rangos de esa reproducción (saltos de posición,
+ * reintentos) la reutilizan: cambiar el ajuste a mitad de una canción no mezcla bytes de dos archivos distintos.
+ * Con tope: al pasarse olvida la más vieja.
+ */
+export function createQualityLock(max = 200) {
+  const map = new Map<string, StreamQuality>();
+  return {
+    lock(trackId: string, quality: StreamQuality): void {
+      map.delete(trackId);
+      map.set(trackId, quality);
+      if (map.size > max) map.delete(map.keys().next().value as string);
+    },
+    get(trackId: string): StreamQuality | undefined {
+      return map.get(trackId);
+    },
+  };
+}

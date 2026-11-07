@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ACCENT_VARS } from '../src/renderer/src/lib/accent';
+import { ACCENT_VARS, contrastRatio } from '../src/renderer/src/lib/accent';
 import { applySettings, type RootLike } from '../src/renderer/src/lib/apply-settings';
-import { DEFAULT_SETTINGS, type AppSettings } from '../src/shared/settings';
+import { DEFAULT_SETTINGS, THEMES, type AppSettings } from '../src/shared/settings';
 
 function apply(over: Partial<AppSettings>, systemLight = false) {
   const root = { dataset: {} as Record<string, string | undefined>, style: { setProperty: vi.fn(), removeProperty: vi.fn() } } satisfies RootLike;
@@ -17,10 +17,10 @@ describe('applySettings', () => {
   });
 
   it('un acento válido fija las cinco variables', () => {
-    const root = apply({ accent: '#1d4ed8' });
+    const root = apply({ accent: '#ffd60a' });
     const set = root.style.setProperty.mock.calls.map((c) => c[0]);
     for (const name of ACCENT_VARS) expect(set).toContain(name);
-    expect(root.style.setProperty).toHaveBeenCalledWith('--accent', '#1d4ed8');
+    expect(root.style.setProperty).toHaveBeenCalledWith('--accent', '#ffd60a'); // ya se lee sobre el tema oscuro: no se toca
     expect(root.style.removeProperty).not.toHaveBeenCalled();
   });
 
@@ -29,6 +29,16 @@ describe('applySettings', () => {
       const root = apply({ accent });
       expect(root.style.removeProperty.mock.calls.map((c) => c[0]).sort()).toEqual([...ACCENT_VARS].sort());
       expect(root.style.setProperty).not.toHaveBeenCalledWith('--accent', expect.anything());
+    }
+  });
+
+  it('en cada tema el acento aplicado se lee sobre su fondo (AA), aunque el elegido sea claro u oscuro', () => {
+    for (const theme of THEMES) {
+      for (const accent of ['#ffd60a', '#38bdf8', '#ff5d73', '#1d4ed8', '#000000']) {
+        const root = apply({ theme: theme.id, accent });
+        const applied = root.style.setProperty.mock.calls.find((c) => c[0] === '--accent')![1] as string;
+        expect(contrastRatio(applied, theme.accentBg), `${accent} en ${theme.id}`).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 

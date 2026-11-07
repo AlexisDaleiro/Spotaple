@@ -18,7 +18,8 @@ export interface MusicProvider {
   search(query: string): Promise<SearchResults>;
   getAlbum(id: string): Promise<AlbumDetail>;
   getArtist(id: string): Promise<ArtistDetail>;
-  resolveAudio(trackId: string): Promise<ResolvedAudio>;
+  /** `newPlay`: la canción empieza ahora (usa la calidad vigente y la fija para esa reproducción). Sin él, se respeta la fijada. */
+  resolveAudio(trackId: string, opts?: { newPlay?: boolean }): Promise<ResolvedAudio>;
   /** Olvida la fuente de audio guardada (la URL dejó de ser válida). */
   invalidate(trackId: string): void;
 }

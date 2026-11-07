@@ -58,6 +58,18 @@ await page.waitForSelector('.play-btn[aria-label="Pausar"]', { timeout: 30000 })
 await page.locator('button[aria-label="Mostrar la cola"]').click();
 await page.waitForSelector('.queue .qrow');
 await audit('Búsqueda + cola + reproduciendo');
+
+// Tema claro con un acento claro (Amarillo) y una canción sonando: el acento también es texto e icono y tiene que leerse (AA).
+await page.locator('.nav-item[title="Ajustes"]').click();
+await page.locator('.set-opt', { hasText: /^Claro$/ }).click();
+await page.locator('.set-swatch[aria-label="Amarillo"]').click();
+await page.keyboard.press('Alt+ArrowLeft');
+await page.waitForSelector('.tracklist__body .row');
+await audit('Resultados + sonando · tema claro con acento Amarillo');
+await page.locator('.nav-item[title="Ajustes"]').click();
+await page.locator('.set-opt', { hasText: /^Grafito$/ }).click();
+await page.locator('.btn', { hasText: 'Usar el del tema' }).click();
+await page.keyboard.press('Alt+ArrowLeft');
 await page.locator('.nav-item[title="Playlists"]').click();
 await audit('Playlists vacío');
 await page.locator('.btn', { hasText: 'Nueva playlist' }).first().click();

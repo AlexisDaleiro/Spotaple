@@ -6,6 +6,8 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 /** Texto sobre el acento: oscuro o blanco, el que dé más contraste. */
 const INK_DARK = '#101114';
 const INK_LIGHT = '#ffffff';
+/** Contraste mínimo del acento contra el fondo del tema cuando se usa como texto o icono (WCAG AA). */
+const MIN_ACCENT_CONTRAST = 4.5;
 /** Cuánto se aclara el acento al pasar el mouse y cuánto se oscurece al presionar (puntos de claridad HSL). */
 const HOVER_LIGHTNESS = 6;
 const PRESS_LIGHTNESS = -8;
@@ -56,10 +58,30 @@ export function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Deriva las variantes del acento desde un `#rrggbb`. Devuelve `null` si no lo es: nunca llega CSS arbitrario. */
-export function deriveAccent(hex: string): AccentVars | null {
+/**
+ * Mueve la claridad del color (sin tocar tono ni saturación) hasta que se lea sobre `against` con contraste AA:
+ * oscurece sobre un fondo claro y aclara sobre uno oscuro. Si ya se lee, lo devuelve igual.
+ */
+function withContrast(hex: string, against: string): string {
+  if (contrastRatio(hex, against) >= MIN_ACCENT_CONTRAST) return hex;
+  const direction = relativeLuminance(against) > 0.5 ? -1 : 1;
+  const [h, s, l] = rgbToHsl(toRgb(hex));
+  let out = hex;
+  for (let step = 1; step <= 100; step++) {
+    out = toHex(hslToRgb(h, s, clamp(l + direction * step, 0, 100)));
+    if (contrastRatio(out, against) >= MIN_ACCENT_CONTRAST) break;
+  }
+  return out;
+}
+
+/**
+ * Deriva las variantes del acento desde un `#rrggbb`. Devuelve `null` si no lo es: nunca llega CSS arbitrario.
+ * Con `against` (el fondo del tema, `#rrggbb`), el acento se ajusta para leerse sobre él: se usa como color de texto e iconos.
+ */
+export function deriveAccent(hex: string, against?: string): AccentVars | null {
   if (!HEX.test(hex)) return null;
-  const accent = hex.toLowerCase();
+  const base = hex.toLowerCase();
+  const accent = against && HEX.test(against) ? withContrast(base, against) : base;
   const rgb = toRgb(accent);
   const [h, s, l] = rgbToHsl(rgb);
   return {

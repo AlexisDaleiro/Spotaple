@@ -44,7 +44,7 @@ export function registerIpc(deps: {
   handle(IPC.artist, (x: unknown) => provider.getArtist(id(x)));
   handle(IPC.prepare, async (x: unknown): Promise<PreparedAudio> => {
     const trackId = id(x);
-    const a = await provider.resolveAudio(trackId);
+    const a = await provider.resolveAudio(trackId, { newPlay: true });
     return { trackId, mimeType: a.mimeType, durationSec: a.durationSec };
   });
   handle(IPC.invalidate, (x: unknown) => provider.invalidate(id(x)));

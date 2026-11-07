@@ -2,7 +2,7 @@ import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js';
 import type { AlbumDetail, ArtistDetail, ArtistRef, SearchResults } from '../../../shared/types';
 import type { StreamQuality } from '../../../shared/settings';
 import type { MusicProvider, ResolvedAudio } from '../provider';
-import { createAudioCache } from './audio-cache';
+import { createAudioCache, createQualityLock } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
 import { chooseAudioFormat } from './format';
 import { classify, MESSAGES, MusicError, playabilityError, withTimeout } from './errors';
@@ -64,6 +64,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
   };
 
   const cache = createAudioCache(now);
+  const qualityLock = createQualityLock();
   const inflight = new Map<string, Promise<ResolvedAudio>>();
 
   /**
@@ -124,8 +125,13 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     throw first ?? new MusicError('unavailable', MESSAGES.unavailable);
   }
 
-  async function resolveAudio(trackId: string): Promise<ResolvedAudio> {
-    const quality = getQuality();
+  /**
+   * `newPlay`: la canción empieza a sonar ahora, así que toma la calidad vigente y la fija. Los demás pedidos de la
+   * misma reproducción (saltos de posición, reintentos del protocolo de audio) usan la calidad fijada.
+   */
+  async function resolveAudio(trackId: string, opts?: { newPlay?: boolean }): Promise<ResolvedAudio> {
+    const quality = opts?.newPlay ? getQuality() : (qualityLock.get(trackId) ?? getQuality());
+    if (opts?.newPlay) qualityLock.lock(trackId, quality);
     const hit = cache.get(quality, trackId);
     if (hit) return hit;
     // La clave incluye la calidad: una resolución en curso en Alta no sirve a un pedido en Ahorro.

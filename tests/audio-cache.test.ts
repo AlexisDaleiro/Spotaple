@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedAudio } from '../src/main/music/provider';
-import { createAudioCache } from '../src/main/music/youtube/audio-cache';
+import { createAudioCache, createQualityLock } from '../src/main/music/youtube/audio-cache';
 
 const audio = (expiresAt: number): ResolvedAudio => ({ url: 'https://example.invalid/a', mimeType: 'audio/webm', expiresAt });
+
+describe('calidad fijada por canción', () => {
+  it('recuerda la calidad con la que se empezó la canción', () => {
+    const lock = createQualityLock();
+    expect(lock.get('abc123')).toBeUndefined();
+    lock.lock('abc123', 'saver');
+    expect(lock.get('abc123')).toBe('saver');
+    lock.lock('abc123', 'high');
+    expect(lock.get('abc123')).toBe('high');
+  });
+
+  it('al pasarse del tope olvida la más vieja', () => {
+    const lock = createQualityLock(2);
+    lock.lock('uno111', 'high');
+    lock.lock('dos222', 'high');
+    lock.lock('tres33', 'saver');
+    expect(lock.get('uno111')).toBeUndefined();
+    expect(lock.get('dos222')).toBe('high');
+    expect(lock.get('tres33')).toBe('saver');
+  });
+});
 
 describe('caché de audio resuelto', () => {
   it('la clave incluye la calidad: lo resuelto en Alta no sirve en Ahorro', () => {
