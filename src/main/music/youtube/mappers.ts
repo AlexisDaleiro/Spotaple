@@ -4,7 +4,7 @@
  * Campos verificados contra youtubei.js 18.3.0 (MusicResponsiveListItem, MusicTwoRowItem,
  * MusicResponsiveHeader). Ver README: "Qué devuelve YouTube Music".
  */
-import type { AlbumSummary, ArtistRef, ArtistSummary, Track } from '../../../shared/types';
+import type { AlbumSummary, ArtistRef, ArtistSummary, RemotePlaylistSummary, Track } from '../../../shared/types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Node = any;
@@ -115,3 +115,49 @@ export function searchItems(search: Node): Node[] {
 }
 
 export const isTrackItem = (i: Node) => i?.item_type === 'song' || i?.item_type === 'video';
+
+const PLAYLIST_ID_RE = /^[\w-]{6,64}$/;
+
+/** Primera parte (antes de «•») de la 2.ª columna: en playlists es el autor, seguido de las reproducciones. */
+function secondColumnName(item: Node): string {
+  const first = parts(flexText(item, 1))[0];
+  return first && first !== 'N/A' ? first.slice(0, 200) : '';
+}
+
+/** Playlist de una búsqueda → resumen. Verificado: `id` con prefijo `VL`, sin cantidad de canciones. */
+export function mapRemotePlaylist(item: Node): RemotePlaylistSummary | null {
+  if (item?.item_type !== 'playlist') return null;
+  const id = typeof item.id === 'string' ? item.id : undefined;
+  if (!id || !PLAYLIST_ID_RE.test(id)) return null;
+  const title = txt(item.title) || flexText(item, 0);
+  if (!title) return null;
+  const author = txt(item.author?.name) || secondColumnName(item);
+  return { id, title, author: author || undefined, thumbnail: bestThumb(item.thumbnails ?? item.thumbnail?.contents) };
+}
+
+/** "1:53:55" → 6835; "2:45" → 165; cualquier otra cosa → undefined. */
+function parseClock(s: string): number | undefined {
+  const m = /^(?:(\d{1,3}):)?(\d{1,2}):(\d{2})$/.exec(s.trim());
+  return m ? Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : undefined;
+}
+
+/**
+ * Canción de una página de playlist. Los videos de canal llegan con `item_type: 'unknown'` y sin `id`: el
+ * `videoId` está en el overlay y la duración en la columna fija. Sin `videoId` (privado o eliminado) → null.
+ */
+export function mapPlaylistTrack(item: Node): Track | null {
+  if (!item || typeof item !== 'object') return null;
+  const id = typeof item.id === 'string' ? item.id : item.overlay?.content?.endpoint?.payload?.videoId;
+  const seconds = typeof item.duration?.seconds === 'number' ? item.duration.seconds : parseClock(txt(item.fixed_columns?.[0]?.title));
+  return mapTrack({ ...item, id, duration: seconds === undefined ? item.duration : { seconds } });
+}
+
+/** Cantidad de canciones de la parte «N tracks» del segundo subtítulo de una playlist (el cliente va en inglés). */
+export function parseTrackCount(textParts: string[]): number | undefined {
+  for (const p of textParts) {
+    const m = /^(\d[\d,.]*)\s+tracks?$/i.exec(p.trim());
+    const n = m ? Number(m[1]!.replace(/[,.]/g, '')) : NaN;
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}

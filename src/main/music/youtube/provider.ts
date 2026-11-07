@@ -190,6 +190,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
         .filter((i) => i.item_type === 'artist')
         .map((i) => mapArtist(i))
         .filter((a) => a !== null),
+      playlists: [], // provisional: la Tarea 2 trae las playlists reales
       partial: [songsR, albumsR, artistsR].some((r) => r.status === 'rejected'),
     };
   }

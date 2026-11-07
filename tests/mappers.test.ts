@@ -1,12 +1,132 @@
 import { describe, expect, it } from 'vitest';
 import { classify, MESSAGES, playabilityError, withTimeout } from '../src/main/music/youtube/errors';
-import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapTrack, searchItems, txt } from '../src/main/music/youtube/mappers';
+import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from '../src/main/music/youtube/mappers';
 import { evaluatePlayerScript } from '../src/main/music/youtube/eval';
 import { withoutCredentials } from '../src/main/net-fetch';
 
 /** Nodos simulados con la forma verificada de youtubei.js 18.3.0. */
 const text = (s: string) => ({ toString: () => s });
 const flex = (...cols: string[]) => cols.map((c) => ({ title: text(c) }));
+
+describe('mapRemotePlaylist', () => {
+  it('playlist de búsqueda: id con prefijo VL, autor y la portada más grande', () => {
+    expect(
+      mapRemotePlaylist({
+        id: 'VLPLwO8Yaz8URbq0HdSG3VFeCIUSGpsjbCtH',
+        item_type: 'playlist',
+        title: 'Every Daft Punk Song',
+        author: { name: 'Adam Is very weird', channel_id: 'UCx1' },
+        flex_columns: flex('Every Daft Punk Song', 'Adam Is very weird • 281K views'),
+        thumbnails: [
+          { url: 'https://yt3.googleusercontent.com/abc=s192', width: 192 },
+          { url: 'https://yt3.googleusercontent.com/abc=s1200', width: 1200 },
+        ],
+      }),
+    ).toEqual({
+      id: 'VLPLwO8Yaz8URbq0HdSG3VFeCIUSGpsjbCtH',
+      title: 'Every Daft Punk Song',
+      author: 'Adam Is very weird',
+      thumbnail: 'https://yt3.googleusercontent.com/abc=s1200',
+    });
+  });
+
+  it('sin author: el nombre sale de la 2.ª columna, sin las reproducciones', () => {
+    const p = mapRemotePlaylist({
+      id: 'VLPL0BKTsqcDLNFhlmyCUzRyYEF6ox9PI1z5',
+      item_type: 'playlist',
+      title: 'Daft Punk (Instrumental)',
+      flex_columns: flex('Daft Punk (Instrumental)', 'Rahmadia Kushardiani • 12K views'),
+    });
+    expect(p!.author).toBe('Rahmadia Kushardiani');
+  });
+
+  it('sin autor en ningún lado no inventa uno; la portada de video 16:9 se conserva', () => {
+    const p = mapRemotePlaylist({
+      id: 'VLPL4Z-wH5VI-MORfue9WSgU8E25tKEoqieM',
+      item_type: 'playlist',
+      title: 'Solo título',
+      flex_columns: flex('Solo título'),
+      thumbnails: [{ url: 'https://i.ytimg.com/vi/qxCSOaJG7fg/sddefault.jpg', width: 640 }],
+    });
+    expect(p!.author).toBeUndefined();
+    expect(p!.thumbnail).toBe('https://i.ytimg.com/vi/qxCSOaJG7fg/sddefault.jpg');
+  });
+
+  it('rechaza lo que no es una playlist usable', () => {
+    const ok = { id: 'VLPLwO8Yaz8URbq0HdSG3VFeCIUSGpsjbCtH', item_type: 'playlist', title: 'X' };
+    expect(mapRemotePlaylist(ok)).not.toBeNull();
+    expect(mapRemotePlaylist({ ...ok, item_type: 'album' })).toBeNull();
+    expect(mapRemotePlaylist({ ...ok, id: '../../etc' })).toBeNull();
+    expect(mapRemotePlaylist({ ...ok, id: 'x' })).toBeNull();
+    expect(mapRemotePlaylist({ ...ok, title: '' })).toBeNull();
+    expect(mapRemotePlaylist(null)).toBeNull();
+  });
+});
+
+describe('mapPlaylistTrack', () => {
+  it('ítem tipado como video: id, duración y artista de authors', () => {
+    expect(
+      mapPlaylistTrack({
+        item_type: 'video',
+        id: 'yuoghR-5-Xs',
+        title: 'Daftendirekt',
+        duration: { seconds: 165 },
+        authors: [{ name: 'Daft Punk', channel_id: 'UCRr1xG' }],
+        thumbnails: [{ url: 'https://i.ytimg.com/vi/yuoghR-5-Xs/hqdefault.jpg', width: 400 }],
+      }),
+    ).toEqual({
+      id: 'yuoghR-5-Xs',
+      title: 'Daftendirekt',
+      artists: [{ id: 'UCRr1xG', name: 'Daft Punk' }],
+      durationSec: 165,
+      thumbnail: 'https://i.ytimg.com/vi/yuoghR-5-Xs/hqdefault.jpg',
+    });
+  });
+
+  it('ítem de tipo desconocido (videos de canal): el id sale del overlay, la duración de la columna fija y el artista de la 2.ª columna', () => {
+    const t = mapPlaylistTrack({
+      item_type: 'unknown',
+      title: 'Breathe the Air',
+      overlay: { content: { endpoint: { payload: { videoId: '1ZNBxNpHZGc' } } } },
+      flex_columns: flex('Breathe the Air', 'Gentle Lo-Fi Days', 'N/A'),
+      fixed_columns: flex('1:53:55'),
+    });
+    expect(t!.id).toBe('1ZNBxNpHZGc');
+    expect(t!.durationSec).toBe(6835);
+    expect(t!.artists).toEqual([{ name: 'Gentle Lo-Fi Days' }]);
+  });
+
+  it('duración en m:ss y texto que no es una duración', () => {
+    const item = (fixed: string) => ({
+      item_type: 'unknown',
+      title: 'T',
+      overlay: { content: { endpoint: { payload: { videoId: 'abcDEF12345' } } } },
+      fixed_columns: flex(fixed),
+    });
+    expect(mapPlaylistTrack(item('2:45'))!.durationSec).toBe(165);
+    expect(mapPlaylistTrack(item('0:29'))!.durationSec).toBe(29);
+    expect(mapPlaylistTrack(item('N/A'))!.durationSec).toBeUndefined();
+  });
+
+  it('ítem sin video (privado o eliminado) y entradas inválidas', () => {
+    expect(mapPlaylistTrack({ item_type: 'unknown', title: 'Deleted video', flex_columns: flex('Deleted video', 'N/A') })).toBeNull();
+    expect(mapPlaylistTrack({})).toBeNull();
+    expect(mapPlaylistTrack(null)).toBeNull();
+  });
+});
+
+describe('parseTrackCount', () => {
+  it('lee la cantidad de la parte «N tracks» del segundo subtítulo', () => {
+    expect(parseTrackCount(['281K views', ' • ', '75 tracks', ' • ', '5 hours, 13 minutes'])).toBe(75);
+    expect(parseTrackCount(['1 track'])).toBe(1);
+    expect(parseTrackCount(['1,234 tracks'])).toBe(1234);
+  });
+
+  it('sin esa parte no inventa una cantidad', () => {
+    expect(parseTrackCount(['3 days'])).toBeUndefined();
+    expect(parseTrackCount([])).toBeUndefined();
+  });
+});
 
 describe('mapTrack', () => {
   it('canción de búsqueda: artistas con id, álbum, duración y la miniatura más grande', () => {

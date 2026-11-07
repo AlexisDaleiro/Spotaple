@@ -33,11 +33,29 @@ export interface ArtistSummary {
   subtitle?: string;
 }
 
+/** Playlist de YouTube Music vista en una búsqueda. La búsqueda no informa cuántas canciones tiene. */
+export interface RemotePlaylistSummary {
+  /** Id de YouTube Music (viene con prefijo `VL`); sirve tal cual para pedir la playlist. */
+  id: string;
+  title: string;
+  author?: string;
+  thumbnail?: string;
+}
+
+export interface RemotePlaylistDetail extends RemotePlaylistSummary {
+  tracks: Track[];
+  /** Cantidad total que declara la playlist (puede ser mayor que `tracks.length`). */
+  trackCount?: number;
+  /** true si la lista es más larga que el tope y se cargó solo el principio. */
+  truncated: boolean;
+}
+
 export interface SearchResults {
   query: string;
   songs: Track[];
   albums: AlbumSummary[];
   artists: ArtistSummary[];
+  playlists: RemotePlaylistSummary[];
   /** true si alguna de las búsquedas parciales falló y los resultados están incompletos. */
   partial: boolean;
 }
