@@ -35,6 +35,21 @@ async function audit(name) {
 }
 
 await audit('Inicio vacío');
+
+// Ajustes, y Ajustes + Inicio con cada tema: el contraste AA tiene que cumplirse en todos.
+await page.locator('.nav-item[title="Ajustes"]').click();
+await page.waitForSelector('.page--settings');
+await audit('Ajustes');
+for (const theme of ['claro', 'medianoche', 'oceano']) {
+  await page.evaluate((t) => void (document.documentElement.dataset.theme = t), theme);
+  await audit(`Ajustes · tema ${theme}`);
+  await page.locator('.nav-item[title="Inicio"]').click();
+  await audit(`Inicio vacío · tema ${theme}`);
+  await page.locator('.nav-item[title="Ajustes"]').click();
+  await page.waitForSelector('.page--settings');
+}
+await page.evaluate(() => void (document.documentElement.dataset.theme = 'grafito'));
+await page.locator('.nav-item[title="Inicio"]').click();
 await page.locator('input[aria-label^="Buscar"]').fill('Daft Punk One More Time');
 await page.waitForSelector('.tracklist__body .row', { timeout: 30000 });
 await audit('Resultados de búsqueda');

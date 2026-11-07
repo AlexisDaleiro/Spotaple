@@ -31,6 +31,7 @@ La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple
 - **Reproductor persistente**: play/pausa, anterior/siguiente, posición, volumen, silencio, aleatorio, repetición (toda la cola / una), cola editable en panel lateral, teclas multimedia y tarjeta del sistema.
 - **Persistencia**: cola, canción actual, posición, volumen y modos se restauran al abrir; la reproducción solo arranca con una acción tuya.
 - **Jam**: salas para escuchar en grupo (cola compartida, votos para saltar y likes), por red local o por internet. Ver [Modo Jam](#modo-jam-escuchar-en-grupo).
+- **Ajustes** (engranaje al pie del lateral; cada cambio se aplica al instante y se guarda en la base local): tema (Sistema, Grafito, Claro, Medianoche, Océano) y barra de título nativa a juego, color de acento, tamaño de texto, densidad, reducir animaciones, calidad de streaming (Alta o Ahorro de datos), reanudar al abrir la app y tu nombre en las salas.
 
 No hay descarga offline, crossfade, reproducción sin pausas ni ecualizador: **no están implementados** y la interfaz no los muestra.
 
@@ -140,19 +141,19 @@ SQLite (`node:sqlite`, incluido en Electron: no hay módulos nativos que reconst
 | `playlists`, `playlist_items` | listas propias y su orden |
 | `plays` | canciones que **realmente empezaron a sonar** |
 | `selections` | canciones que solo se eligieron (pueden no haber sonado) |
-| `settings` | estado del reproductor (cola, índice, posición, volumen, modos) y del jam (`jam_member_id`, `jam_name`, `jam_last_mode`) |
+| `settings` | estado del reproductor (cola, índice, posición, volumen, modos), ajustes de la app (`app_settings`, un solo JSON validado al leer y al escribir) y del jam (`jam_member_id`, `jam_name`, `jam_last_mode`). `jam_name` es también el «nombre en las salas» de Ajustes |
 
 Las playlists pertenecen a esta app; la sincronización con una cuenta de YouTube queda para más adelante.
 
 ## Sistema visual
 
-Dirección: **la familiaridad de Spotify con la contención de Apple.** Tema oscuro en grafito con superficies apenas diferenciadas; **un único acento coral** que solo aparece donde significa algo (canción en curso, estados activos, acción principal); tipografía del sistema (Segoe UI Variable) con seguimiento más cerrado cuanto más grande; portadas protagonistas; densidad compacta con áreas cómodas. Todo sale de variables en `src/renderer/src/styles/tokens.css`.
+Dirección: **la familiaridad de Spotify con la contención de Apple.** Tema oscuro en grafito con superficies apenas diferenciadas; **un único acento coral** que solo aparece donde significa algo (canción en curso, estados activos, acción principal); tipografía del sistema (Segoe UI Variable) con seguimiento más cerrado cuanto más grande; portadas protagonistas; densidad compacta con áreas cómodas. Todo sale de variables en `src/renderer/src/styles/tokens.css`. Hay cinco temas (Sistema, Grafito —el de siempre—, Claro, Medianoche y Océano) y el acento se puede cambiar desde **Ajustes**: redefinen las mismas variables y el contraste AA se audita en cada tema.
 
 Movimiento breve con curva de desaceleración, respuesta inmediata al presionar, y `prefers-reduced-motion`, `prefers-reduced-transparency` y `prefers-contrast` respetados. Contrastes verificados (AA) y auditoría automática con axe-core sin problemas.
 
 ## Pruebas
 
-**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js, el aislamiento del evaluador y el modo Jam (motor de sala, protocolo, reloj, servidores, cliente, sesión y conductor del reproductor).
+**Automáticas** (no dependen de YouTube; `npm test`, `npm run typecheck`): cola y modos (aleatorio, repetición), máquina de estados del reproductor con audio simulado (la última elección gana, errores, reintentos, restauración), base de datos (favoritos, playlists, reorden, historial, persistencia en disco), protocolo de audio con respuestas controladas, mapeadores con la forma real de YouTube.js, el aislamiento del evaluador, el modo Jam (motor de sala, protocolo, reloj, servidores, cliente, sesión y conductor del reproductor), los ajustes (validación, guardado, acento derivado y aplicación al documento) y la calidad de streaming (formato elegido y caché por calidad).
 
 **Reales** (contra YouTube; requieren internet y `npm run build`):
 
@@ -160,7 +161,8 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 |---|---|
 | `npm run e2e` | abrir → buscar → **reproducir de verdad** → pausa/continuar → saltar de posición → cola → navegar → minimizar → playlist y favoritos → cerrar y reabrir → tamaños de ventana. `SPOTAPLE_EXE=ruta\Spotaple.exe` lo prueba sobre la versión empaquetada. |
 | `npm run e2e:ui` | artista, álbum, menú, atajos, arrastrar la cola, diálogos, uso del proxy configurado, recuperación ante caídas de red (el proxy se corta) y contenido inexistente. |
-| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales (incluidas las del Jam). |
+| `npm run a11y` | axe-core WCAG 2.2 A/AA sobre las pantallas principales (incluidas las del Jam y Ajustes; Inicio y Ajustes también con cada tema). |
+| `npm run e2e:settings` | Ajustes de verdad: cambiar de tema (y el color de la barra de título nativa), acento, texto, densidad y animaciones; persistencia al cerrar y reabrir; ajustes corruptos en la base; con internet, «Reanudar al abrir» y que «Ahorro de datos» baje un formato más liviano (`NO_NETWORK=1` salta ese paso). |
 | `npm run e2e:jam` | dos instancias de Electron (admin y miembro) con música real: crear sala y unirse, pedir canciones, like, saltar, pasar a "Todas" y comprobar la sincronía, cerrar y reabrir, y lo mismo por la interfaz. `JAM_KIND=internet` con `SPOTAPLE_JAM_RELAY=ws://127.0.0.1:8788` lo prueba contra un relé (`npm run relay:node -- 8788` o `wrangler dev`); `E2E_VERBOSE=1` muestra qué ve cada app si un paso falla. |
 | `npm run check:youtube` | qué clientes de YouTube entregan hoy el audio completo. |
 | `npm run check:jam` | si dos PCs (o esta y el relé) pueden hablarse por WebSocket: `listen`, `connect <ip>:<puerto>` y `url <ws://…>`. |
