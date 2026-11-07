@@ -99,3 +99,10 @@ export function parseSettings(raw: unknown): Partial<AppSettings> {
 export function resolveTheme(theme: ThemeId, systemLight: boolean): ResolvedTheme {
   return theme === 'system' ? (systemLight ? 'claro' : 'grafito') : theme;
 }
+
+/** Colores de la ventana nativa (barra de título y fondo) para unos ajustes y un esquema de sistema dados. */
+export function chromeFor(settings: AppSettings, systemLight: boolean): { bg: string; symbol: string } {
+  const id = resolveTheme(settings.theme, systemLight);
+  const { bg, symbol } = THEMES.find((t) => t.id === id)!;
+  return { bg, symbol };
+}

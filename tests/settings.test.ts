@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../src/shared/jam/types';
-import { DEFAULT_SETTINGS, TEXT_SCALES, THEMES, parseSettings, resolveTheme } from '../src/shared/settings';
+import { DEFAULT_SETTINGS, TEXT_SCALES, THEMES, chromeFor, parseSettings, resolveTheme } from '../src/shared/settings';
 
 describe('parseSettings', () => {
   it('conserva lo válido y normaliza el acento a minúsculas', () => {
@@ -44,6 +44,19 @@ describe('resolveTheme', () => {
     expect(resolveTheme('system', true)).toBe('claro');
     expect(resolveTheme('system', false)).toBe('grafito');
     expect(resolveTheme('oceano', true)).toBe('oceano');
+  });
+});
+
+describe('chromeFor', () => {
+  const colors = (id: string) => {
+    const t = THEMES.find((x) => x.id === id)!;
+    return { bg: t.bg, symbol: t.symbol };
+  };
+
+  it('devuelve los colores de la ventana del tema resuelto', () => {
+    expect(chromeFor({ ...DEFAULT_SETTINGS, theme: 'system' }, true)).toEqual(colors('claro'));
+    expect(chromeFor({ ...DEFAULT_SETTINGS, theme: 'system' }, false)).toEqual(colors('grafito'));
+    expect(chromeFor({ ...DEFAULT_SETTINGS, theme: 'oceano' }, true)).toEqual(colors('oceano'));
   });
 });
 

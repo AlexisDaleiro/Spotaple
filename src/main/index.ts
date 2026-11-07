@@ -1,10 +1,12 @@
-import { app, BrowserWindow, Menu, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme, net, protocol, session, shell } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { AUDIO_SCHEME, IPC } from '../shared/api';
 import { buildCsp } from '../shared/csp';
+import type { AppSettings } from '../shared/settings';
 import { JAM_RELAY_URL } from '../shared/jam/config';
 import { createAudioHandler } from './audio-protocol';
+import { applyChrome, prepareChrome, TITLE_BAR_HEIGHT } from './chrome';
 import { createStore } from './db/store';
 import { registerIpc } from './ipc';
 import { createJamSession } from './jam/session';
@@ -20,23 +22,24 @@ protocol.registerSchemesAsPrivileged([
 
 const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
 const isDev = Boolean(rendererUrl);
-const BG = '#0e0f11';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
-function createWindow() {
+function createWindow(settings: AppSettings) {
+  // Con los colores del tema guardado desde el primer cuadro: sin destello del tema equivocado al abrir.
+  const chrome = prepareChrome(settings);
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: BG,
+    backgroundColor: chrome.bg,
     title: 'Spotaple',
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     // Misma altura que la barra superior de la interfaz (--title-h: 48px) para que los botones alineen.
-    titleBarOverlay: { color: BG, symbolColor: '#b4b8c0', height: 48 },
+    titleBarOverlay: { color: chrome.bg, symbolColor: chrome.symbol, height: TITLE_BAR_HEIGHT },
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -45,6 +48,8 @@ function createWindow() {
       webSecurity: true,
       // El audio y el avance de cola no deben depender de que la ventana esté visible.
       backgroundThrottling: false,
+      // «Reanudar al abrir» necesita poder reproducir sin un gesto previo del usuario.
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
   win.once('ready-to-show', () => win.show());
@@ -89,11 +94,23 @@ app.whenReady().then(() => {
     relayUrl: process.env['SPOTAPLE_JAM_RELAY'] ?? JAM_RELAY_URL,
     emit: (view) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.jamState, view)),
   });
-  registerIpc({ store, provider, jam, onSettings: () => undefined, rendererOrigin: rendererUrl });
+  registerIpc({
+    store,
+    provider,
+    jam,
+    // Cada cambio de ajustes recolorea la ventana nativa (la interfaz se actualiza sola en el renderer).
+    onSettings: (s) => BrowserWindow.getAllWindows().forEach((w) => applyChrome(w, s)),
+    rendererOrigin: rendererUrl,
+  });
+  // «Sistema» sigue al sistema operativo con la app abierta: la barra de título nativa se vuelve a pintar.
+  nativeTheme.on('updated', () => {
+    const settings = store.getAppSettings();
+    if (settings.theme === 'system') BrowserWindow.getAllWindows().forEach((w) => applyChrome(w, settings));
+  });
 
-  createWindow();
+  createWindow(store.getAppSettings());
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(store.getAppSettings());
   });
   // Antes de cerrar, el admin de una sala local la cierra para que los miembros vean "La sala terminó".
   let quitting = false;
