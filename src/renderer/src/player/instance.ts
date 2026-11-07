@@ -2,6 +2,7 @@ import { useStore } from 'zustand';
 import { api } from '../api';
 import { artistsText, thumbUrl } from '../lib/format';
 import { useJam } from '../stores/jam';
+import { settingsStore } from '../stores/settings';
 import { toast } from '../stores/ui';
 import { createJamHook } from './jam-sync';
 import { createPlayer, type PlayerActions, type PlayerState } from './player';
@@ -37,6 +38,8 @@ export const playerStore = createPlayer({
     recordPlay: (t, auto?: boolean) => api.library.recordPlay(t, auto),
   },
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
+  // Radio automática: el ajuste se lee en cada decisión, así que apagarla vale al instante.
+  radio: { enabled: () => settingsStore.getState().settings.radio, fetch: (seed, ids) => api.music.radio(seed, ids) },
   // Dentro de una sala, pedir canciones las manda a la sala (ver jam-sync.ts).
   jam: createJamHook({
     getView: () => useJam.getState().view,

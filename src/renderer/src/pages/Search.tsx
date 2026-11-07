@@ -5,6 +5,7 @@ import { playAlbum, playArtist, playRemotePlaylist } from '../lib/actions';
 import { player } from '../player/instance';
 import { navigate } from '../stores/nav';
 import { useSearch } from '../stores/search';
+import { useSettings } from '../stores/settings';
 import { AlbumCard, ArtistCard, RemotePlaylistCard, Shelf } from '../components/Shelf';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
 import { TrackList, TrackRow } from '../components/TrackRow';
@@ -30,6 +31,8 @@ export function SearchPage({ q }: { q: string }) {
   const error = useSearch((s) => s.error);
   const run = useSearch((s) => s.run);
   const retry = useSearch((s) => s.retry);
+  // Con la radio activada una canción suelta suena sola y sigue la radio; apagada, se encolan los resultados.
+  const radio = useSettings((s) => s.settings.radio);
   const [tab, setTab] = useState<Tab>('all');
 
   useEffect(() => run(q), [q, run]);
@@ -72,7 +75,7 @@ export function SearchPage({ q }: { q: string }) {
   const songsBlock = (list: typeof songs) => (
     <TrackList label="Canciones">
       {list.map((t, i) => (
-        <TrackRow key={t.id} track={t} index={i} onPlay={() => player().playTracks(songs, songs.indexOf(t))} />
+        <TrackRow key={t.id} track={t} index={i} onPlay={() => (radio ? player().playTracks([t], 0) : player().playTracks(songs, songs.indexOf(t)))} />
       ))}
     </TrackList>
   );

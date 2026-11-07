@@ -315,6 +315,17 @@
   padding: var(--s-3) var(--s-4);
   font-size: var(--fs-sm);
 }
+/* Separador «Radio automática» dentro de la lista de próximas canciones */
+.queue__divider {
+  list-style: none;
+  margin-bottom: var(--s-2);
+  padding: var(--s-5) var(--s-4) var(--s-3);
+  border-bottom: 1px solid var(--line);
+  color: var(--fg-2);
+  font: 600 var(--fs-xs) / 1 var(--font);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
 
 /* ───────── Reproductor persistente ───────── */
 .player {

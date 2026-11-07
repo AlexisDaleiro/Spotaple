@@ -1,5 +1,5 @@
 import { GripVertical, ListMusic, X } from 'lucide-react';
-import type { KeyboardEvent } from 'react';
+import { Fragment, type KeyboardEvent } from 'react';
 import type { JamItem, JamView } from '@shared/jam/types';
 import { api } from '../api';
 import { artistsText, cx, rowDuration } from '../lib/format';
@@ -12,6 +12,14 @@ import { Cover } from './Cover';
 import { IconButton } from './IconButton';
 import { onTrackContextMenu, openTrackMenu } from './ContextMenu';
 import { Empty } from './States';
+
+/** Foco al hermano anterior o siguiente que se pueda enfocar: salta los separadores (p. ej. «Radio automática»). */
+function focusSibling(el: HTMLElement, dir: 'next' | 'prev') {
+  const step = (e: HTMLElement) => (dir === 'next' ? e.nextElementSibling : e.previousElementSibling) as HTMLElement | null;
+  let sib = step(el);
+  while (sib && sib.tabIndex < 0) sib = step(sib);
+  sib?.focus();
+}
 
 function QueueRow({
   item,
@@ -39,8 +47,8 @@ function QueueRow({
     if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter') player().playIndex(absIndex);
     else if (e.key === 'Delete' && !current) player().removeFromQueue(item.uid);
-    else if (e.key === 'ArrowDown') (e.currentTarget.nextElementSibling as HTMLElement | null)?.focus();
-    else if (e.key === 'ArrowUp') (e.currentTarget.previousElementSibling as HTMLElement | null)?.focus();
+    else if (e.key === 'ArrowDown') focusSibling(e.currentTarget, 'next');
+    else if (e.key === 'ArrowUp') focusSibling(e.currentTarget, 'prev');
     else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       const r = e.currentTarget.getBoundingClientRect();
       openTrackMenu({ clientX: r.left + 60, clientY: r.top + r.height / 2 }, t, { extra });
@@ -51,7 +59,7 @@ function QueueRow({
     <li
       className={cx('qrow', current && 'is-current', reorder?.dragging && 'is-dragging', reorder?.dropBefore && 'drop-before', reorder?.dropAfter && 'drop-after')}
       tabIndex={0}
-      aria-label={`${t.title}, ${artistsText(t.artists)}${current ? ', sonando ahora' : ''}`}
+      aria-label={`${t.title}, ${artistsText(t.artists)}${item.auto ? ', de la radio automática' : ''}${current ? ', sonando ahora' : ''}`}
       onDoubleClick={() => player().playIndex(absIndex)}
       onKeyDown={onKeyDown}
       onContextMenu={onTrackContextMenu(t, { extra })}
@@ -106,7 +114,14 @@ function PersonalQueue() {
             ) : (
               <ul className="queue__list" aria-label="Próximas canciones">
                 {upcoming.map((it, i) => (
-                  <QueueRow key={it.uid} item={it} absIndex={index + 1 + i} upcomingCount={upcoming.length} reorder={reorder(i)} />
+                  <Fragment key={it.uid}>
+                    {it.auto && !upcoming[i - 1]?.auto && (
+                      <li className="queue__divider" aria-hidden="true">
+                        Radio automática
+                      </li>
+                    )}
+                    <QueueRow item={it} absIndex={index + 1 + i} upcomingCount={upcoming.length} reorder={reorder(i)} />
+                  </Fragment>
                 ))}
               </ul>
             )}
