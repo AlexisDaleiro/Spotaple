@@ -30,6 +30,8 @@ export const queueAlbum = (id: string) =>
     },
   );
 export const playArtist = (id: string) => withTracks(async () => (await api.music.artist(id)).topSongs, (t) => player().playTracks(t, 0), 'Este artista no tiene canciones populares.');
+export const playRemotePlaylist = (id: string) =>
+  withTracks(async () => (await api.music.remotePlaylist(id)).tracks, (t) => player().playTracks(t, 0), 'Esta playlist no tiene canciones disponibles.');
 export const playPlaylist = (id: number) => withTracks(async () => (await api.library.playlist(id)).items.map((i) => i.track), (t) => player().playTracks(t, 0), 'La playlist está vacía.');
 export const queuePlaylist = (id: number) =>
   withTracks(

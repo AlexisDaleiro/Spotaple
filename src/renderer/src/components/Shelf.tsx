@@ -1,6 +1,6 @@
 import { Play } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
-import type { AlbumSummary, ArtistSummary, PlaylistSummary, Track } from '@shared/types';
+import type { AlbumSummary, ArtistSummary, PlaylistSummary, RemotePlaylistSummary, Track } from '@shared/types';
 import { artistsText, plural } from '../lib/format';
 import { navigate } from '../stores/nav';
 import { Cover } from './Cover';
@@ -99,6 +99,19 @@ export function PlaylistCard({ playlist, onPlay, onContextMenu }: { playlist: Pl
       onOpen={() => navigate({ page: 'playlist', id: playlist.id })}
       onPlay={playlist.trackCount ? onPlay : undefined}
       onContextMenu={onContextMenu}
+    />
+  );
+}
+
+/** Playlist de YouTube Music encontrada en la búsqueda: se abre en su página; el autor viaja en la ruta (la cabecera no lo trae). */
+export function RemotePlaylistCard({ playlist, onPlay }: { playlist: RemotePlaylistSummary; onPlay?: () => void }) {
+  return (
+    <MediaCard
+      cover={playlist.thumbnail}
+      name={playlist.title}
+      subtitle={['Playlist', playlist.author].filter(Boolean).join(' · ')}
+      onOpen={() => navigate({ page: 'remotePlaylist', id: playlist.id, author: playlist.author })}
+      onPlay={onPlay}
     />
   );
 }

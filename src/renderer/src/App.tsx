@@ -17,6 +17,7 @@ import { JamPage } from './pages/Jam';
 import { LibraryPage } from './pages/Library';
 import { PlaylistPage } from './pages/PlaylistPage';
 import { PlaylistsPage } from './pages/Playlists';
+import { RemotePlaylistPage } from './pages/RemotePlaylistPage';
 import { SearchPage } from './pages/Search';
 import { SettingsPage } from './pages/Settings';
 
@@ -40,6 +41,8 @@ function Page({ route }: { route: Route }) {
       return <JamPage />;
     case 'settings':
       return <SettingsPage />;
+    case 'remotePlaylist':
+      return <RemotePlaylistPage id={route.id} author={route.author} />;
   }
 }
 

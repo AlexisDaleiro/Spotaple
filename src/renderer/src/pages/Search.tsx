@@ -1,15 +1,15 @@
-import { Disc3, Mic2, Music2, Search, SearchX } from 'lucide-react';
+import { Disc3, ListMusic, Mic2, Music2, Search, SearchX } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cx } from '../lib/format';
-import { playAlbum, playArtist } from '../lib/actions';
+import { playAlbum, playArtist, playRemotePlaylist } from '../lib/actions';
 import { player } from '../player/instance';
 import { navigate } from '../stores/nav';
 import { useSearch } from '../stores/search';
-import { AlbumCard, ArtistCard, Shelf } from '../components/Shelf';
+import { AlbumCard, ArtistCard, RemotePlaylistCard, Shelf } from '../components/Shelf';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
 import { TrackList, TrackRow } from '../components/TrackRow';
 
-type Tab = 'all' | 'songs' | 'artists' | 'albums';
+type Tab = 'all' | 'songs' | 'artists' | 'albums' | 'playlists';
 export const SUGGESTIONS = ['Lo-fi', 'Rock nacional', 'Jazz clásico', 'Charly García', 'Éxitos de los 90', 'Bossa nova'];
 
 export function Suggestions() {
@@ -59,13 +59,14 @@ export function SearchPage({ q }: { q: string }) {
     );
   }
 
-  const { songs, albums, artists } = results;
-  const total = songs.length + albums.length + artists.length;
+  const { songs, albums, artists, playlists } = results;
+  const total = songs.length + albums.length + artists.length + playlists.length;
   const tabs: { id: Tab; label: string; n: number; icon: React.ReactNode }[] = [
     { id: 'all', label: 'Todo', n: total, icon: <Search size={14} /> },
     { id: 'songs', label: 'Canciones', n: songs.length, icon: <Music2 size={14} /> },
     { id: 'artists', label: 'Artistas', n: artists.length, icon: <Mic2 size={14} /> },
     { id: 'albums', label: 'Álbumes', n: albums.length, icon: <Disc3 size={14} /> },
+    { id: 'playlists', label: 'Playlists', n: playlists.length, icon: <ListMusic size={14} /> },
   ];
 
   const songsBlock = (list: typeof songs) => (
@@ -132,6 +133,13 @@ export function SearchPage({ q }: { q: string }) {
             <Shelf title="Álbumes" id="sec-albums">
               {(tab === 'all' ? albums.slice(0, 8) : albums).map((a) => (
                 <AlbumCard key={a.id} album={a} onPlay={() => void playAlbum(a.id)} />
+              ))}
+            </Shelf>
+          )}
+          {(tab === 'all' || tab === 'playlists') && playlists.length > 0 && (
+            <Shelf title="Playlists" id="sec-playlists">
+              {(tab === 'all' ? playlists.slice(0, 8) : playlists).map((p) => (
+                <RemotePlaylistCard key={p.id} playlist={p} onPlay={() => void playRemotePlaylist(p.id)} />
               ))}
             </Shelf>
           )}
