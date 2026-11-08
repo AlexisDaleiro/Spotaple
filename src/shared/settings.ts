@@ -23,6 +23,8 @@ export interface AppSettings {
   autoDownload: boolean;
   /** Formato que aparece primero en el menú «Descargar canción». */
   exportFormat: AudioFormat;
+  /** Inicio muestra «Hecho para vos» (listas armadas con tu historial y tus favoritas). */
+  forYou: boolean;
   /** Nombre por defecto en las salas. Vive en la clave `jam_name` de la tabla `settings`. */
   jamName: string;
 }
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   radio: true,
   autoDownload: true,
   exportFormat: 'opus',
+  forYou: true,
   jamName: '',
 };
 
@@ -108,6 +111,9 @@ export function parseSettings(raw: unknown): Partial<AppSettings> {
 
   const exportFormat = parseFormat(get('exportFormat'));
   if (exportFormat) out.exportFormat = exportFormat;
+
+  const forYou = get('forYou');
+  if (typeof forYou === 'boolean') out.forYou = forYou;
 
   const jamName = get('jamName');
   if (jamName === '') out.jamName = '';

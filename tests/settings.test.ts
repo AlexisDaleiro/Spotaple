@@ -9,7 +9,7 @@ describe('parseSettings', () => {
   });
 
   it('descarta todo lo inválido o desconocido', () => {
-    const junk = { theme: 'neon', accent: 'red', textScale: 99, density: 'x', reduceMotion: 'yes', streamQuality: 'ultra', resumeOnOpen: 1, jamName: 42, radio: 'yes', autoDownload: 'si', exportFormat: 'mp3', extra: true };
+    const junk = { theme: 'neon', accent: 'red', textScale: 99, density: 'x', reduceMotion: 'yes', streamQuality: 'ultra', resumeOnOpen: 1, jamName: 42, radio: 'yes', autoDownload: 'si', exportFormat: 'mp3', forYou: 'si', extra: true };
     expect(parseSettings(junk)).toEqual({});
   });
 
@@ -44,6 +44,12 @@ describe('parseSettings', () => {
     expect(parseSettings({ autoDownload: true, exportFormat: 'opus' })).toEqual({ autoDownload: true, exportFormat: 'opus' });
     expect(parseSettings({ autoDownload: 'si' })).toEqual({});
     expect(parseSettings({ exportFormat: 'mp3' })).toEqual({});
+  });
+
+  it('forYou solo acepta booleanos', () => {
+    expect(parseSettings({ forYou: false })).toEqual({ forYou: false });
+    expect(parseSettings({ forYou: true })).toEqual({ forYou: true });
+    expect(parseSettings({ forYou: 'si' })).toEqual({});
   });
 
   it('textScale solo acepta los valores de TEXT_SCALES', () => {
@@ -91,6 +97,10 @@ describe('THEMES y valores por defecto', () => {
   it('las favoritas se descargan solas y la exportación va en Opus por defecto', () => {
     expect(DEFAULT_SETTINGS.autoDownload).toBe(true);
     expect(DEFAULT_SETTINGS.exportFormat).toBe('opus');
+  });
+
+  it('«Hecho para vos» viene activado', () => {
+    expect(DEFAULT_SETTINGS.forYou).toBe(true);
   });
 
   it('el tema por defecto conserva el aspecto actual (grafito)', () => {
