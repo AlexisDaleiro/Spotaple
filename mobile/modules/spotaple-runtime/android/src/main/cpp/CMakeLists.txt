@@ -7,4 +7,5 @@ set_target_properties(node PROPERTIES IMPORTED_LOCATION "${NODE_DIR}/bin/${ANDRO
 add_library(spotaple_runtime SHARED runtime.cpp)
 target_compile_features(spotaple_runtime PRIVATE cxx_std_20)
 target_include_directories(spotaple_runtime PRIVATE "${NODE_DIR}/include/node")
+target_link_options(spotaple_runtime PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")
 target_link_libraries(spotaple_runtime node)
