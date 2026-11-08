@@ -82,6 +82,11 @@ export interface PlayerDeps {
    * internet: un error de red al preparar una canción no descargada salta a las descargadas que siguen.
    */
   isDownloaded?: (trackId: string) => boolean;
+  /**
+   * Se llama justo antes de asignar la fuente al audio que va a sonar: el motor de sonido le pone la ganancia de
+   * normalización a esa canción (`prepared.loudnessLkfs`).
+   */
+  onPrepared?: (prepared: PreparedAudio, audio: AudioLike) => void;
 }
 
 export interface PlayerState extends QueueState {
@@ -268,6 +273,7 @@ export function createPlayer(deps: PlayerDeps) {
       // YouTube no siempre informa la duración en las listas; la fuente de audio sí la trae.
       if (!item.track.durationSec && prepared.durationSec) patchDuration(item.uid, Math.round(prepared.durationSec));
       loadedUid = item.uid;
+      deps.onPrepared?.(prepared, audio);
       audio.src = urlFor(item.track.id);
       try {
         await audio.play();

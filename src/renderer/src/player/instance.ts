@@ -5,6 +5,8 @@ import { useJam } from '../stores/jam';
 import { useOffline } from '../stores/offline';
 import { settingsStore } from '../stores/settings';
 import { toast } from '../stores/ui';
+import { normalizationGainDb } from '@shared/audio';
+import { createAudioEngine } from './audio-engine';
 import { createJamHook } from './jam-sync';
 import { createPlayer, type PlayerActions, type PlayerState } from './player';
 
@@ -14,6 +16,34 @@ import { createPlayer, type PlayerActions, type PlayerState } from './player';
  */
 const audio = new Audio();
 audio.preload = 'auto';
+// Web Audio (ecualizador) exige un medio con CORS: sin esto emite silencio. Va antes de cualquier `src`; main responde
+// con `Access-Control-Allow-Origin` (ver audio-protocol.ts).
+audio.crossOrigin = 'anonymous';
+
+// Motor de sonido: ecualizador y ganancia por canción. Si Web Audio no está, `engine` es null y el audio suena como siempre.
+const engine = createAudioEngine([audio]);
+let loudness: number | undefined; // LUFS de la canción en curso
+const applyNormalization = () => engine?.setTrackGainDb(audio, settingsStore.getState().settings.normalize ? normalizationGainDb(loudness) : 0);
+if (engine) {
+  const applyEq = () => {
+    const s = settingsStore.getState().settings;
+    engine.setEq({ on: s.eqOn, gains: s.eqGains, preamp: s.eqPreamp });
+  };
+  let seen = settingsStore.getState().settings;
+  applyEq();
+  settingsStore.subscribe((state) => {
+    if (state.settings === seen) return;
+    seen = state.settings;
+    applyEq();
+    applyNormalization(); // activar o apagar «Normalizar» con una canción sonando vale al instante
+  });
+  // Diagnóstico (mismo interruptor que los eventos del audio): los e2e leen el grafo desde acá.
+  try {
+    if (localStorage.getItem('debugAudio') === '1') (globalThis as { __spotapleAudio?: unknown }).__spotapleAudio = engine;
+  } catch {
+    /* sin acceso a localStorage: sin diagnóstico */
+  }
+}
 
 // Diagnóstico opcional: en la consola, `localStorage.debugAudio = '1'` y recargar traza los eventos del audio.
 try {
@@ -39,6 +69,10 @@ export const playerStore = createPlayer({
     recordPlay: (t, auto?: boolean) => api.library.recordPlay(t, auto),
   },
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
+  onPrepared: (prepared) => {
+    loudness = prepared.loudnessLkfs;
+    applyNormalization();
+  },
   // Sin red solo suenan las canciones descargadas: lo demás se salta con aviso.
   reachable: (id) => useOffline.getState().reachable(id),
   isDownloaded: (id) => useOffline.getState().ids.has(id),

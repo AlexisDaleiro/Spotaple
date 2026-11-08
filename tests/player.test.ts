@@ -596,6 +596,33 @@ describe('restauración de sesión', () => {
   });
 });
 
+describe('onPrepared (gancho del motor de audio)', () => {
+  it('recibe lo que devolvió prepare y el audio, una vez por canción y antes de asignar la fuente', async () => {
+    const seen: { prepared: PreparedAudio; audio: AudioLike; srcAtCall: string }[] = [];
+    const onPrepared = vi.fn((prepared: PreparedAudio, a: AudioLike) => void seen.push({ prepared, audio: a, srcAtCall: a.src }));
+    const { s, audio } = setup(async (id) => ({ ...ok(id), loudnessLkfs: -9 }), { onPrepared });
+    s().playTracks(tracks(2), 0);
+    await flush();
+    expect(onPrepared).toHaveBeenCalledTimes(1);
+    expect(seen[0]!.prepared).toEqual({ trackId: track(0).id, mimeType: 'audio/webm', loudnessLkfs: -9 });
+    expect(seen[0]!.audio).toBe(audio);
+    expect(seen[0]!.srcAtCall).toBe('');
+    expect(audio.src).toBe(`test://${track(0).id}`);
+    s().next();
+    await flush();
+    expect(onPrepared).toHaveBeenCalledTimes(2);
+    expect(onPrepared.mock.calls[1]![0].trackId).toBe(track(1).id);
+  });
+
+  it('si prepare falla no se llama', async () => {
+    const onPrepared = vi.fn();
+    const { s } = setup(async () => Promise.reject(Object.assign(new Error('nope'), { code: 'unavailable' })), { onPrepared });
+    s().playTracks([track(0)], 0);
+    await flush();
+    expect(onPrepared).not.toHaveBeenCalled();
+  });
+});
+
 describe('volumen', () => {
   it('aplica curva perceptual y silencio al audio', () => {
     const { s, audio } = setup();
