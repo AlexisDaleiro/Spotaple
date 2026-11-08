@@ -268,3 +268,24 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--track-xs);
 }
+.jam-relay {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  color: var(--fg-1);
+}
+
+.jam-relay__actions,
+.jam-relay__consent {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.jam-relay__actions {
+  flex-wrap: wrap;
+}
+
+.jam-relay__consent a {
+  text-decoration: underline;
+}

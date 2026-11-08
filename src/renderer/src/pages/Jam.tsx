@@ -7,6 +7,65 @@ import { settingsStore, useSettings } from '../stores/settings';
 
 type Where = 'create' | 'join';
 
+function RelaySetup() {
+  const status = useJam((s) => s.relay);
+  const [showTerms, setShowTerms] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: () => Promise<void>) {
+    setError(null);
+    setBusy(true);
+    try {
+      await action();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (status === null) return <p className="jam-status" role="status">Cargando el relé…</p>;
+  if (status === 'ready') return <p className="jam-status" role="status">Tu relé está listo.</p>;
+
+  return (
+    <div className="jam-relay">
+      {status === 'preparing' ? (
+        <p className="jam-status" role="status">Preparando tu relé en Cloudflare…</p>
+      ) : status === 'claim' && !showTerms ? (
+        <>
+          <p>Terminá la activación en Cloudflare dentro de una hora y después confirmala acá.</p>
+          <div className="jam-relay__actions">
+            <button type="button" className="btn" disabled={busy} onClick={() => void run(api.jam.openRelayClaim)}>Abrir Cloudflare</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => void run(api.jam.activateRelay)}>Ya activé mi relé</button>
+            <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { setAccepted(false); setShowTerms(true); }}>Preparar otro</button>
+          </div>
+        </>
+      ) : showTerms ? (
+        <>
+          <p>Spotaple prepara el relé. Después iniciás sesión en Cloudflare para guardarlo en tu cuenta.</p>
+          <label className="jam-relay__consent">
+            <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+            <span>Acepto los <a href="https://www.cloudflare.com/terms/" target="_blank" rel="noreferrer">términos</a> y la <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noreferrer">política de privacidad de Cloudflare</a>.</span>
+          </label>
+          <button type="button" className="btn" disabled={busy || !accepted} onClick={() => {
+            setShowTerms(false);
+            setAccepted(false);
+            void run(() => api.jam.prepareRelay(accepted));
+          }}>Preparar relé</button>
+        </>
+      ) : (
+        <>
+          <p>Configurá Cloudflare una vez para crear salas por internet. Tus invitados solo necesitan la invitación.</p>
+          <button type="button" className="btn" disabled={busy} onClick={() => setShowTerms(true)}>Configurar mi relé</button>
+        </>
+      )}
+      {error && <p className="jam-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 /** Fuera de sala: elegir un nombre y crear una sala nueva o unirse a una con su invitación. */
 function JamStart({ view }: { view: JamView | null }) {
   const ids = useId();
@@ -14,6 +73,7 @@ function JamStart({ view }: { view: JamView | null }) {
   const saved = useSettings((s) => s.settings.jamName);
   const [name, setName] = useState(saved || view?.name || '');
   const [kind, setKind] = useState<'local' | 'internet'>('local');
+  const relay = useJam((s) => s.relay);
   const [invite, setInvite] = useState('');
   const [working, setWorking] = useState<Where | null>(null);
   const [error, setError] = useState<{ where: Where; message: string } | null>(null);
@@ -69,15 +129,16 @@ function JamStart({ view }: { view: JamView | null }) {
             <label className="jam-kind__opt">
               <input type="radio" name="jam-kind" value="internet" checked={kind === 'internet'} onChange={() => setKind('internet')} />
               <span>Internet</span>
-              <span className="jam-kind__hint">Funciona aunque la red de la oficina no deje conectar las PCs entre sí.</span>
+              <span className="jam-kind__hint">Para escuchar juntos desde redes distintas con tu relé de Cloudflare.</span>
             </label>
           </fieldset>
+          {kind === 'internet' && <RelaySetup />}
           {error?.where === 'create' && (
             <p className="jam-error" role="alert">
               {error.message}
             </p>
           )}
-          <button type="submit" className="btn btn--solid" disabled={busy || !name.trim()}>
+          <button type="submit" className="btn btn--solid" disabled={busy || !name.trim() || (kind === 'internet' && relay !== 'ready')}>
             {working === 'create' ? 'Creando…' : 'Crear sala'}
           </button>
         </form>
@@ -93,7 +154,7 @@ function JamStart({ view }: { view: JamView | null }) {
               value={invite}
               spellCheck={false}
               autoComplete="off"
-              placeholder="K7M2P o 192.168.1.20:47800/K7M2P"
+              placeholder="Pegá el enlace o código que te compartieron"
               onChange={(e) => setInvite(e.target.value)}
             />
           </label>

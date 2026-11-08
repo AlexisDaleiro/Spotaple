@@ -15,6 +15,7 @@ import type { DiscoverState } from './discover';
 import type { AudioFormat, ExportResult, OfflineState } from './offline';
 import type { AppSettings } from './settings';
 import type { UpdateState } from './updates';
+import type { JamRelayStatus } from './jam/config';
 
 /** Esquema de la URL que sirve el audio. El renderer solo conoce el videoId. */
 export const AUDIO_SCHEME = 'spotaple-audio';
@@ -63,6 +64,11 @@ export const IPC = {
   jamLeave: 'jam:leave',
   jamSend: 'jam:send',
   jamView: 'jam:view',
+  jamRelayGet: 'jam:relay-get',
+  jamRelayPrepare: 'jam:relay-prepare',
+  jamRelayClaim: 'jam:relay-claim',
+  jamRelayActivate: 'jam:relay-activate',
+  jamRelayState: 'jam:relay-state',
   /** Evento main→renderer: la vista de la sala. */
   jamState: 'jam:state',
   /** Evento main→renderer: lo descargado y la cola de descargas. */
@@ -142,6 +148,11 @@ export interface SpotapleApi {
     subscribe(cb: (state: UpdateState) => void): Promise<void>;
   };
   jam: {
+    relayStatus(): Promise<JamRelayStatus>;
+    prepareRelay(accepted: boolean): Promise<void>;
+    openRelayClaim(): Promise<void>;
+    activateRelay(): Promise<void>;
+    subscribeRelay(cb: (status: JamRelayStatus) => void): Promise<void>;
     /** Crea una sala (local o por internet) y queda como admin. Lanza `Error` con un mensaje listo para mostrar. */
     create(o: { kind: 'local' | 'internet'; name: string }): Promise<JamView>;
     /** Se une con lo que la persona pegó (código de internet o `ip:puerto/CODIGO`). */

@@ -66,6 +66,15 @@ const bridge: SpotapleBridge = {
     },
   },
   jam: {
+    relayStatus: () => call(IPC.jamRelayGet),
+    prepareRelay: (accepted) => call(IPC.jamRelayPrepare, accepted),
+    openRelayClaim: () => call(IPC.jamRelayClaim),
+    activateRelay: () => call(IPC.jamRelayActivate),
+    subscribeRelay: (cb) => {
+      ipcRenderer.removeAllListeners(IPC.jamRelayState);
+      ipcRenderer.on(IPC.jamRelayState, (_e, status) => cb(status));
+      return Promise.resolve({ ok: true, data: undefined });
+    },
     create: (o) => call(IPC.jamCreate, o),
     join: (o) => call(IPC.jamJoin, o),
     leave: () => call(IPC.jamLeave),

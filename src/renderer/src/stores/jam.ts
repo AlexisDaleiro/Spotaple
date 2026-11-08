@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import { jamErrorMessage } from '@shared/jam/errors';
 import type { JamView } from '@shared/jam/types';
+import type { JamRelayStatus } from '@shared/jam/config';
 import { api } from '../api';
 import { toast } from './ui';
 
 interface JamStore {
   /** Lo último que informó main; null hasta la primera carga. */
   view: JamView | null;
+  relay: JamRelayStatus | null;
   set(view: JamView): void;
 }
 
-export const useJam = create<JamStore>((set) => ({ view: null, set: (view) => set({ view }) }));
+export const useJam = create<JamStore>((set) => ({ view: null, relay: null, set: (view) => set({ view }) }));
 
 /** En una sala viva: con estado y conectada (o reconectando, sin haber perdido la sala). */
 export const inRoom = (v: JamView | null): boolean => v !== null && v.state !== null && (v.status === 'connected' || v.status === 'reconnecting');
@@ -34,6 +36,7 @@ export function jamNotice(prev: JamView | null, next: JamView): { message: strin
 
 /** Carga la vista actual y se suscribe a los cambios que empuja main (con sus avisos). */
 export async function startJamBridge(): Promise<void> {
+  void startRelayBridge();
   try {
     useJam.getState().set(await api.jam.view());
     await api.jam.subscribe((view) => {
@@ -43,5 +46,15 @@ export async function startJamBridge(): Promise<void> {
     });
   } catch {
     /* sin sala o sin puente: el jam simplemente no aparece */
+  }
+}
+
+async function startRelayBridge(): Promise<void> {
+  try {
+    await api.jam.subscribeRelay((relay) => useJam.setState({ relay }));
+    const relay = await api.jam.relayStatus();
+    if (!useJam.getState().relay) useJam.setState({ relay });
+  } catch (e) {
+    toast(e instanceof Error ? e.message : 'No se pudo leer el estado del relé.', 'error');
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "spotaple",
   "productName": "Spotaple",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reproductor de música de escritorio, local y personal, con streaming vía YouTube.js",
   "main": "out/main/index.js",
   "type": "module",
@@ -24,9 +24,10 @@
     "e2e:audio": "node scripts/e2e-audio.mjs",
     "a11y": "node scripts/a11y.mjs",
     "check:youtube": "node scripts/probe.mjs",
-    "pack": "electron-vite build && electron-builder --dir",
-    "dist": "electron-vite build && electron-builder --win",
-    "dist:installer": "electron-vite build && electron-builder --win nsis --x64 --publish never",
+    "pack": "npm run prepare:relay && electron-vite build && electron-builder --dir",
+    "dist": "npm run prepare:relay && electron-vite build && electron-builder --win",
+    "dist:installer": "npm run prepare:relay && electron-vite build && electron-builder --win nsis --x64 --publish never",
+    "prepare:relay": "node scripts/prepare-relay.mjs",
     "check:jam": "node scripts/jam-probe.mjs",
     "check:relay": "node scripts/check-relay.mjs",
     "e2e:jam": "node scripts/e2e-jam.mjs",
@@ -38,6 +39,19 @@
     "files": [
       "out/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".",
+        "to": "jam-relay",
+        "filter": [
+          "relay/wrangler.toml",
+          "relay/src/worker.ts",
+          "relay/src/wrangler-electron.cjs",
+          "relay/node_modules/**",
+          "src/shared/**"
+        ]
+      }
     ],
     "directories": {
       "output": "release"

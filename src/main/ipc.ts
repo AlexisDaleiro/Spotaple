@@ -9,6 +9,7 @@ import type { Discover } from './music/discover';
 import type { MusicProvider } from './music/provider';
 import { classify, MusicError } from './music/youtube/errors';
 import type { JamSession } from './jam/session';
+import type { RelaySetup } from './jam/relay-setup';
 import type { Offline } from './offline';
 import { createLoudnessFill } from './loudness';
 import { createRadio } from './music/radio';
@@ -26,6 +27,7 @@ export function registerIpc(deps: {
   store: Store;
   provider: MusicProvider;
   jam: JamSession;
+  jamRelay: RelaySetup;
   offline: Offline;
   discover: Discover;
   updates: Updates;
@@ -37,7 +39,7 @@ export function registerIpc(deps: {
   onSettings: (settings: AppSettings) => void;
   rendererOrigin?: string;
 }) {
-  const { store, provider, jam, offline, discover, updates, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
+  const { store, provider, jam, jamRelay, offline, discover, updates, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
   const radio = createRadio({ source: provider, history: store });
   const fillLoudness = createLoudnessFill({ provider, store, enabled: () => store.getAppSettings().normalize });
 
@@ -144,4 +146,8 @@ export function registerIpc(deps: {
   handle(IPC.jamLeave, () => jam.leave());
   handle(IPC.jamSend, (m: unknown) => jam.send(m));
   handle(IPC.jamView, () => jam.view());
+  handle(IPC.jamRelayGet, jamRelay.state);
+  handle(IPC.jamRelayPrepare, (accepted: unknown) => jamRelay.prepare(accepted === true));
+  handle(IPC.jamRelayClaim, jamRelay.openClaim);
+  handle(IPC.jamRelayActivate, jamRelay.activate);
 }

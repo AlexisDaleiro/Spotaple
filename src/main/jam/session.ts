@@ -9,6 +9,8 @@ import { lanAddresses, startLocalHost, type NodeHost } from './node-host';
 export interface JamSessionDeps {
   settings: { get<V>(key: string): V | null; set(key: string, value: unknown): void };
   relayUrl: string;
+  /** Con relé propio, solo se crean salas de internet después de configurarlo. */
+  hostRelayUrl?: () => string | null;
   /** Se llama con la vista completa cada vez que algo cambia. */
   emit(view: JamView): void;
   newId?: () => string;
@@ -97,11 +99,13 @@ export function createJamSession(d: JamSessionDeps) {
     });
   }
 
-  async function createInternet(name: string): Promise<JamView> {
+  async function createInternet(name: string, relayUrl: string): Promise<JamView> {
     for (let attempt = 0; ; attempt++) {
       const code = newRoomCode();
       try {
-        return await start({ url: `${d.relayUrl.replace(/\/+$/, '')}/${code}`, kind: 'internet', invite: formatInvite('internet', code), name, create: true });
+        const relay = relayUrl.replace(/\/+$/, '');
+        const invite = formatInvite('internet', code, d.hostRelayUrl ? relay : undefined);
+        return await start({ url: `${relay}/${code}`, kind: 'internet', invite, name, create: true });
       } catch (e) {
         if (!(e instanceof StartError && e.reason === 'code_taken') || attempt >= 2) throw e;
       }
@@ -111,6 +115,8 @@ export function createJamSession(d: JamSessionDeps) {
   async function create(o: { kind: 'local' | 'internet'; name: string }): Promise<JamView> {
     const name = sanitizeName(o.name);
     if (!name) throw new Error(NEED_NAME);
+    const relay = d.hostRelayUrl ? d.hostRelayUrl() : d.relayUrl;
+    if (o.kind === 'internet' && !relay) throw new Error('Configurá tu relé de Cloudflare para crear una sala por internet.');
     await leave();
     d.settings.set('jam_name', name);
     let v: JamView;
@@ -121,7 +127,7 @@ export function createJamSession(d: JamSessionDeps) {
       const invite = formatInvite('local', code, `${lanAddresses()[0] ?? '127.0.0.1'}:${h.port}`);
       v = await start({ url: `ws://127.0.0.1:${h.port}/${code}`, kind: 'local', invite, name, create: true });
     } else {
-      v = await createInternet(name);
+      v = await createInternet(name, relay!);
     }
     // El modo que el admin usó la última vez se recuerda como punto de partida.
     const last = d.settings.get<JamMode>('jam_last_mode');
@@ -136,7 +142,9 @@ export function createJamSession(d: JamSessionDeps) {
     if (!name) throw new Error(NEED_NAME);
     await leave();
     d.settings.set('jam_name', name);
-    const invite = parsed.kind === 'local' ? parsed.url.replace(/^ws:\/\//, '') : parsed.code;
+    const address = parsed.url.slice(0, -parsed.code.length - 1);
+    const invite = parsed.kind === 'local' ? parsed.url.replace(/^ws:\/\//, '') :
+      formatInvite('internet', parsed.code, address === d.relayUrl.replace(/\/+$/, '') ? undefined : address);
     return start({ url: parsed.url, kind: parsed.kind, invite, name, create: false });
   }
 

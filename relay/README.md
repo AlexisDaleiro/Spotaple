@@ -6,7 +6,9 @@ Está hecho como un Worker de Cloudflare con un Durable Object por sala (`src/wo
 
 ## Relé de Spotaple
 
-Desplegado el 6 de noviembre de 2026 en `wss://spotaple-jam.alexisdaleiro.workers.dev`. La app ya usa esta dirección por defecto; no hace falta configurar variables de entorno para crear o unirse a salas por Internet.
+El relé `wss://spotaple-jam.alexisdaleiro.workers.dev` recibe las invitaciones anteriores que solo incluyen el código de sala. Para crear una sala por internet desde el instalador nuevo, elegí **Jam → Internet → Configurar mi relé**. Spotaple usa Wrangler para preparar un Worker temporal. Iniciá sesión en Cloudflare y reclamalo dentro de una hora. Volvé a la app y elegí **Ya activé mi relé** para comprobarlo y guardar la dirección. Tus invitados pegan la invitación completa en Jam.
+
+El instalador incluye los archivos necesarios para este proceso. Para probarlo desde el código fuente, prepará Wrangler con `npm run prepare:relay` en la raíz. `SPOTAPLE_JAM_RELAY` permite apuntar las pruebas al relé que elijas.
 
 Verificado con `check:relay` y los 9 pasos de `e2e:jam` contra el servidor real: reproducción, sincronía, reconexión con la misma identidad, likes, traspaso de admin y controles por la interfaz.
 
@@ -46,7 +48,7 @@ npm run deploy
 
 El comando imprime una URL como `https://spotaple-jam.<tu-subdominio>.workers.dev`. La app usa la misma dirección con `wss://`:
 
-1. Poné `wss://spotaple-jam.<tu-subdominio>.workers.dev` en `JAM_RELAY_URL` de `src/shared/jam/config.ts` y volvé a compilar (`npm run build` o `npm run dist`).
+1. Para probar ese relé desde Spotaple, abrí la app con `SPOTAPLE_JAM_RELAY=wss://spotaple-jam.<tu-subdominio>.workers.dev`.
 2. Comprobá la conexión: `npm run check:jam -- url wss://spotaple-jam.<tu-subdominio>.workers.dev/AAAAA` debe responder `OK  ping→pong`.
 3. Comprobá el protocolo completo desde la raíz: `npm run check:relay -- wss://spotaple-jam.<tu-subdominio>.workers.dev`. Crea una sala temporal con dos clientes, comprueba cola compartida, likes, cambio de modo y traspaso de admin, y cierra la sala al terminar. No abre Electron ni reproduce audio.
 4. Prueba completa: `JAM_KIND=internet SPOTAPLE_JAM_RELAY=wss://spotaple-jam.<tu-subdominio>.workers.dev npm run e2e:jam`.

@@ -70,7 +70,7 @@ Una sala compartida: cada persona pide canciones desde su propia PC y suenan don
 
 - **Crear o unirse:** barra lateral → **Jam**. Quien crea la sala es el admin y elige cómo se conectan:
   - **Red local:** el admin hospeda la sala en su PC y los demás se unen con `ip:puerto/CÓDIGO`. No usa ningún servidor externo. La primera vez Windows pregunta por el firewall: permití el acceso en redes privadas. Algunas redes Wi-Fi aíslan los equipos entre sí; ahí no funciona.
-  - **Internet:** las apps se conectan al relé de Cloudflare ya configurado y se unen con un código de 5 caracteres. Funciona aunque la red no deje conectar PCs entre sí. Para mantener el relé o usar uno propio: ver [`relay/README.md`](relay/README.md).
+  - **Internet:** el anfitrión elige **Configurar mi relé** y activa su Worker en Cloudflare una sola vez. Después comparte el enlace de la sala. Los invitados lo pegan en **Unirse a una sala**. Los códigos cortos de invitaciones anteriores siguen entrando al relé original. Ver [guía del relé](relay/README.md).
 - **Dónde suena** (switch del admin): **solo en la PC del admin** o **en todas las PCs**. En "Todas" cada PC baja su propio audio de YouTube y se sincroniza con la del admin; entre PCs solo viaja el control (qué canción, en qué segundo), nunca audio.
 - **Cola compartida:** cualquiera pide canciones (botón +, clic derecho o doble clic) y entran por orden. El admin reordena y quita; cada persona quita lo que pidió.
 - **Votos y likes:** una canción se salta cuando vota más de la mitad de las personas conectadas (el admin y quien la pidió la saltan directo). El like es un "buena elección" y suma a quien la pidió.

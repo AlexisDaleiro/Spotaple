@@ -5,6 +5,8 @@
  */
 import { isRoomCode } from '../../src/shared/jam/invite';
 import { RoomHost } from '../../src/shared/jam/room-host';
+import { JAM_RELAY_HEALTH_PATH, JAM_RELAY_SERVICE } from '../../src/shared/jam/config';
+import { PROTOCOL } from '../../src/shared/jam/types';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
@@ -17,6 +19,9 @@ const codeOf = (req: Request) => new URL(req.url).pathname.replace(/^\//, '');
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    if (req.method === 'GET' && new URL(req.url).pathname === JAM_RELAY_HEALTH_PATH) {
+      return Response.json({ service: JAM_RELAY_SERVICE, protocol: PROTOCOL }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     const code = codeOf(req);
     if (!isRoomCode(code)) return new Response('Not Found', { status: 404 });
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('Upgrade Required', { status: 426 });

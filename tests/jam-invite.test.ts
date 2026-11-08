@@ -38,4 +38,12 @@ describe('parseInvite', () => {
     expect(parseInvite(formatInvite('local', 'K7M2P', '10.0.0.5:47800'), R)?.url).toBe('ws://10.0.0.5:47800/K7M2P');
     expect(formatInvite('internet', 'K7M2P')).toBe('K7M2P');
   });
+
+  it('envía la invitación de un relé propio a su Worker aunque haya otro relé por defecto', () => {
+    const host = 'wss://spotaple-jam.anfitrion.workers.dev';
+    const invite = formatInvite('internet', 'K7M2P', host);
+    expect(invite).toBe('https://spotaple-jam.anfitrion.workers.dev/K7M2P');
+    expect(parseInvite(invite, R)).toEqual({ kind: 'internet', code: 'K7M2P', url: `${host}/K7M2P` });
+    expect(parseInvite('https://spotaple-jam.anfitrion.workers.dev.ejemplo.org/K7M2P', R)).toBeNull();
+  });
 });

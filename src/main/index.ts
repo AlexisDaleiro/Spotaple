@@ -12,6 +12,7 @@ import { applyChrome, prepareChrome, TITLE_BAR_HEIGHT } from './chrome';
 import { createStore } from './db/store';
 import { registerIpc } from './ipc';
 import { createJamSession } from './jam/session';
+import { createRelaySetup } from './jam/relay-setup';
 import { withoutCredentials } from './net-fetch';
 import { createDiscover } from './music/discover';
 import { createOffline } from './offline';
@@ -115,9 +116,20 @@ app.whenReady().then(() => {
   });
   protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch, offline.local));
   // La red del jam vive aquí, no en el renderer: la CSP de la interfaz sigue sin permitir conexiones directas.
+  const relayOverride = process.env['SPOTAPLE_JAM_RELAY'];
+  const jamRelay = createRelaySetup({
+    source: app.isPackaged ? join(process.resourcesPath, 'jam-relay') : app.getAppPath(),
+    stored: store.getSetting('jam_relay_url'),
+    override: relayOverride,
+    save: (url) => store.setSetting('jam_relay_url', url),
+    emit: (status) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.jamRelayState, status)),
+    open: (url) => shell.openExternal(url),
+    fetch: netFetch,
+  });
   const jam = createJamSession({
     settings: { get: <V>(key: string) => store.getSetting<V>(key), set: (key, value) => store.setSetting(key, value) },
-    relayUrl: process.env['SPOTAPLE_JAM_RELAY'] ?? JAM_RELAY_URL,
+    relayUrl: relayOverride ?? JAM_RELAY_URL,
+    hostRelayUrl: relayOverride ? undefined : jamRelay.url,
     emit: (view) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.jamState, view)),
   });
   const leaveJamOnQuit = () => jam.leave({ quit: true }).catch(() => undefined);
@@ -133,6 +145,7 @@ app.whenReady().then(() => {
     store,
     provider,
     jam,
+    jamRelay,
     offline,
     updates,
     // «Hecho para vos»: se apaga con el ajuste; la generación es perezosa (la pide Inicio) y por período.
@@ -161,7 +174,7 @@ app.whenReady().then(() => {
     if (quitting) return;
     quitting = true;
     e.preventDefault();
-    void leaveJamOnQuit().finally(() => {
+    void Promise.all([leaveJamOnQuit(), jamRelay.stop()]).finally(() => {
       store.close();
       app.quit();
     });
