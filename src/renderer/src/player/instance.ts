@@ -41,6 +41,7 @@ export const playerStore = createPlayer({
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
   // Sin red solo suenan las canciones descargadas: lo demás se salta con aviso.
   reachable: (id) => useOffline.getState().reachable(id),
+  isDownloaded: (id) => useOffline.getState().ids.has(id),
   // Radio automática: el ajuste se lee en cada decisión, así que apagarla vale al instante.
   radio: { enabled: () => settingsStore.getState().settings.radio, fetch: (seed, ids) => api.music.radio(seed, ids) },
   // Dentro de una sala, pedir canciones las manda a la sala (ver jam-sync.ts).

@@ -630,6 +630,40 @@ describe('sin conexión', () => {
     expect(notify).toHaveBeenLastCalledWith('Sin conexión: esta canción no está descargada.', 'error');
   });
 
+  describe('el sistema dice que hay red pero no hay salida a internet', () => {
+    const noNet = () => Object.assign(new Error('Sin conexión con el servicio'), { code: 'network' });
+
+    it('un error de red en una no descargada salta a la descargada que sigue', async () => {
+      const { s, api, notify } = setup(
+        async (id) => {
+          if (id !== track(1).id) throw noNet();
+          return ok(id);
+        },
+        { reachable: () => true, isDownloaded: (id) => id === track(1).id },
+      );
+      s().playTracks(tracks(2), 0);
+      for (let i = 0; i < 4; i++) await flush();
+      expect(api.prepare.mock.calls.map((c) => c[0])).toEqual([track(0).id, track(1).id]);
+      expect(s().index).toBe(1);
+      expect(s().status).toBe('playing');
+      expect(notify).toHaveBeenCalledWith('«Canción 0» no está disponible. Pasando a la siguiente.', 'error');
+    });
+
+    it('sin nada descargado más adelante sigue siendo un error de red y no salta', async () => {
+      const { s } = setup(
+        async () => {
+          throw noNet();
+        },
+        { reachable: () => true, isDownloaded: () => false },
+      );
+      s().playTracks(tracks(3), 0);
+      for (let i = 0; i < 3; i++) await flush();
+      expect(s().status).toBe('error');
+      expect(s().index).toBe(0);
+      expect(s().error?.message).toBe('Sin conexión con el servicio');
+    });
+  });
+
   it('si todo es alcanzable la reproducción no cambia', async () => {
     const { s, api } = setup(undefined, { reachable: () => true });
     s().playTracks(tracks(2), 0);

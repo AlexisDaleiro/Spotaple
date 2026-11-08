@@ -77,6 +77,11 @@ export interface PlayerDeps {
    * que las no disponibles) sin pedirle nada a main.
    */
   reachable?: (trackId: string) => boolean;
+  /**
+   * ¿Esta canción tiene archivo en el disco? Cubre el caso en que el sistema dice que hay red pero no hay salida a
+   * internet: un error de red al preparar una canción no descargada salta a las descargadas que siguen.
+   */
+  isDownloaded?: (trackId: string) => boolean;
 }
 
 export interface PlayerState extends QueueState {
@@ -204,6 +209,18 @@ export function createPlayer(deps: PlayerDeps) {
       set({ items: patch(get().items), original: original ? patch(original) : null, duration: durationSec });
     }
 
+    /**
+     * Sin salida a internet aunque el sistema diga que hay red: un error de red en una canción no descargada, con otras
+     * descargadas más adelante en la cola, se trata como «no disponible» (se salta, con el tope de siempre).
+     */
+    function skippableOffline(e: unknown, item: QueueItem): PlayerError | null {
+      const downloaded = deps.isDownloaded;
+      if (!downloaded || (e as { code?: string } | null)?.code !== 'network' || downloaded(item.track.id)) return null;
+      const s = get();
+      if (!s.items.slice(s.index + 1).some((i) => downloaded(i.track.id))) return null;
+      return { code: 'unavailable', message: 'Sin conexión: esta canción no está descargada.' };
+    }
+
     function fail(e: unknown, item: QueueItem) {
       const code = (e as { code?: string })?.code ?? 'unknown';
       const message = (e as Error)?.message || 'No se pudo reproducir esta canción.';
@@ -245,7 +262,7 @@ export function createPlayer(deps: PlayerDeps) {
         prepared = await api.prepare(item.track.id);
       } catch (e) {
         if (mine !== token) return;
-        return fail(e, item);
+        return fail(skippableOffline(e, item) ?? e, item);
       }
       if (mine !== token) return; // el usuario eligió otra mientras tanto
       // YouTube no siempre informa la duración en las listas; la fuente de audio sí la trae.
