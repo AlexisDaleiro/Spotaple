@@ -51,7 +51,7 @@ jobs:
       - run: ./node_modules/.bin/expo prebuild --platform android --no-install
       - name: Compilar APK con el código de la app incluido
         working-directory: mobile/android
-        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64 --no-daemon --max-workers=2
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64 -Pexpo.useLegacyPackaging=true --no-daemon --max-workers=2
       - name: Verificar el APK
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
@@ -70,6 +70,7 @@ jobs:
           path: mobile/dist/Spotaple-Android-preview.apk
           if-no-files-found: error
           compression-level: 0
+          overwrite: true
       - name: Habilitar la aceleración del emulador
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

@@ -1,6 +1,8 @@
 package com.alexis.spotaple.runtime
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -135,7 +137,7 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
         val next = request.url
         if (next.toString().startsWith(url)) return false
         if (request.isForMainFrame && request.hasGesture() && next.scheme == "https") {
-          runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, next)) }
+          openExternal(next)
         }
         return true
       }
@@ -162,6 +164,14 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
   }
 
   private inner class NativeActions(private val url: String) {
+    @JavascriptInterface
+    fun copy(text: String) {
+      if (text.length > 200) return
+      post {
+        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Invitación de Spotaple", text))
+      }
+    }
+
     @JavascriptInterface
     fun openLocal() {
       post { onOpenLocal(emptyMap<String, Any>()) }
@@ -195,9 +205,7 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
     @JavascriptInterface
     fun open(target: String) {
       val uri = Uri.parse(target)
-      if (uri.scheme == "https" && uri.host != null) post {
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-      }
+      if (uri.scheme == "https" && uri.host != null) post { openExternal(uri) }
     }
 
     @JavascriptInterface
@@ -235,6 +243,17 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
           saveResult(id, -1)
         }
       }
+    }
+  }
+
+  private fun openExternal(uri: Uri) {
+    val intent = Intent(Intent.ACTION_VIEW, uri)
+    runCatching {
+      val activity = appContext.currentActivity
+      if (activity != null) activity.startActivity(intent)
+      else context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure {
+      Toast.makeText(context, "No se pudo abrir el navegador.", Toast.LENGTH_LONG).show()
     }
   }
 

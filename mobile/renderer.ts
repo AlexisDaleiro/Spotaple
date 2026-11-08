@@ -25,6 +25,7 @@ declare global {
       open(url: string): void;
       install(): void;
       openLocal(): void;
+      copy(text: string): void;
     };
   }
 }
