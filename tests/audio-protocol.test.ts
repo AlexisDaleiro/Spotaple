@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createResponder } from '../src/main/audio-protocol';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createResponder, parseRange } from '../src/main/audio-protocol';
 import type { MusicProvider, ResolvedAudio } from '../src/main/music/provider';
 
 const SECRET_URL = 'https://rr1.googlevideo.example/videoplayback?sig=SECRETO&expire=9999999999';
@@ -37,7 +40,7 @@ function setup(opts: { statuses?: number[]; length?: number | undefined } = {}) 
   }) as unknown as typeof fetch;
   const handle = createResponder(provider, fetchImpl);
   const req = (path: string, range?: string) => new Request(`spotaple-audio://track/${path}`, { headers: range ? { range } : {} });
-  return { provider, calls, handle, req };
+  return { provider, calls, handle, req, fetchImpl };
 }
 
 describe('protocolo de audio', () => {
@@ -109,5 +112,101 @@ describe('protocolo de audio', () => {
     const res = await handle(req('abcDEF12345', 'bytes=0-'));
     expect(res.status).toBe(504);
     expect(await res.text()).toMatch(/conexión/i);
+  });
+});
+
+describe('parseRange', () => {
+  it('entiende tramos con fin, abiertos y con fin pasado del tamaño', () => {
+    expect(parseRange('bytes=100-199', 1000)).toEqual({ start: 100, end: 199 });
+    expect(parseRange('bytes=900-', 1000)).toEqual({ start: 900, end: 999 });
+    expect(parseRange('bytes=0-5000', 1000)).toEqual({ start: 0, end: 999 });
+  });
+
+  it('un inicio al final o más allá no se puede satisfacer', () => {
+    expect(parseRange('bytes=1000-', 1000)).toBe('unsatisfiable');
+    expect(parseRange('bytes=5000-6000', 1000)).toBe('unsatisfiable');
+  });
+
+  it('sin Range válido (o con un fin menor que el inicio) pide el archivo entero', () => {
+    expect(parseRange(null, 1000)).toBeNull();
+    expect(parseRange('basura', 1000)).toBeNull();
+    expect(parseRange('bytes=-100', 1000)).toBeNull();
+    expect(parseRange('bytes=500-100', 1000)).toBeNull();
+  });
+});
+
+describe('archivo local (descargas offline)', () => {
+  const bytes = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
+  let dir: string;
+  let file: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'spotaple-proto-'));
+    file = join(dir, 'abcDEF12345.webm');
+    writeFileSync(file, bytes);
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const make = (local: (id: string) => { file: string; mimeType: string } | null) => {
+    const s = setup();
+    return { ...s, handle: createResponder(s.provider, s.fetchImpl, local) };
+  };
+  const body = async (res: Response) => Buffer.from(await res.arrayBuffer());
+
+  it('sin Range: 200 con el archivo entero y sin tocar la red', async () => {
+    const { handle, req, provider, calls } = make(() => ({ file, mimeType: 'audio/webm' }));
+    const res = await handle(req('abcDEF12345'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-length')).toBe('1000');
+    expect(res.headers.get('content-type')).toBe('audio/webm');
+    expect(res.headers.get('accept-ranges')).toBe('bytes');
+    expect((await body(res)).equals(bytes)).toBe(true);
+    expect(provider.resolveAudio).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('un tramo da 206 con su Content-Range y exactamente esos bytes', async () => {
+    const { handle, req } = make(() => ({ file, mimeType: 'audio/webm' }));
+    const res = await handle(req('abcDEF12345', 'bytes=100-199'));
+    expect(res.status).toBe(206);
+    expect(res.headers.get('content-range')).toBe('bytes 100-199/1000');
+    expect(res.headers.get('content-length')).toBe('100');
+    expect((await body(res)).equals(bytes.subarray(100, 200))).toBe(true);
+  });
+
+  it('un tramo abierto llega hasta el final y uno que se pasa se recorta', async () => {
+    const { handle, req } = make(() => ({ file, mimeType: 'audio/webm' }));
+    const open = await handle(req('abcDEF12345', 'bytes=900-'));
+    expect(open.headers.get('content-range')).toBe('bytes 900-999/1000');
+    expect((await body(open)).equals(bytes.subarray(900))).toBe(true);
+    const past = await handle(req('abcDEF12345', 'bytes=0-5000'));
+    expect(past.headers.get('content-range')).toBe('bytes 0-999/1000');
+    expect((await body(past)).equals(bytes)).toBe(true);
+  });
+
+  it('pedir más allá del final da 416', async () => {
+    const { handle, req } = make(() => ({ file, mimeType: 'audio/webm' }));
+    const res = await handle(req('abcDEF12345', 'bytes=1000-'));
+    expect(res.status).toBe(416);
+    expect(res.headers.get('content-range')).toBe('bytes */1000');
+  });
+
+  it('si el archivo ya no está en el disco cae a la red', async () => {
+    const { handle, req, calls } = make(() => ({ file: join(dir, 'no-existe.webm'), mimeType: 'audio/webm' }));
+    const res = await handle(req('abcDEF12345', 'bytes=0-'));
+    expect(res.status).toBe(206);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('una canción que no está descargada va a la red como siempre', async () => {
+    const { handle, req, calls } = make(() => null);
+    expect((await handle(req('abcDEF12345', 'bytes=0-'))).status).toBe(206);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('un id inválido se rechaza antes de buscar el archivo', async () => {
+    const local = vi.fn(() => ({ file, mimeType: 'audio/webm' }));
+    const { handle, req } = make(local);
+    expect((await handle(req('id con espacios'))).status).toBe(400);
+    expect(local).not.toHaveBeenCalled();
   });
 });
