@@ -19,6 +19,8 @@ export interface AudioEngine {
   /** Diagnóstico: último nodo antes de la salida. */
   readonly tap: AudioNode;
   readonly elements: readonly HTMLAudioElement[];
+  /** Diagnóstico: el nodo de ganancia de cada elemento (los e2e leen su valor). */
+  readonly trackGains: ReadonlyMap<HTMLAudioElement, GainNode>;
 }
 
 const dbToGain = (db: number) => 10 ** ((Number.isFinite(db) ? db : 0) / 20);
@@ -76,6 +78,7 @@ export function createAudioEngine(elements: HTMLAudioElement[]): AudioEngine | n
       },
       tap,
       elements,
+      trackGains,
     };
   } catch {
     void ctx.close().catch(() => undefined);
