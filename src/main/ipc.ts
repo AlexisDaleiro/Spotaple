@@ -12,6 +12,7 @@ import type { JamSession } from './jam/session';
 import type { Offline } from './offline';
 import { createLoudnessFill } from './loudness';
 import { createRadio } from './music/radio';
+import type { Updates } from './updates';
 import { id, int, sanitizeExportRequest, sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack, str } from './validate';
 
 /** Solo la página de la propia app puede invocar el IPC. */
@@ -27,6 +28,7 @@ export function registerIpc(deps: {
   jam: JamSession;
   offline: Offline;
   discover: Discover;
+  updates: Updates;
   /** La red del proceso local (net.fetch con el proxy del sistema), la misma que usa el protocolo de audio. */
   fetchImpl: typeof fetch;
   /** Diálogo «Guardar como» del sistema: devuelve la ruta elegida o null si se canceló. */
@@ -35,7 +37,7 @@ export function registerIpc(deps: {
   onSettings: (settings: AppSettings) => void;
   rendererOrigin?: string;
 }) {
-  const { store, provider, jam, offline, discover, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
+  const { store, provider, jam, offline, discover, updates, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
   const radio = createRadio({ source: provider, history: store });
   const fillLoudness = createLoudnessFill({ provider, store, enabled: () => store.getAppSettings().normalize });
 
@@ -117,6 +119,9 @@ export function registerIpc(deps: {
   handle(IPC.savePlayerState, (s: unknown) => store.savePlayerState(sanitizePlayerState(s)));
 
   handle(IPC.settingsGet, () => store.getAppSettings());
+  handle(IPC.updatesGet, updates.state);
+  handle(IPC.updatesCheck, updates.check);
+  handle(IPC.updatesInstall, updates.install);
   handle(IPC.settingsSet, (raw: unknown) => {
     const patch = parseSettings(raw);
     const next = store.setAppSettings(patch);

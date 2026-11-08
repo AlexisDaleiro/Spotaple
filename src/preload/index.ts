@@ -55,6 +55,16 @@ const bridge: SpotapleBridge = {
     get: () => call(IPC.settingsGet),
     set: (patch) => call(IPC.settingsSet, patch),
   },
+  updates: {
+    state: () => call(IPC.updatesGet),
+    check: () => call(IPC.updatesCheck),
+    install: () => call(IPC.updatesInstall),
+    subscribe: (cb) => {
+      ipcRenderer.removeAllListeners(IPC.updatesState);
+      ipcRenderer.on(IPC.updatesState, (_e, state) => cb(state));
+      return Promise.resolve({ ok: true, data: undefined });
+    },
+  },
   jam: {
     create: (o) => call(IPC.jamCreate, o),
     join: (o) => call(IPC.jamJoin, o),

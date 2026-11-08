@@ -1,7 +1,7 @@
 {
   "name": "spotaple",
   "productName": "Spotaple",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reproductor de música de escritorio, local y personal, con streaming vía YouTube.js",
   "main": "out/main/index.js",
   "type": "module",
@@ -26,6 +26,7 @@
     "check:youtube": "node scripts/probe.mjs",
     "pack": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder --win",
+    "dist:installer": "electron-vite build && electron-builder --win nsis --x64 --publish never",
     "check:jam": "node scripts/jam-probe.mjs",
     "check:relay": "node scripts/check-relay.mjs",
     "e2e:jam": "node scripts/e2e-jam.mjs",
@@ -45,9 +46,20 @@
       "target": [
         "portable"
       ]
+    },
+    "nsis": {
+      "artifactName": "Spotaple-Setup-${version}.${ext}",
+      "oneClick": true,
+      "perMachine": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AlexisDaleiro",
+      "repo": "Spotaple"
     }
   },
   "dependencies": {
+    "electron-updater": "6.8.12",
     "lucide-react": "^1.69.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
