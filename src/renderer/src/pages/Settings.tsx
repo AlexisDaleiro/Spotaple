@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 import { LIMITS } from '@shared/jam/types';
+import { EQ_BANDS, EQ_PRESETS, EQ_RANGE_DB, presetFor, type EqPreset } from '@shared/audio';
 import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
 import { TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
 import { api, errorMessage } from '../api';
@@ -110,6 +111,85 @@ function AccentRow({ accent }: { accent: string | null }) {
           Usar el del tema
         </button>
       </div>
+    </div>
+  );
+}
+
+const fmtHz = (hz: number) => (hz >= 1000 ? `${hz / 1000} kHz` : `${hz} Hz`);
+const fmtDb = (db: number) => `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db)} dB`;
+
+/**
+ * Ecualizador de 10 bandas: preajustes, una barra por banda y preamplificador. Con el ecualizador apagado todo el
+ * `fieldset` queda deshabilitado (los valores se conservan).
+ */
+function EqualizerControls({ on, gains, preamp }: { on: boolean; gains: number[]; preamp: number }) {
+  const labelId = useId();
+  const current = presetFor(gains, preamp);
+  const choose = (p: EqPreset) => set({ eqGains: [...p.gains], eqPreamp: p.preamp });
+  const setBand = (i: number, v: number) => set({ eqGains: gains.map((g, j) => (j === i ? v : g)) });
+  return (
+    <div className={cx('set-row eqset', !on && 'is-off')} role="group" aria-labelledby={labelId}>
+      <span className="set-row__label" id={labelId}>
+        Ajuste del ecualizador
+      </span>
+      <div className="eqset__top">
+        <label className="eqset__preset">
+          Preajuste
+          <select disabled={!on} value={current?.id ?? 'custom'} onChange={(e) => choose(EQ_PRESETS.find((p) => p.id === e.target.value)!)}>
+            {EQ_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+            {!current && (
+              <option value="custom" disabled>
+                Personalizado
+              </option>
+            )}
+          </select>
+        </label>
+        <button type="button" className="btn btn--ghost" disabled={!on || current?.id === 'plano'} onClick={() => choose(EQ_PRESETS[0]!)}>
+          Restablecer
+        </button>
+      </div>
+      <div className="eqset__bands">
+        {EQ_BANDS.map((hz, i) => (
+          <div key={hz} className="eqset__band">
+            <output className="eqset__db">{fmtDb(gains[i]!)}</output>
+            <input
+              type="range"
+              className="eqset__range"
+              min={-EQ_RANGE_DB}
+              max={EQ_RANGE_DB}
+              step={0.5}
+              value={gains[i]}
+              disabled={!on}
+              aria-label={fmtHz(hz)}
+              aria-valuetext={fmtDb(gains[i]!)}
+              onChange={(e) => setBand(i, Number(e.target.value))}
+            />
+            <span className="eqset__hz" aria-hidden="true">
+              {fmtHz(hz)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <label className="eqset__preamp">
+        Preamplificador
+        <input
+          type="range"
+          className="slider"
+          min={-EQ_RANGE_DB}
+          max={EQ_RANGE_DB}
+          step={0.5}
+          value={preamp}
+          disabled={!on}
+          aria-valuetext={fmtDb(preamp)}
+          style={{ '--pct': `${((preamp + EQ_RANGE_DB) / (2 * EQ_RANGE_DB)) * 100}%` } as React.CSSProperties}
+          onChange={(e) => set({ eqPreamp: Number(e.target.value) })}
+        />
+        <output>{fmtDb(preamp)}</output>
+      </label>
     </div>
   );
 }
@@ -240,6 +320,14 @@ export function SettingsPage() {
           ]}
           onChange={(streamQuality) => set({ streamQuality })}
         />
+        <Toggle
+          label="Normalizar volumen"
+          hint="Iguala el volumen entre canciones: baja las que vienen más fuertes y deja como están las más suaves. Vale al instante."
+          on={s.normalize}
+          onChange={(normalize) => set({ normalize })}
+        />
+        <Toggle label="Ecualizador" hint="Sube o baja graves, medios y agudos. Vale al instante y se guarda." on={s.eqOn} onChange={(eqOn) => set({ eqOn })} />
+        <EqualizerControls on={s.eqOn} gains={s.eqGains} preamp={s.eqPreamp} />
       </Group>
 
       <Group title="Reproducción">

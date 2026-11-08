@@ -49,6 +49,76 @@
   max-width: 320px;
 }
 
+/* Ecualizador: un grupo (atenuado con el ecualizador apagado), presets, 10 barras verticales y preamplificador */
+.eqset {
+  min-width: 0;
+}
+.eqset.is-off {
+  opacity: 0.45;
+}
+.eqset__preset select {
+  height: 36px;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  color: var(--fg-0);
+  font: inherit;
+}
+.eqset__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+.eqset__preset {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+}
+.eqset__bands {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.eqset__band {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.eqset__range {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 140px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.eqset__db,
+.eqset__hz {
+  color: var(--fg-2);
+  font: 400 var(--fs-xs) / 1 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.eqset__preamp {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: var(--s-4);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+}
+.eqset__preamp output {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* Opciones excluyentes: el radio nativo queda encima (accesible y con foco) y el texto se ve como botón */
 .set-opts {
   display: flex;
