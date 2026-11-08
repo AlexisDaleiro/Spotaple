@@ -7,7 +7,8 @@ import vm from 'node:vm';
 import { _electron as electron } from 'playwright-core';
 import { Innertube, Log, Platform } from 'youtubei.js';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import electronPath from 'electron';
@@ -113,6 +114,18 @@ function favorite(songIndexByArtist) {
   });
 }
 
+const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
+/** Auditoría de accesibilidad (axe-core, WCAG 2.2 A/AA) de lo que se ve ahora: falla si hay violaciones. */
+async function axeCheck(name) {
+  await sleep(700);
+  await page.evaluate(axeSource);
+  const res = await page.evaluate(() =>
+    // eslint-disable-next-line no-undef
+    axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] } }),
+  );
+  if (res.violations.length) throw new Error(`axe en ${name}: ${res.violations.map((v) => `${v.id} (${v.nodes.length} nodos)`).join(', ')}`);
+  return `axe en ${name}: ${res.passes.length} reglas OK`;
+}
 const goHome = () => page.locator('.nav-item[title="Inicio"]').click();
 const shelf = (id) => page.locator(`.shelf[aria-labelledby="${id}"]`);
 const shot = (name) => page.screenshot({ path: join(OUT, `foryou-${name}.png`) });
@@ -152,7 +165,8 @@ await step('2 con datos suficientes aparecen el semanal, los mixes, el radar y l
   const clash = suggested.filter((n) => seededNames.has(n));
   if (clash.length) throw new Error(`se sugieren artistas que ya escuchás: ${clash.join(', ')}`);
   await shot('inicio');
-  return `${titles.length} listas (${mixes} mixes${titles.includes('Release Radar') ? ' y radar' : ', sin radar'}) y ${suggested.length} artistas`;
+  const a11y = await axeCheck('Inicio con Hecho para vos');
+  return `${titles.length} listas (${mixes} mixes${titles.includes('Release Radar') ? ' y radar' : ', sin radar'}), ${suggested.length} artistas; ${a11y}`;
 });
 
 await step('3 abrir el semanal: sin repetidos ni lo ya escuchado, suena, y «Guardar en mi biblioteca» crea una sola playlist', async () => {
@@ -165,6 +179,7 @@ await step('3 abrir el semanal: sin repetidos ni lo ya escuchado, suena, y «Gua
   const heard = rows.filter((t) => seededTitles.has(t));
   if (heard.length) throw new Error(`el semanal trae canciones que ya escuchaste: ${heard.join(' | ')}`);
   await shot('semanal');
+  const a11y = await axeCheck('página del semanal');
 
   await page.locator('.hero__actions').getByRole('button', { name: 'Reproducir', exact: true }).click();
   await waitFor(async () => (await playLabel()) === 'Pausar', 60000, 'el semanal sonando');
@@ -178,7 +193,7 @@ await step('3 abrir el semanal: sin repetidos ni lo ya escuchado, suena, y «Gua
   if (playlists.length !== 1 || playlists[0].name !== 'Descubrimiento semanal') throw new Error(`playlists = ${JSON.stringify(playlists)}`);
   const items = count('playlist_items');
   if (items !== rows.length) throw new Error(`la playlist tiene ${items} canciones y la lista ${rows.length}`);
-  return `${rows.length} canciones, 1 playlist`;
+  return `${rows.length} canciones, 1 playlist; ${a11y}`;
 });
 
 await step('4 sin red al abrir Inicio con listas ya guardadas: se ven las anteriores y no hay avisos de error', async () => {
