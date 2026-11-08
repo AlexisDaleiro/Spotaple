@@ -63,9 +63,11 @@ export function registerIpc(deps: {
     const trackId = id(x);
     // Descargada: suena del disco, así que se responde sin pasar por YouTube (y por tanto sin red).
     const local = offline.local(trackId);
-    if (local) return { trackId, mimeType: local.mimeType, durationSec: local.durationSec };
+    if (local) return { trackId, mimeType: local.mimeType, durationSec: local.durationSec, loudnessLkfs: store.trackLoudness(trackId) };
     const a = await provider.resolveAudio(trackId, { newPlay: true });
-    return { trackId, mimeType: a.mimeType, durationSec: a.durationSec };
+    // Se guarda por si la canción se descarga después: del disco ya no hay a quién preguntarle.
+    if (a.loudnessLkfs !== undefined) store.setLoudness(trackId, a.loudnessLkfs);
+    return { trackId, mimeType: a.mimeType, durationSec: a.durationSec, loudnessLkfs: a.loudnessLkfs };
   });
   handle(IPC.invalidate, (x: unknown) => provider.invalidate(id(x)));
   handle(IPC.export, (o: unknown) => {

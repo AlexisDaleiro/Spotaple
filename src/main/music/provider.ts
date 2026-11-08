@@ -12,6 +12,8 @@ export interface ResolvedAudio {
   /** epoch ms desde el cual la URL se considera caducada. */
   expiresAt: number;
   durationSec?: number;
+  /** Loudness de la canción en LUFS absolutos, si YouTube lo informa (alimenta «Normalizar volumen»). */
+  loudnessLkfs?: number;
 }
 
 /**

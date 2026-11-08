@@ -4,7 +4,7 @@ import type { StreamQuality } from '../../../shared/settings';
 import type { AudioVariant, MusicProvider, ResolvedAudio } from '../provider';
 import { createAudioCache, createQualityLock } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
-import { chooseAudioFormat } from './format';
+import { chooseAudioFormat, loudnessOf } from './format';
 import { classify, MESSAGES, MusicError, playabilityError, withTimeout } from './errors';
 import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, similarArtists, txt } from './mappers';
 import { collectPlaylistItems, type PlaylistPage } from './playlist';
@@ -108,6 +108,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
       contentLength: length,
       expiresAt: expire > 0 ? expire * 1000 - EXPIRY_MARGIN_MS : now() + DEFAULT_TTL_MS,
       durationSec: info.basic_info.duration || undefined,
+      loudnessLkfs: loudnessOf(info, format),
     };
   }
 

@@ -23,3 +23,20 @@ export function chooseAudioFormat<F>(info: { chooseFormat(o: AudioFormatOptions)
     return info.chooseFormat(quality === 'saver' ? { type: 'audio', quality: q, format: 'any' } : { type: 'audio', quality: q });
   }
 }
+
+/** LUFS reales que YouTube mide por canción; fuera de este rango el dato no es creíble. */
+const LOUDNESS_RANGE = { min: -60, max: 0 };
+
+/**
+ * Loudness de la canción en LUFS absolutos. Se prefiere el del formato (`track_absolute_loudness_lkfs`) y, si no
+ * viene, el `perceptual_loudness_db` de la info (VISIONOS no trae `loudness_db`). Un valor basura da `undefined`.
+ */
+export function loudnessOf(
+  info: { player_config?: { audio_config?: { perceptual_loudness_db?: number } } },
+  format: { track_absolute_loudness_lkfs?: number },
+): number | undefined {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= LOUDNESS_RANGE.min && v <= LOUDNESS_RANGE.max;
+  const own = format.track_absolute_loudness_lkfs;
+  const fallback = info.player_config?.audio_config?.perceptual_loudness_db;
+  return ok(own) ? own : ok(fallback) ? fallback : undefined;
+}

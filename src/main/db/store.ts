@@ -85,6 +85,10 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (kind, slot, period)
   );
   `,
+  // Loudness (LUFS absolutos) de cada canción: una descargada suena del disco sin pasar por YouTube y necesita el dato.
+  `
+  ALTER TABLE tracks ADD COLUMN loudness REAL;
+  `,
 ];
 
 /** Una lista generada tal como se guarda: canciones, o artistas si `kind` es `'artists'`. */
@@ -464,6 +468,14 @@ export function createStore(path: string) {
   function clearDownloads() {
     db.exec('DELETE FROM downloads');
   }
+  /** Guarda el loudness (LUFS) de una canción que ya existe en `tracks`; si no existe, no hace nada. */
+  function setLoudness(trackId: string, lkfs: number) {
+    db.prepare('UPDATE tracks SET loudness = ? WHERE id = ?').run(lkfs, trackId);
+  }
+  function trackLoudness(trackId: string): number | undefined {
+    const r = db.prepare('SELECT loudness FROM tracks WHERE id = ?').get(trackId) as Row | undefined;
+    return (r?.loudness as number | null | undefined) ?? undefined;
+  }
   function trackDuration(trackId: string): number | undefined {
     const r = db.prepare('SELECT duration_sec FROM tracks WHERE id = ?').get(trackId) as Row | undefined;
     return (r?.duration_sec as number | null | undefined) ?? undefined;
@@ -547,6 +559,8 @@ export function createStore(path: string) {
     removeDownload,
     clearDownloads,
     trackDuration,
+    setLoudness,
+    trackLoudness,
     tasteInputs,
     resetTaste,
     playedTrackIds,

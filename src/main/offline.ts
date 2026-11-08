@@ -8,7 +8,7 @@ import type { MusicProvider } from './music/provider';
 export interface OfflineDeps {
   /** `userData/offline`. */
   dir: string;
-  store: Pick<Store, 'favoriteIds' | 'downloads' | 'addDownload' | 'removeDownload' | 'clearDownloads' | 'trackDuration'>;
+  store: Pick<Store, 'favoriteIds' | 'downloads' | 'addDownload' | 'removeDownload' | 'clearDownloads' | 'trackDuration' | 'setLoudness'>;
   provider: MusicProvider;
   fetchImpl: typeof fetch;
   /** Ajuste «descargar las favoritas automáticamente»; se lee en cada decisión. */
@@ -70,6 +70,7 @@ export function createOffline(d: OfflineDeps) {
       // Pudo dejar de ser favorita (o la persona borró todo) mientras bajaba: el archivo ya no se quiere.
       if (startedIn === epoch && d.store.favoriteIds().includes(id)) {
         d.store.addDownload(id, out.format, out.bytes);
+        if (out.loudnessLkfs !== undefined) d.store.setLoudness(id, out.loudnessLkfs);
         index.set(id, { format: out.format, bytes: out.bytes });
       } else {
         await removeFile(out.dest);

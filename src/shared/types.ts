@@ -118,4 +118,6 @@ export interface PreparedAudio {
   trackId: string;
   mimeType: string;
   durationSec?: number;
+  /** Loudness en LUFS absolutos (un número: la URL nunca sale de main). */
+  loudnessLkfs?: number;
 }

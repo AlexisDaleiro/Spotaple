@@ -21,7 +21,7 @@ export async function downloadTo(o: {
   destFor: (format: AudioFormat) => string;
   expect?: AudioFormat;
   signal?: AbortSignal;
-}): Promise<{ dest: string; bytes: number; format: AudioFormat }> {
+}): Promise<{ dest: string; bytes: number; format: AudioFormat; loudnessLkfs?: number }> {
   let part: string | undefined;
   try {
     const { res, audio } = await openUpstream({ provider: o.provider, fetchImpl: o.fetchImpl, id: o.id, range: 'bytes=0-', signal: o.signal, variant: o.variant });
@@ -43,7 +43,7 @@ export async function downloadTo(o: {
     const { size } = await stat(part);
     if (audio.contentLength && size !== audio.contentLength) throw new MusicError('network', MESSAGES.network);
     await rename(part, dest);
-    return { dest, bytes: size, format };
+    return { dest, bytes: size, format, loudnessLkfs: audio.loudnessLkfs };
   } catch (e) {
     if (part) await rm(part, { force: true }).catch(() => undefined);
     throw classify(e);

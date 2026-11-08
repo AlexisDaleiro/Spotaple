@@ -175,7 +175,7 @@ describe('historial para la radio', () => {
       first.recordPlay(t(1));
       first.close();
       const raw = new DatabaseSync(file);
-      raw.exec('ALTER TABLE plays DROP COLUMN auto; DROP TABLE generated_lists; DROP TABLE downloads; PRAGMA user_version = 1;');
+      raw.exec('ALTER TABLE plays DROP COLUMN auto; ALTER TABLE tracks DROP COLUMN loudness; DROP TABLE generated_lists; DROP TABLE downloads; PRAGMA user_version = 1;');
       raw.close();
       const again = createStore(file);
       expect(again.affinityInputs(10).plays).toHaveLength(1);
@@ -224,7 +224,7 @@ describe('descargas offline', () => {
       first.toggleFavorite(t(1));
       first.close();
       const raw = new DatabaseSync(file);
-      raw.exec('DROP TABLE generated_lists; DROP TABLE downloads; PRAGMA user_version = 2;');
+      raw.exec('ALTER TABLE tracks DROP COLUMN loudness; DROP TABLE generated_lists; DROP TABLE downloads; PRAGMA user_version = 2;');
       raw.close();
       const again = createStore(file);
       expect(again.favoriteIds()).toEqual([t(1).id]);
@@ -376,7 +376,7 @@ describe('listas generadas', () => {
       first.toggleFavorite(t(1));
       first.close();
       const raw = new DatabaseSync(file);
-      raw.exec('DROP TABLE generated_lists; PRAGMA user_version = 3;');
+      raw.exec('ALTER TABLE tracks DROP COLUMN loudness; DROP TABLE generated_lists; PRAGMA user_version = 3;');
       raw.close();
       const again = createStore(file);
       expect(again.favoriteIds()).toEqual([t(1).id]);
@@ -472,5 +472,44 @@ describe('validación de lo que llega del renderer', () => {
   it('el estado del reproductor se acota a rangos válidos', () => {
     const s = sanitizePlayerState({ queue: [t(1)], index: 99, positionSec: -5, volume: 7, muted: 'sí', repeat: 'rara', shuffle: 1 });
     expect(s).toMatchObject({ index: 0, positionSec: 0, volume: 1, muted: false, repeat: 'off', shuffle: false });
+  });
+});
+
+describe('loudness de las canciones', () => {
+  it('setLoudness y trackLoudness van y vienen; sin dato (o sin canción) da undefined', () => {
+    store.toggleFavorite(t(1));
+    store.toggleFavorite(t(2));
+    store.setLoudness(t(1).id, -9.5);
+    expect(store.trackLoudness(t(1).id)).toBe(-9.5);
+    expect(store.trackLoudness(t(2).id)).toBeUndefined();
+    expect(store.trackLoudness('noExiste123')).toBeUndefined();
+  });
+
+  it('una base con la migración anterior sube sin perder canciones, no inventa filas y conserva el loudness al reabrir', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spotaple-loud-'));
+    const file = join(dir, 'old.db');
+    try {
+      const first = createStore(file);
+      first.toggleFavorite(t(1));
+      first.close();
+      const raw = new DatabaseSync(file);
+      const version = Number((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version);
+      raw.exec(`ALTER TABLE tracks DROP COLUMN loudness; PRAGMA user_version = ${version - 1};`);
+      raw.close();
+      const again = createStore(file);
+      expect(again.favoriteIds()).toEqual([t(1).id]);
+      again.setLoudness(t(1).id, -12.4);
+      again.setLoudness('noExiste123', -8); // no existe: UPDATE sin efecto
+      again.close();
+      const third = createStore(file);
+      expect(third.trackLoudness(t(1).id)).toBe(-12.4);
+      expect(third.trackLoudness('noExiste123')).toBeUndefined();
+      third.close();
+      const check = new DatabaseSync(file);
+      expect(Number((check.prepare('SELECT COUNT(*) AS n FROM tracks').get() as { n: number }).n)).toBe(1);
+      check.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

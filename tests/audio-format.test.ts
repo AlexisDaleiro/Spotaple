@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { chooseAudioFormat } from '../src/main/music/youtube/format';
+import { chooseAudioFormat, loudnessOf } from '../src/main/music/youtube/format';
 
 const fakeInfo = (impl: (o: { codec?: string }) => unknown) => ({ chooseFormat: vi.fn(impl) });
 
@@ -54,5 +54,23 @@ describe('chooseAudioFormat', () => {
     });
     expect(() => chooseAudioFormat(info, 'high')).toThrow('nada');
     expect(info.chooseFormat).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('loudnessOf', () => {
+  const info = (perceptual?: number) => ({ player_config: { audio_config: { perceptual_loudness_db: perceptual } } });
+
+  it('prefiere el LUFS absoluto del formato', () => {
+    expect(loudnessOf(info(-12), { track_absolute_loudness_lkfs: -8.85 })).toBe(-8.85);
+  });
+
+  it('si el formato no lo trae, usa perceptual_loudness_db de la info', () => {
+    expect(loudnessOf(info(-13.87), {})).toBe(-13.87);
+  });
+
+  it('valores basura o fuera de −60…0 dan undefined (y el de respaldo se usa si el del formato es basura)', () => {
+    for (const v of [NaN, Infinity, 0.5, -100]) expect(loudnessOf({}, { track_absolute_loudness_lkfs: v })).toBeUndefined();
+    expect(loudnessOf(info(-10), { track_absolute_loudness_lkfs: NaN })).toBe(-10);
+    expect(loudnessOf({}, {})).toBeUndefined();
   });
 });
