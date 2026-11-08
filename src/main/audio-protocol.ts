@@ -1,9 +1,8 @@
-import type { MusicProvider, ResolvedAudio } from './music/provider';
+import type { MusicProvider } from './music/provider';
 import { classify } from './music/youtube/errors';
+import { openUpstream } from './upstream';
 
 const ID_RE = /^[\w-]{6,24}$/;
-/** Estados con los que googlevideo indica que la URL caducó o dejó de valer. */
-const STALE = new Set([403, 404, 410]);
 
 /**
  * `spotaple-audio://track/<videoId>` → audio con soporte de Range. La URL real nunca sale del proceso
@@ -38,20 +37,12 @@ export function createResponder(provider: MusicProvider, fetchImpl: typeof fetch
     const start = m ? Number(m[1]) : 0;
     const range = `bytes=${start}-${m?.[2] ?? ''}`;
 
-    const upstream = (audio: ResolvedAudio) => fetchImpl(audio.url, { headers: { Range: range }, signal: request.signal });
-
     try {
-      let audio = await provider.resolveAudio(id);
+      // Si la URL caducó, `openUpstream` la resuelve de nuevo y reintenta una sola vez.
+      const { res, audio } = await openUpstream({ provider, fetchImpl, id, range, signal: request.signal });
       if (audio.contentLength && start >= audio.contentLength) {
-        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${audio.contentLength}` } });
-      }
-      let res = await upstream(audio);
-      if (STALE.has(res.status)) {
-        // La URL caducó o dejó de valer: se resuelve de nuevo y se reintenta una sola vez.
         await res.body?.cancel().catch(() => undefined);
-        provider.invalidate(id);
-        audio = await provider.resolveAudio(id);
-        res = await upstream(audio);
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${audio.contentLength}` } });
       }
       if (res.status !== 200 && res.status !== 206) {
         await res.body?.cancel().catch(() => undefined);
