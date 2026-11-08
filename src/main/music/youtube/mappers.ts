@@ -108,6 +108,19 @@ export function mapArtist(item: Node): ArtistSummary | null {
   return { id, name, subtitle, thumbnail: bestThumb(thumbs) };
 }
 
+/**
+ * Artistas de la sección «Fans might also like» de la página de un artista (verificado: 10 por artista; el título es
+ * estable porque el cliente va en inglés). Sin esa sección devuelve [].
+ */
+export function similarArtists(sections: Node[]): ArtistSummary[] {
+  return sections
+    .filter((s) => txt(s?.header?.title ?? s?.title).toLowerCase().startsWith('fans might also like'))
+    .flatMap((s) => (Array.isArray(s?.contents) ? s.contents : []))
+    .filter((i: Node) => i?.item_type === 'artist')
+    .map((i: Node) => mapArtist(i))
+    .filter((a: ArtistSummary | null): a is ArtistSummary => a !== null);
+}
+
 /** Aplana los items de todas las secciones de un resultado de búsqueda. */
 export function searchItems(search: Node): Node[] {
   const shelves: Node[] = Array.isArray(search?.contents) ? search.contents : [];

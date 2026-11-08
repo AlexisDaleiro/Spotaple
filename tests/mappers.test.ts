@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { classify, MESSAGES, playabilityError, withTimeout } from '../src/main/music/youtube/errors';
-import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from '../src/main/music/youtube/mappers';
+import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, similarArtists, txt } from '../src/main/music/youtube/mappers';
 import { evaluatePlayerScript } from '../src/main/music/youtube/eval';
 import { withoutCredentials } from '../src/main/net-fetch';
 
@@ -363,4 +363,43 @@ describe('evaluador aislado del código remoto', () => {
   it('corta los bucles infinitos', () => {
     expect(() => evaluatePlayerScript({ output: 'while (true) {}' })).toThrow();
   }, 15_000);
+});
+
+describe('similarArtists', () => {
+  const artistItem = (id: string, name: string, subtitle = '1M monthly audience') => ({
+    id,
+    item_type: 'artist',
+    title: text(name),
+    subtitle: text(subtitle),
+    thumbnail: [
+      { url: 'https://lh3.googleusercontent.com/a=w60-h60', width: 60 },
+      { url: 'https://lh3.googleusercontent.com/a=w226-h226', width: 226 },
+    ],
+  });
+  const section = (title: string, contents: unknown[]) => ({ header: { title: text(title) }, contents });
+
+  it('toma los artistas de «Fans might also like» con id, nombre, subtítulo y la miniatura más grande', () => {
+    const sections = [
+      section('Top songs', []),
+      section('Fans might also like', [artistItem('UC5bO1Jrgy8LlLMJtXf5V9nA', 'Caesars', '7.35K subscribers'), artistItem('UCq7VAQmXDurV', 'Gesaffelstein')]),
+    ];
+    expect(similarArtists(sections)).toEqual([
+      { id: 'UC5bO1Jrgy8LlLMJtXf5V9nA', name: 'Caesars', subtitle: '7.35K subscribers', thumbnail: 'https://lh3.googleusercontent.com/a=w226-h226' },
+      { id: 'UCq7VAQmXDurV', name: 'Gesaffelstein', subtitle: '1M monthly audience', thumbnail: 'https://lh3.googleusercontent.com/a=w226-h226' },
+    ]);
+  });
+
+  it('el título se compara sin distinguir mayúsculas', () => {
+    expect(similarArtists([section('FANS MIGHT ALSO LIKE', [artistItem('UC1abcdef', 'Uno')])])).toHaveLength(1);
+  });
+
+  it('ignora ítems que no son artistas o no traen id', () => {
+    const sections = [section('Fans might also like', [{ ...artistItem('MPREb_x', 'Un disco'), item_type: 'album' }, { ...artistItem('', 'Sin id'), id: undefined }, artistItem('UC1abcdef', 'Uno')])];
+    expect(similarArtists(sections).map((a) => a.name)).toEqual(['Uno']);
+  });
+
+  it('no mezcla artistas de otras secciones y sin la sección devuelve []', () => {
+    expect(similarArtists([section('Playlists by Daft Punk', [artistItem('UC1abcdef', 'Uno')])])).toEqual([]);
+    expect(similarArtists([])).toEqual([]);
+  });
 });

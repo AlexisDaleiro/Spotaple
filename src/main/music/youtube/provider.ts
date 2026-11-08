@@ -6,7 +6,7 @@ import { createAudioCache, createQualityLock } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
 import { chooseAudioFormat } from './format';
 import { classify, MESSAGES, MusicError, playabilityError, withTimeout } from './errors';
-import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, txt } from './mappers';
+import { bestThumb, isTrackItem, mapAlbum, mapArtist, mapPanelTrack, mapPlaylistTrack, mapRemotePlaylist, mapTrack, parseTrackCount, searchItems, similarArtists, txt } from './mappers';
 import { collectPlaylistItems, type PlaylistPage } from './playlist';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,6 +260,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
         singles: items((t) => t.startsWith('singles'))
           .map((i) => mapAlbum(i, ref))
           .filter((x) => x !== null),
+        similar: similarArtists(sections),
       };
     } catch (e) {
       throw classify(e);

@@ -69,6 +69,8 @@ export interface ArtistDetail extends ArtistSummary {
   topSongs: Track[];
   albums: AlbumSummary[];
   singles: AlbumSummary[];
+  /** «Fans might also like»: artistas parecidos (vacío si YouTube no trae la sección). */
+  similar: ArtistSummary[];
 }
 
 export interface PlaylistSummary {
