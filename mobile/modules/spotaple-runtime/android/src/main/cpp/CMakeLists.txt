@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(spotaple_runtime)
+
+set(NODE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../dist/node-runtime")
+add_library(node SHARED IMPORTED)
+set_target_properties(node PROPERTIES IMPORTED_LOCATION "${NODE_DIR}/bin/${ANDROID_ABI}/libnode.so")
+add_library(spotaple_runtime SHARED runtime.cpp)
+target_compile_features(spotaple_runtime PRIVATE cxx_std_20)
+target_include_directories(spotaple_runtime PRIVATE "${NODE_DIR}/include/node")
+target_link_libraries(spotaple_runtime node)

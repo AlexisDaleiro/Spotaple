@@ -6,6 +6,8 @@ on:
     paths:
       - 'mobile/**'
       - 'build/icon.png'
+      - 'src/**'
+      - 'package-lock.json'
       - '.github/workflows/android-preview.yml'
   workflow_dispatch:
 
@@ -20,7 +22,7 @@ jobs:
   apk:
     name: Generar APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: mobile
@@ -32,15 +34,24 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - name: Instalar dependencias del motor compartido
+        working-directory: .
+        run: npm ci --ignore-scripts
+      - name: Verificar tipos del motor y la interfaz
+        working-directory: .
+        run: npm run typecheck
       - name: Usar Java 21
         run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
+      - run: node build-runtime.mjs
       - run: ./node_modules/.bin/expo prebuild --platform android --no-install
       - name: Compilar APK con el código de la app incluido
         working-directory: mobile/android
-        run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64 --no-daemon --max-workers=2
       - name: Verificar el APK
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
@@ -49,6 +60,8 @@ jobs:
           "$tools/apksigner" verify --print-certs "$apk"
           "$tools/aapt" dump badging "$apk" | grep -F "package: name='$application_id'"
           zipinfo -1 "$apk" | grep -Fx 'assets/index.android.bundle'
+          zipinfo -1 "$apk" | grep -Fx 'assets/spotaple/runtime.cjs'
+          zipinfo -1 "$apk" | grep -Fx 'lib/arm64-v8a/libnode.so'
           mkdir -p dist
           cp "$apk" dist/Spotaple-Android-preview.apk
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -57,3 +70,16 @@ jobs:
           path: mobile/dist/Spotaple-Android-preview.apk
           if-no-files-found: error
           compression-level: 0
+      - name: Habilitar la aceleración del emulador
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Abrir Spotaple en Android
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash mobile/smoke-android.sh

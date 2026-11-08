@@ -14,6 +14,7 @@ export interface JamSessionDeps {
   /** Se llama con la vista completa cada vez que algo cambia. */
   emit(view: JamView): void;
   newId?: () => string;
+  localAddress?: () => string;
 }
 
 export type JamSession = ReturnType<typeof createJamSession>;
@@ -124,7 +125,7 @@ export function createJamSession(d: JamSessionDeps) {
       const code = newRoomCode();
       const h = await startLocalHost(code);
       host = h;
-      const invite = formatInvite('local', code, `${lanAddresses()[0] ?? '127.0.0.1'}:${h.port}`);
+      const invite = formatInvite('local', code, `${d.localAddress?.() ?? lanAddresses()[0] ?? '127.0.0.1'}:${h.port}`);
       v = await start({ url: `ws://127.0.0.1:${h.port}/${code}`, kind: 'local', invite, name, create: true });
     } else {
       v = await createInternet(name, relay!);

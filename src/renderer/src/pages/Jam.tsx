@@ -7,6 +7,42 @@ import { settingsStore, useSettings } from '../stores/settings';
 
 type Where = 'create' | 'join';
 
+function AndroidRelaySetup() {
+  const status = useJam((s) => s.relay);
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.jam.setRelayUrl(url);
+      useJam.setState({ relay: await api.jam.relayStatus() });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="jam-relay">
+      {status === 'ready' && <p role="status">Tu relé está listo.</p>}
+      <p>Pegá la dirección de tu relé de Cloudflare para crear salas por internet.</p>
+      <label className="field">
+        <span className="field__label">Dirección del relé</span>
+        <input className="field__input" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://tu-rele.workers.dev" />
+      </label>
+      <div className="jam-relay__actions">
+        <button type="button" className="btn" disabled={busy || !url.trim()} onClick={() => void save()}>Guardar relé</button>
+        <a href="https://github.com/AlexisDaleiro/Spotaple/tree/main/relay" target="_blank" rel="noreferrer">Cómo crear un relé</a>
+      </div>
+      {error && <p className="jam-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function RelaySetup() {
   const status = useJam((s) => s.relay);
   const [showTerms, setShowTerms] = useState(false);
@@ -103,7 +139,7 @@ function JamStart({ view }: { view: JamView | null }) {
 
   return (
     <>
-      <p className="jam-lede">Escuchen juntos: cada uno pide canciones desde su PC y suenan en la PC del admin o en las de todos.</p>
+      <p className="jam-lede">Escuchen juntos. Cada persona pide canciones desde su dispositivo y suenan donde elija quien creó la sala.</p>
       <label className="field jam-name">
         <span className="field__label">Tu nombre</span>
         <input className="field__input" value={name} maxLength={24} autoComplete="off" placeholder="Cómo te ven los demás" onChange={(e) => setName(e.target.value)} />
@@ -132,7 +168,7 @@ function JamStart({ view }: { view: JamView | null }) {
               <span className="jam-kind__hint">Para escuchar juntos desde redes distintas con tu relé de Cloudflare.</span>
             </label>
           </fieldset>
-          {kind === 'internet' && <RelaySetup />}
+          {kind === 'internet' && (api.platform === 'android' ? <AndroidRelaySetup /> : <RelaySetup />)}
           {error?.where === 'create' && (
             <p className="jam-error" role="alert">
               {error.message}
