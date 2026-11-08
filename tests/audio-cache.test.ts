@@ -43,14 +43,25 @@ describe('caché de audio resuelto', () => {
     expect(cache.get('high', 'abc123')).toBeUndefined();
   });
 
-  it('invalidate borra la canción en ambas calidades', () => {
+  it('distingue las tres variantes de la misma canción', () => {
+    const cache = createAudioCache(() => 0);
+    const aac = audio(9999);
+    cache.set('aac', 'abc123', aac);
+    expect(cache.get('aac', 'abc123')).toBe(aac);
+    expect(cache.get('high', 'abc123')).toBeUndefined();
+    expect(cache.get('saver', 'abc123')).toBeUndefined();
+  });
+
+  it('invalidate borra la canción en las tres variantes', () => {
     const cache = createAudioCache(() => 0);
     cache.set('high', 'abc123', audio(9999));
     cache.set('saver', 'abc123', audio(9999));
+    cache.set('aac', 'abc123', audio(9999));
     cache.set('high', 'otra99', audio(9999));
     cache.invalidate('abc123');
     expect(cache.get('high', 'abc123')).toBeUndefined();
     expect(cache.get('saver', 'abc123')).toBeUndefined();
+    expect(cache.get('aac', 'abc123')).toBeUndefined();
     expect(cache.get('high', 'otra99')).toBeDefined();
   });
 });

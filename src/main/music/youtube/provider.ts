@@ -1,7 +1,7 @@
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js';
 import type { AlbumDetail, ArtistDetail, ArtistRef, RemotePlaylistDetail, SearchResults, Track } from '../../../shared/types';
 import type { StreamQuality } from '../../../shared/settings';
-import type { MusicProvider, ResolvedAudio } from '../provider';
+import type { AudioVariant, MusicProvider, ResolvedAudio } from '../provider';
 import { createAudioCache, createQualityLock } from './audio-cache';
 import { evaluatePlayerScript } from './eval';
 import { chooseAudioFormat } from './format';
@@ -83,7 +83,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     if (res.status !== 206) throw new MusicError('unavailable', MESSAGES.blocked);
   }
 
-  async function resolveWith(yt: Innertube, trackId: string, client: (typeof STREAM_CLIENTS)[number], quality: StreamQuality): Promise<ResolvedAudio> {
+  async function resolveWith(yt: Innertube, trackId: string, client: (typeof STREAM_CLIENTS)[number], quality: AudioVariant): Promise<ResolvedAudio> {
     const info = await withTimeout(yt.getBasicInfo(trackId, { client }), REQUEST_TIMEOUT_MS);
     const bad = playabilityError(info.playability_status?.status, info.playability_status?.reason);
     if (bad) throw bad;
@@ -111,7 +111,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     };
   }
 
-  async function resolveOnce(trackId: string, quality: StreamQuality): Promise<ResolvedAudio> {
+  async function resolveOnce(trackId: string, quality: AudioVariant): Promise<ResolvedAudio> {
     const yt = await getClient();
     let first: MusicError | undefined;
     for (const client of STREAM_CLIENTS) {
@@ -130,12 +130,13 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
    * `newPlay`: la canción empieza a sonar ahora, así que toma la calidad vigente y la fija. Los demás pedidos de la
    * misma reproducción (saltos de posición, reintentos del protocolo de audio) usan la calidad fijada.
    */
-  async function resolveAudio(trackId: string, opts?: { newPlay?: boolean }): Promise<ResolvedAudio> {
-    const quality = opts?.newPlay ? getQuality() : (qualityLock.get(trackId) ?? getQuality());
-    if (opts?.newPlay) qualityLock.lock(trackId, quality);
+  async function resolveAudio(trackId: string, opts?: { newPlay?: boolean; variant?: AudioVariant }): Promise<ResolvedAudio> {
+    // Una variante explícita (descargas) ignora el ajuste de calidad y no fija nada para la reproducción.
+    const quality: AudioVariant = opts?.variant ?? (opts?.newPlay ? getQuality() : (qualityLock.get(trackId) ?? getQuality()));
+    if (opts?.newPlay && !opts.variant) qualityLock.lock(trackId, quality as StreamQuality);
     const hit = cache.get(quality, trackId);
     if (hit) return hit;
-    // La clave incluye la calidad: una resolución en curso en Alta no sirve a un pedido en Ahorro.
+    // La clave incluye la variante: una resolución en curso en Alta no sirve a un pedido en Ahorro ni en AAC.
     const flightKey = `${quality}:${trackId}`;
     const running = inflight.get(flightKey);
     if (running) return running;

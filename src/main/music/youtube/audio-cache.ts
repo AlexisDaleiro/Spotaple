@@ -1,25 +1,26 @@
 import type { StreamQuality } from '../../../shared/settings';
-import type { ResolvedAudio } from '../provider';
+import type { AudioVariant, ResolvedAudio } from '../provider';
+
+const VARIANTS: readonly AudioVariant[] = ['high', 'saver', 'aac'];
 
 /**
- * Caché de audio ya resuelto. La clave incluye la calidad: una URL resuelta en Alta no se reutiliza
- * en Ahorro (ni al revés), así que cambiar el ajuste no necesita vaciar nada.
+ * Caché de audio ya resuelto. La clave incluye la variante: una URL resuelta en Alta no se reutiliza
+ * en Ahorro ni en AAC (ni al revés), así que cambiar el ajuste no necesita vaciar nada.
  */
 export function createAudioCache(now: () => number) {
   const map = new Map<string, ResolvedAudio>();
-  const key = (quality: StreamQuality, trackId: string) => `${quality}:${trackId}`;
+  const key = (variant: AudioVariant, trackId: string) => `${variant}:${trackId}`;
   return {
-    get(quality: StreamQuality, trackId: string): ResolvedAudio | undefined {
-      const hit = map.get(key(quality, trackId));
+    get(variant: AudioVariant, trackId: string): ResolvedAudio | undefined {
+      const hit = map.get(key(variant, trackId));
       return hit && hit.expiresAt > now() ? hit : undefined;
     },
-    set(quality: StreamQuality, trackId: string, audio: ResolvedAudio): void {
-      map.set(key(quality, trackId), audio);
+    set(variant: AudioVariant, trackId: string, audio: ResolvedAudio): void {
+      map.set(key(variant, trackId), audio);
     },
-    /** La URL dejó de valer: se olvida en ambas calidades. */
+    /** La URL dejó de valer: se olvida en todas las variantes. */
     invalidate(trackId: string): void {
-      map.delete(key('high', trackId));
-      map.delete(key('saver', trackId));
+      for (const v of VARIANTS) map.delete(key(v, trackId));
     },
   };
 }

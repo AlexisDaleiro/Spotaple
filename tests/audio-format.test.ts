@@ -33,6 +33,21 @@ describe('chooseAudioFormat', () => {
     expect(fallback.chooseFormat).toHaveBeenLastCalledWith({ type: 'audio', quality: 'bestefficiency', format: 'any' });
   });
 
+  it('aac: pide el mejor mp4 una sola vez (el spike confirmó que eso elige el itag 140)', () => {
+    const info = fakeInfo(() => 'aac-140');
+    expect(chooseAudioFormat(info, 'aac')).toBe('aac-140');
+    expect(info.chooseFormat).toHaveBeenCalledTimes(1);
+    expect(info.chooseFormat).toHaveBeenCalledWith({ type: 'audio', quality: 'best', format: 'mp4' });
+  });
+
+  it('aac: si no hay mp4 propaga el error, sin caer a otro formato', () => {
+    const info = fakeInfo(() => {
+      throw new Error('sin mp4');
+    });
+    expect(() => chooseAudioFormat(info, 'aac')).toThrow('sin mp4');
+    expect(info.chooseFormat).toHaveBeenCalledTimes(1);
+  });
+
   it('si ningún intento sirve, propaga el error del último', () => {
     const info = fakeInfo(() => {
       throw new Error('nada');
