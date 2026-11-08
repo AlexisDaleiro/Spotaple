@@ -14,12 +14,23 @@ npm run dev        # desarrollo, con recarga en caliente
 npm run build      # compila main, preload y renderer en ./out
 npm run start      # ejecuta lo compilado
 npm run pack       # versión sin instalar: release/win-unpacked/Spotaple.exe
-npm run dist       # el único ejecutable para repartir: release/Spotaple 0.1.0.exe (portable)
+npm run dist       # ejecutable portable en release/
+npm run dist:installer # instalador de Windows x64 con actualizaciones en release/
 ```
 
 La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple\spotaple.db`.
 
-**Para usarlo sin instalar ni compilar:** descargá `Spotaple-<versión>.exe` desde la página de **Releases** del repositorio. Es un solo archivo portable (no hay instalador): se ejecuta con doble clic. No está firmado, así que Windows puede mostrar «Windows protegió tu PC»: tocá «Más información» y «Ejecutar de todas formas». La carpeta `release/win-unpacked/` es interna del build y solo la usan las pruebas e2e: no se reparte.
+**Para usarlo sin instalar ni compilar:** descargá el `.exe` portable desde la página de **Releases** del repositorio y ejecutalo con doble clic. La carpeta `release/win-unpacked/` es interna del build y solo la usan las pruebas e2e.
+
+**Para instalarlo y recibir actualizaciones:** ejecutá `Spotaple-Setup-<versión>.exe`. En **Ajustes → Acerca de**, «Buscar actualizaciones» consulta GitHub y descarga una versión más nueva si está disponible. «Reiniciar e instalar» aplica la actualización. El portable se sigue actualizando al descargar un ejecutable nuevo.
+
+### Preparar una versión en GitHub
+
+1. Para una versión nueva, ejecutá `npm version patch --no-git-tag-version` y subí los cambios de versión a `main`. El flujo usa la versión de `package.json` y prepara el tag correspondiente.
+2. En GitHub, abrí **Actions → Instalador de Windows → Run workflow** y seleccioná `main`. GitHub ejecuta las pruebas, genera el instalador x64, lo prueba en Windows y crea un borrador en **Releases** con el `.exe`, su `.blockmap` y `latest.yml`. El flujo usa el token de GitHub Actions y funciona sin configurar secretos.
+3. En **Releases**, revisá el borrador y descargá el instalador para probarlo. Cuando esté listo para distribuir, tocá **Publish release** para que el actualizador de Spotaple pueda encontrarlo. Los instaladores sin firma pueden mostrar un aviso de Windows.
+
+Para generar esos mismos archivos localmente, usá `npm run dist:installer`. Los tres deben salir de la misma compilación. Si ya existe un borrador para esa versión, el flujo lo conserva. Revisalo en **Releases** antes de preparar otra versión.
 
 ## Qué incluye
 
@@ -183,7 +194,7 @@ Movimiento breve con curva de desaceleración, respuesta inmediata al presionar,
 | `npm run check:jam` | si dos PCs (o esta y el relé) pueden hablarse por WebSocket: `listen`, `connect <ip>:<puerto>` y `url <ws://…>`. |
 | `npm run check:relay -- <ws(s)://relé>` | dos clientes contra el relé: crear y unir sala, ping/pong, canción compartida, likes, cambio de modo y traspaso de admin. Cierra la sala de prueba al terminar; no reproduce audio. |
 
-Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real. Ya no se genera instalador NSIS: lo que se reparte es el portable, y las pruebas e2e corren sobre su carpeta interna `win-unpacked`. El modo Jam se verificó en una sola PC con dos instancias: red local, relé Node, Cloudflare con `wrangler dev` y el relé desplegado `spotaple-jam.alexisdaleiro.workers.dev`. El 6 de noviembre de 2026 pasaron los 9 pasos de `e2e:jam` contra Cloudflare por internet con la URL predeterminada de la app, tanto desde el proyecto como con el ejecutable empaquetado. **No se probó** en una red de oficina real ni con un proxy que solo deje salir por HTTP.
+Capturas de los recorridos en `.e2e/`. No se probó con lector de pantalla real. Las pruebas e2e del build de Windows corren sobre su carpeta interna `win-unpacked`. El modo Jam se verificó en una sola PC con dos instancias: red local, relé Node, Cloudflare con `wrangler dev` y el relé desplegado `spotaple-jam.alexisdaleiro.workers.dev`. El 6 de noviembre de 2026 pasaron los 9 pasos de `e2e:jam` contra Cloudflare por internet con la URL predeterminada de la app, tanto desde el proyecto como con el ejecutable empaquetado. **No se probó** en una red de oficina real ni con un proxy que solo deje salir por HTTP.
 
 ## Diagnóstico
 

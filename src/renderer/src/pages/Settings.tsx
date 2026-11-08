@@ -7,8 +7,10 @@ import { api, errorMessage } from '../api';
 import { cx, formatBytes } from '../lib/format';
 import { discoverStore } from '../stores/discover';
 import { useOffline } from '../stores/offline';
+import { persistence, player } from '../player/instance';
 import { settingsStore, useSettings } from '../stores/settings';
 import { toast, useUi } from '../stores/ui';
+import { useUpdates } from '../stores/updates';
 
 /** Cada control escribe con esto: se aplica al instante y se guarda con un pequeño retraso. */
 const set = (patch: Partial<AppSettings>) => settingsStore.getState().update(patch);
@@ -319,6 +321,61 @@ function JamNameRow() {
   );
 }
 
+function UpdatesRow() {
+  const state = useUpdates((s) => s.state);
+  const [saving, setSaving] = useState(false);
+  const hintId = useId();
+  const status = state?.status;
+  const messages = {
+    unsupported: 'Para recibir actualizaciones, usá la versión instalada de Spotaple para Windows.',
+    idle: 'Buscá una versión nueva en GitHub Releases.',
+    checking: 'Buscando actualizaciones…',
+    current: 'Ya tenés la última versión.',
+    error: 'No se pudo buscar o descargar la actualización. Probá de nuevo.',
+    downloading: state?.status === 'downloading' && `Descargando la versión ${state.version}${state.percent === undefined ? '…' : ` (${state.percent} %)`}`,
+    ready: state?.status === 'ready' && (state.installFailed
+      ? 'No se pudo iniciar la instalación. Podés volver a intentarlo.'
+      : `La versión ${state.version} está lista. Spotaple se va a cerrar y abrir de nuevo.`),
+    installing: 'Reiniciando para instalar la actualización…',
+  };
+
+  async function run() {
+    try {
+      if (status === 'ready') {
+        setSaving(true);
+        await settingsStore.getState().flush();
+        if (!persistence.suspended) await api.state.save(player().snapshot());
+        await api.updates.install();
+      } else {
+        await api.updates.check();
+      }
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="set-row set-row--inline">
+      <div>
+        <p className="set-row__label">Spotaple</p>
+        <p className="set-row__hint">Versión {__APP_VERSION__}</p>
+        <p className="set-row__hint" id={hintId} role="status">{status && messages[status]}</p>
+      </div>
+      <button
+        type="button"
+        className="btn"
+        aria-describedby={hintId}
+        disabled={saving || !status || status === 'unsupported' || status === 'checking' || status === 'downloading' || status === 'installing'}
+        onClick={() => void run()}
+      >
+        {status === 'ready' || status === 'installing' ? 'Reiniciar e instalar' : 'Buscar actualizaciones'}
+      </button>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const s = useSettings((x) => x.settings);
   return (
@@ -406,10 +463,7 @@ export function SettingsPage() {
       </Group>
 
       <Group title="Acerca de">
-        <div className="set-row">
-          <p className="set-row__label">Spotaple</p>
-          <p className="set-row__hint">Versión {__APP_VERSION__}</p>
-        </div>
+        <UpdatesRow />
       </Group>
     </div>
   );

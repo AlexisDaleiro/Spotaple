@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, Menu, nativeTheme, net, protocol, session, shell } from 'electron';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import updater from 'electron-updater';
 import { AUDIO_SCHEME, IPC } from '../shared/api';
 import { buildCsp } from '../shared/csp';
 import { AUDIO_FORMATS, type AudioFormat } from '../shared/offline';
@@ -15,6 +16,7 @@ import { withoutCredentials } from './net-fetch';
 import { createDiscover } from './music/discover';
 import { createOffline } from './offline';
 import { createYouTubeProvider } from './music/youtube/provider';
+import { createUpdates } from './updates';
 
 // Permite aislar los datos (pruebas e2e) sin tocar la biblioteca real del usuario.
 if (process.env['SPOTAPLE_USER_DATA']) app.setPath('userData', process.env['SPOTAPLE_USER_DATA']);
@@ -118,11 +120,21 @@ app.whenReady().then(() => {
     relayUrl: process.env['SPOTAPLE_JAM_RELAY'] ?? JAM_RELAY_URL,
     emit: (view) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.jamState, view)),
   });
+  const leaveJamOnQuit = () => jam.leave({ quit: true }).catch(() => undefined);
+  // El instalador NSIS lleva un feed. El portable y los builds --dir se actualizan manualmente.
+  const canUpdate = process.platform === 'win32' && app.isPackaged && !process.env['PORTABLE_EXECUTABLE_FILE'] &&
+    existsSync(join(process.resourcesPath, 'app-update.yml'));
+  const updates = createUpdates(
+    canUpdate ? updater.autoUpdater : null,
+    (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.updatesState, state)),
+    leaveJamOnQuit,
+  );
   registerIpc({
     store,
     provider,
     jam,
     offline,
+    updates,
     // «Hecho para vos»: se apaga con el ajuste; la generación es perezosa (la pide Inicio) y por período.
     discover: createDiscover({ source: provider, store, enabled: () => store.getAppSettings().forYou }),
     fetchImpl: netFetch,
@@ -149,13 +161,10 @@ app.whenReady().then(() => {
     if (quitting) return;
     quitting = true;
     e.preventDefault();
-    void jam
-      .leave({ quit: true })
-      .catch(() => undefined)
-      .finally(() => {
-        store.close();
-        app.quit();
-      });
+    void leaveJamOnQuit().finally(() => {
+      store.close();
+      app.quit();
+    });
   });
 });
 
