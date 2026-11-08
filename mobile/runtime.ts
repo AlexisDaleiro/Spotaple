@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createResponder } from '../src/main/audio-protocol';
@@ -10,6 +10,7 @@ import { createStore } from '../src/main/db/store';
 import { exportTrack } from '../src/main/export';
 import { createHandlers } from '../src/main/handlers';
 import { createJamSession } from '../src/main/jam/session';
+import { createRelaySetup } from '../src/main/jam/relay-setup';
 import { createDiscover } from '../src/main/music/discover';
 import { createYouTubeProvider } from '../src/main/music/youtube/provider';
 import { withoutCredentials } from '../src/main/net-fetch';
@@ -21,6 +22,7 @@ import { parseRelayUrl } from '../src/shared/jam/invite';
 import { PROTOCOL } from '../src/shared/jam/types';
 import { AUDIO_FORMATS } from '../src/shared/offline';
 import { createAndroidUpdates } from './updates';
+import { deployAndroidRelay } from './relay';
 
 const MAX_BODY = 2 * 1024 * 1024;
 const MIME: Record<string, string> = {
@@ -66,18 +68,25 @@ export async function startRuntime(dataDir: string, webDir: string, lanAddress?:
     emit: (state) => emit(IPC.offlineState, state),
   });
   const relayUrl = () => parseRelayUrl(store.getSetting('jam_relay_url'));
-  const relayStatus = (): JamRelayStatus => relayUrl() ? 'ready' : 'unconfigured';
+  const relay = createRelaySetup({
+    source: join(dirname(webDir), 'relay-worker.mjs'),
+    stored: relayUrl(), fetch: fetchImpl,
+    save: (url) => store.setSetting('jam_relay_url', url),
+    emit: (status) => emit(IPC.jamRelayState, status),
+    open: async (url) => emit('android:open', url),
+    deploy: (source, signal) => deployAndroidRelay(source, signal, fetchImpl),
+  });
+  const relayStatus = (): JamRelayStatus => relayUrl() ? 'ready' : relay.state();
   const jam = createJamSession({
     settings: { get: store.getSetting, set: store.setSetting },
     relayUrl: JAM_RELAY_URL, hostRelayUrl: relayUrl,
     emit: (view) => emit(IPC.jamState, view),
     localAddress: lanAddress ? () => lanAddress : undefined,
   });
-  const notAvailable = async () => { throw new Error('Configurá la dirección de tu relé desde Jam.'); };
   const updates = createAndroidUpdates(dataDir, version, (state) => emit(IPC.updatesState, state), () => emit('android:install', true), fetchImpl);
   const handlers = createHandlers({
     store, provider, jam, offline, fetchImpl,
-    jamRelay: { state: relayStatus, prepare: notAvailable, openClaim: notAvailable, activate: notAvailable },
+    jamRelay: { ...relay, state: relayStatus },
     updates,
     discover: createDiscover({ source: provider, store, enabled: () => store.getAppSettings().forYou }),
     pickSavePath: async () => null,
@@ -235,7 +244,7 @@ export async function startRuntime(dataDir: string, webDir: string, lanAddress?:
     url: origin + prefix,
     async close() {
       clearInterval(heartbeat);
-      await jam.leave({ quit: true });
+      await Promise.all([jam.leave({ quit: true }), relay.stop()]);
       for (const stream of streams) stream.end();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());

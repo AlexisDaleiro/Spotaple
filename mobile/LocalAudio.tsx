@@ -70,7 +70,7 @@ function AudioPreview({ file }: { file: DocumentPickerAsset }) {
   );
 }
 
-export default function App() {
+export default function LocalAudio({ onClose }: { onClose?: () => void }) {
   const [file, setFile] = useState<DocumentPickerAsset | null>(null);
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState(false);
@@ -93,6 +93,11 @@ export default function App() {
       <SafeAreaView style={styles.screen}>
         <StatusBar barStyle="light-content" />
         <ScrollView contentContainerStyle={styles.content}>
+          {onClose && (
+            <Pressable accessibilityRole="button" style={[styles.button, styles.fileButton]} onPress={onClose}>
+              <Text style={styles.fileButtonLabel}>Volver a Spotaple</Text>
+            </Pressable>
+          )}
           <Text accessibilityRole="header" style={styles.brand}>Spotaple</Text>
           <Text accessibilityRole="header" style={styles.heading}>Tu música local</Text>
           <Text style={styles.secondary}>Elegí un archivo de audio para escucharlo en el teléfono.</Text>

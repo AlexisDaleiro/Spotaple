@@ -6,6 +6,7 @@ import './touch.css';
 
 const events = new EventSource('./events');
 events.addEventListener('android:install', () => window.SpotapleAndroid?.install());
+events.addEventListener('android:open', (event) => window.SpotapleAndroid?.open(JSON.parse((event as MessageEvent<string>).data)));
 const listeners = new Map<string, EventListener>();
 const pendingSaves = new Map<number, (status: number) => void>();
 let nextSave = 0;
@@ -23,6 +24,7 @@ declare global {
       media(state: string): void;
       open(url: string): void;
       install(): void;
+      openLocal(): void;
     };
   }
 }

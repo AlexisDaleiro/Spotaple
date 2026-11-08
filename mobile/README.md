@@ -8,7 +8,7 @@ El APK incluye la interfaz de Spotaple adaptada al teléfono y ejecuta el motor 
 2. Extraé el ZIP, pasá `Spotaple-Android-preview.apk` al teléfono y abrilo desde la app de archivos. Si Android te pide habilitar la instalación desde esa app, aceptá para seguir.
 3. Abrí **Spotaple**, buscá una canción y tocá el botón de reproducción. Probá guardar una favorita, crear una playlist y abrir la cola.
 
-El APK usa el identificador `com.alexis.spotaple.preview` y una firma de prueba. Para Jam por internet, podés unirte con una invitación o guardar la dirección de tu Worker al crear una sala. Las actualizaciones de Android se buscan en GitHub Releases. Para ofrecer una actualización, adjuntá `Spotaple-Android.apk` a un release con el tag `android-vX.Y.Z` y usá el mismo identificador y firma con un `versionCode` mayor.
+El APK usa el identificador `com.alexis.spotaple.preview` y una firma de prueba. Para Jam por internet, podés unirte con una invitación, configurar un relé con tu cuenta de Cloudflare o guardar la dirección de un relé existente. En **Biblioteca → Abrir audio del teléfono** también podés reproducir archivos locales. Las actualizaciones de Android se buscan en GitHub Releases. Para ofrecer una actualización, adjuntá `Spotaple-Android.apk` a un release con el tag `android-vX.Y.Z` y usá el mismo identificador y firma con un `versionCode` mayor.
 
 ## Generar otro APK
 

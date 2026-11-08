@@ -10,6 +10,7 @@ import { PROTOCOL } from '../../shared/jam/types';
 interface PendingRelay {
   relay: string;
   claim: string;
+  expiresAt?: number;
 }
 
 export function readDeployment(output: string): PendingRelay | null {
@@ -89,6 +90,7 @@ export function createRelaySetup(d: {
 }) {
   let url = parseRelayUrl(d.stored);
   let pending: PendingRelay | null = null;
+  let expiry: ReturnType<typeof setTimeout> | undefined;
   let task: Promise<void> | null = null;
   const shutdown = new AbortController();
   const state = (): JamRelayStatus => d.override || url ? 'ready' : pending ? 'claim' : task ? 'preparing' : 'unconfigured';
@@ -107,8 +109,19 @@ export function createRelaySetup(d: {
     async prepare(accepted: boolean) {
       if (!accepted) throw new Error('Aceptá las condiciones de Cloudflare para preparar el relé.');
       if (d.override || url || task) return;
+      clearTimeout(expiry);
       pending = null;
-      task = (d.deploy ?? deployRelay)(d.source, shutdown.signal).then((result) => { pending = result; });
+      task = (d.deploy ?? deployRelay)(d.source, shutdown.signal).then((result) => {
+        pending = result;
+        if (result.expiresAt) {
+          expiry = setTimeout(() => {
+            if (pending !== result) return;
+            pending = null;
+            d.emit(state());
+          }, Math.max(0, result.expiresAt - Date.now()));
+          expiry.unref();
+        }
+      });
       d.emit(state());
       try {
         await task;
@@ -135,11 +148,13 @@ export function createRelaySetup(d: {
       d.save(candidate.relay);
       url = candidate.relay;
       pending = null;
+      clearTimeout(expiry);
       d.emit(state());
     },
     async stop() {
       shutdown.abort();
       await task?.catch(() => undefined);
+      clearTimeout(expiry);
     },
   };
 }

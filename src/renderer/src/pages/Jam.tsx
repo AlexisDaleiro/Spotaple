@@ -168,7 +168,17 @@ function JamStart({ view }: { view: JamView | null }) {
               <span className="jam-kind__hint">Para escuchar juntos desde redes distintas con tu relé de Cloudflare.</span>
             </label>
           </fieldset>
-          {kind === 'internet' && (api.platform === 'android' ? <AndroidRelaySetup /> : <RelaySetup />)}
+          {kind === 'internet' && (
+            <>
+              <RelaySetup />
+              {api.platform === 'android' && (
+                <details>
+                  <summary>Usar un relé existente</summary>
+                  <AndroidRelaySetup />
+                </details>
+              )}
+            </>
+          )}
           {error?.where === 'create' && (
             <p className="jam-error" role="alert">
               {error.message}

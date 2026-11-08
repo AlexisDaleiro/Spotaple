@@ -1,9 +1,10 @@
-import { Clock, Heart, Play, Shuffle } from 'lucide-react';
+import { Clock, FileAudio, Heart, Play, Shuffle } from 'lucide-react';
 import { api } from '../api';
 import { cx, formatTotal, plural, totalDuration } from '../lib/format';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { useLibrary } from '../stores/library';
+import { inRoom, useJam } from '../stores/jam';
 import { navigate } from '../stores/nav';
 import { useOffline } from '../stores/offline';
 import { toast, useUi } from '../stores/ui';
@@ -12,6 +13,7 @@ import { TrackList, TrackRow } from '../components/TrackRow';
 
 export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'history' }) {
   const version = useLibrary((s) => s.version);
+  const inJam = useJam((s) => inRoom(s.view));
   const favs = useResource(() => api.library.favorites(), [version]);
   const history = useResource(() => api.library.recentPlays(100), [tab === 'history' ? 'h' : 'f']);
   const res = tab === 'favorites' ? favs : history;
@@ -44,6 +46,13 @@ export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'histor
           <Clock size={14} /> Historial
         </button>
       </div>
+      {api.platform === 'android' && !inJam && (
+        <div className="toolbar">
+          <button type="button" className="btn" onClick={() => window.dispatchEvent(new Event('spotaple:open-local'))}>
+            <FileAudio size={16} /> Abrir audio del teléfono
+          </button>
+        </div>
+      )}
 
       {res.error ? (
         <ErrorState message={res.error} onRetry={res.reload} />

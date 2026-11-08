@@ -45,6 +45,13 @@ document.addEventListener('click', (event) => {
   window.SpotapleAndroid.open(target.href);
 });
 
+window.addEventListener('spotaple:open-local', () => {
+  if (inRoom(useJam.getState().view)) return;
+  const p = player();
+  if (p.status === 'playing' || p.status === 'buffering') p.togglePlay();
+  window.SpotapleAndroid?.openLocal();
+});
+
 let lastMedia = '';
 playerStore.subscribe((state) => {
   const item = currentItem(state);

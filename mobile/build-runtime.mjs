@@ -26,6 +26,15 @@ await build({
   },
 });
 await writeFile(resolve(assets, 'start.cjs'), "require('./runtime.cjs').runRuntime(process.argv.slice(2)).catch((error) => { console.error(error); process.exitCode = 1; });\n");
+await build({
+  configFile: false,
+  root,
+  build: {
+    lib: { entry: resolve(root, '../relay/src/worker.ts'), formats: ['es'], fileName: () => 'relay-worker.mjs' },
+    outDir: assets,
+    emptyOutDir: false,
+  },
+});
 
 if (!process.argv.includes('--web-only')) {
   await mkdir(runtime, { recursive: true });

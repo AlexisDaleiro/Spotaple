@@ -107,5 +107,7 @@
 
 [data-platform="android"] .row .ibtn,
 [data-platform="android"] .qrow .ibtn { min-width: 32px; min-height: 40px; }
+[data-platform="android"] .qrow__remove { opacity: 1; }
+[data-platform="android"] .qrow__dur { display: none; }
 [data-platform="android"] .set-row--inline { grid-template-columns: minmax(0, 1fr) auto; }
 [data-platform="android"] .jam-relay__actions { flex-wrap: wrap; }

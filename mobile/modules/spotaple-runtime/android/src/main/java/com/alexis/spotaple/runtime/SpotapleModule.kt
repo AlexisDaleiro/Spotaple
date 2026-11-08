@@ -21,6 +21,7 @@ import androidx.core.content.FileProvider
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import org.json.JSONObject
 import java.io.File
@@ -34,6 +35,7 @@ class SpotapleModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("SpotapleRuntime")
     View(SpotapleView::class) {
+      Events("onOpenLocal")
       AsyncFunction("back") { view: SpotapleView -> view.back() }
     }
     OnActivityResult { _, (request, result, data) ->
@@ -57,6 +59,7 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
   }
   private var browser: WebView? = null
   private var pendingSave: Pair<Int, String>? = null
+  private val onOpenLocal by EventDispatcher()
   private val awaitRuntime = object : Runnable {
     override fun run() {
       val url = NodeRuntime.url
@@ -159,6 +162,11 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
   }
 
   private inner class NativeActions(private val url: String) {
+    @JavascriptInterface
+    fun openLocal() {
+      post { onOpenLocal(emptyMap<String, Any>()) }
+    }
+
     @JavascriptInterface
     fun install() {
       post {

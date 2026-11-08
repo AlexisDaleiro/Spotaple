@@ -326,6 +326,7 @@ function UpdatesRow() {
   const [saving, setSaving] = useState(false);
   const hintId = useId();
   const status = state?.status;
+  const android = api.platform === 'android';
   const messages = {
     unsupported: 'Para recibir actualizaciones, usá la versión instalada de Spotaple para Windows.',
     idle: 'Buscá una versión nueva en GitHub Releases.',
@@ -335,7 +336,9 @@ function UpdatesRow() {
     downloading: state?.status === 'downloading' && `Descargando la versión ${state.version}${state.percent === undefined ? '…' : ` (${state.percent} %)`}`,
     ready: state?.status === 'ready' && (state.installFailed
       ? 'No se pudo iniciar la instalación. Podés volver a intentarlo.'
-      : `La versión ${state.version} está lista. Spotaple se va a cerrar y abrir de nuevo.`),
+      : android
+        ? `La versión ${state.version} está lista. Confirmá la instalación en Android.`
+        : `La versión ${state.version} está lista. Spotaple se va a cerrar y abrir de nuevo.`),
     installing: 'Reiniciando para instalar la actualización…',
   };
 
@@ -370,7 +373,9 @@ function UpdatesRow() {
         disabled={saving || !status || status === 'unsupported' || status === 'checking' || status === 'downloading' || status === 'installing'}
         onClick={() => void run()}
       >
-        {status === 'ready' || status === 'installing' ? 'Reiniciar e instalar' : 'Buscar actualizaciones'}
+        {status === 'ready' || status === 'installing'
+          ? (android ? 'Instalar actualización' : 'Reiniciar e instalar')
+          : 'Buscar actualizaciones'}
       </button>
     </div>
   );
