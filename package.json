@@ -19,6 +19,7 @@
     "e2e:settings": "node scripts/e2e-settings.mjs",
     "e2e:playlists": "node scripts/e2e-playlists.mjs",
     "e2e:radio": "node scripts/e2e-radio.mjs",
+    "e2e:offline": "node scripts/e2e-offline.mjs",
     "a11y": "node scripts/a11y.mjs",
     "check:youtube": "node scripts/probe.mjs",
     "pack": "electron-vite build && electron-builder --dir",
