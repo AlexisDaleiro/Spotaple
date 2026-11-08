@@ -10,6 +10,8 @@ El APK incluye la interfaz de Spotaple adaptada al teléfono y ejecuta el motor 
 
 El APK usa el identificador `com.alexis.spotaple.preview` y una firma de prueba. Para Jam por internet, podés unirte con una invitación, configurar un relé con tu cuenta de Cloudflare o guardar la dirección de un relé existente. En **Biblioteca → Abrir audio del teléfono** también podés reproducir archivos locales. Las actualizaciones de Android se buscan en GitHub Releases. Para ofrecer una actualización, adjuntá `Spotaple-Android.apk` a un release con el tag `android-vX.Y.Z` y usá el mismo identificador y firma con un `versionCode` mayor.
 
+Al publicar el release de Android, dejá desactivada la opción **Set as the latest release** para que GitHub conserve la última versión de Windows como principal.
+
 ## Generar otro APK
 
 El flujo se ejecuta al abrir o actualizar un PR con cambios de Android o del motor compartido. También se puede ejecutar desde **Actions → APK de prueba de Android → Run workflow**. Compila el motor y la interfaz, verifica el APK y abre la app en un emulador.

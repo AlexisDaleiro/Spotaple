@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { setImmediate } from 'node:timers/promises';
-import { parseRelayUrl } from '../src/shared/jam/invite';
+import { parseRelayUrl } from '../../shared/jam/invite';
 
 const API = 'https://api.cloudflare.com/client/v4';
 const PREVIEW = '/provisioning/previews';

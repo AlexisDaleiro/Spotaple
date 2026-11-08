@@ -21,8 +21,8 @@ import { JAM_RELAY_HEALTH_PATH, JAM_RELAY_SERVICE, JAM_RELAY_URL, type JamRelayS
 import { parseRelayUrl } from '../src/shared/jam/invite';
 import { PROTOCOL } from '../src/shared/jam/types';
 import { AUDIO_FORMATS } from '../src/shared/offline';
-import { createAndroidUpdates } from './updates';
-import { deployAndroidRelay } from './relay';
+import { createAndroidUpdates } from '../src/main/android/updates';
+import { deployAndroidRelay } from '../src/main/android/relay';
 
 const MAX_BODY = 2 * 1024 * 1024;
 const MIME: Record<string, string> = {

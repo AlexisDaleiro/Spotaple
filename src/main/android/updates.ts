@@ -4,7 +4,7 @@ import { mkdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { UpdateState } from '../src/shared/updates';
+import type { UpdateState } from '../../shared/updates';
 
 const REPO = 'AlexisDaleiro/Spotaple';
 const MAX_APK = 300 * 1024 * 1024;
