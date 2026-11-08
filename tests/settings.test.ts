@@ -9,7 +9,7 @@ describe('parseSettings', () => {
   });
 
   it('descarta todo lo inválido o desconocido', () => {
-    const junk = { theme: 'neon', accent: 'red', textScale: 99, density: 'x', reduceMotion: 'yes', streamQuality: 'ultra', resumeOnOpen: 1, jamName: 42, radio: 'yes', extra: true };
+    const junk = { theme: 'neon', accent: 'red', textScale: 99, density: 'x', reduceMotion: 'yes', streamQuality: 'ultra', resumeOnOpen: 1, jamName: 42, radio: 'yes', autoDownload: 'si', exportFormat: 'mp3', extra: true };
     expect(parseSettings(junk)).toEqual({});
   });
 
@@ -37,6 +37,13 @@ describe('parseSettings', () => {
     expect(parseSettings({ radio: false })).toEqual({ radio: false });
     expect(parseSettings({ radio: true })).toEqual({ radio: true });
     expect(parseSettings({ radio: 'no' })).toEqual({});
+  });
+
+  it('autoDownload solo acepta booleanos y exportFormat solo opus o aac', () => {
+    expect(parseSettings({ autoDownload: false, exportFormat: 'aac' })).toEqual({ autoDownload: false, exportFormat: 'aac' });
+    expect(parseSettings({ autoDownload: true, exportFormat: 'opus' })).toEqual({ autoDownload: true, exportFormat: 'opus' });
+    expect(parseSettings({ autoDownload: 'si' })).toEqual({});
+    expect(parseSettings({ exportFormat: 'mp3' })).toEqual({});
   });
 
   it('textScale solo acepta los valores de TEXT_SCALES', () => {
@@ -79,6 +86,11 @@ describe('THEMES y valores por defecto', () => {
 
   it('la radio automática viene activada', () => {
     expect(DEFAULT_SETTINGS.radio).toBe(true);
+  });
+
+  it('las favoritas se descargan solas y la exportación va en Opus por defecto', () => {
+    expect(DEFAULT_SETTINGS.autoDownload).toBe(true);
+    expect(DEFAULT_SETTINGS.exportFormat).toBe('opus');
   });
 
   it('el tema por defecto conserva el aspecto actual (grafito)', () => {

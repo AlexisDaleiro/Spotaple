@@ -1,5 +1,6 @@
 // Ajustes de la app compartidos entre main, preload y renderer. Solo datos serializables.
 import { sanitizeName } from './jam/protocol';
+import { parseFormat, type AudioFormat } from './offline';
 
 export type ThemeId = 'system' | 'grafito' | 'claro' | 'medianoche' | 'oceano';
 export type ResolvedTheme = Exclude<ThemeId, 'system'>;
@@ -18,6 +19,10 @@ export interface AppSettings {
   resumeOnOpen: boolean;
   /** Cuando quedan pocas canciones por sonar, la cola se rellena sola con una «radio» de la canción actual. */
   radio: boolean;
+  /** Cada canción favorita se guarda en el disco para escucharla sin internet. */
+  autoDownload: boolean;
+  /** Formato que aparece primero en el menú «Descargar canción». */
+  exportFormat: AudioFormat;
   /** Nombre por defecto en las salas. Vive en la clave `jam_name` de la tabla `settings`. */
   jamName: string;
 }
@@ -31,6 +36,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   streamQuality: 'high',
   resumeOnOpen: false,
   radio: true,
+  autoDownload: true,
+  exportFormat: 'opus',
   jamName: '',
 };
 
@@ -95,6 +102,12 @@ export function parseSettings(raw: unknown): Partial<AppSettings> {
 
   const radio = get('radio');
   if (typeof radio === 'boolean') out.radio = radio;
+
+  const autoDownload = get('autoDownload');
+  if (typeof autoDownload === 'boolean') out.autoDownload = autoDownload;
+
+  const exportFormat = parseFormat(get('exportFormat'));
+  if (exportFormat) out.exportFormat = exportFormat;
 
   const jamName = get('jamName');
   if (jamName === '') out.jamName = '';
