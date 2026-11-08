@@ -257,3 +257,5 @@ export function createDiscover(d: { source: DiscoverSource; store: DiscoverStore
 
   return { get, refresh, reset };
 }
+
+export type Discover = ReturnType<typeof createDiscover>;

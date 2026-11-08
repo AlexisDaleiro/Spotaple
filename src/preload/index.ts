@@ -26,6 +26,11 @@ const bridge: SpotapleBridge = {
       return Promise.resolve({ ok: true, data: undefined });
     },
   },
+  discover: {
+    get: () => call(IPC.discoverGet),
+    refresh: () => call(IPC.discoverRefresh),
+    resetTaste: () => call(IPC.tasteReset),
+  },
   library: {
     favorites: () => call(IPC.favorites),
     favoriteIds: () => call(IPC.favoriteIds),

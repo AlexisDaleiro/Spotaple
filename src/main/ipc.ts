@@ -5,6 +5,7 @@ import { parseSettings, type AppSettings } from '../shared/settings';
 import type { IpcResult, PreparedAudio } from '../shared/types';
 import type { Store } from './db/store';
 import { exportTrack } from './export';
+import type { Discover } from './music/discover';
 import type { MusicProvider } from './music/provider';
 import { classify, MusicError } from './music/youtube/errors';
 import type { JamSession } from './jam/session';
@@ -24,6 +25,7 @@ export function registerIpc(deps: {
   provider: MusicProvider;
   jam: JamSession;
   offline: Offline;
+  discover: Discover;
   /** La red del proceso local (net.fetch con el proxy del sistema), la misma que usa el protocolo de audio. */
   fetchImpl: typeof fetch;
   /** Diálogo «Guardar como» del sistema: devuelve la ruta elegida o null si se canceló. */
@@ -32,7 +34,7 @@ export function registerIpc(deps: {
   onSettings: (settings: AppSettings) => void;
   rendererOrigin?: string;
 }) {
-  const { store, provider, jam, offline, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
+  const { store, provider, jam, offline, discover, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
   const radio = createRadio({ source: provider, history: store });
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) => {
@@ -74,6 +76,11 @@ export function registerIpc(deps: {
   handle(IPC.offlineGet, () => offline.state());
   handle(IPC.offlineSync, () => offline.reconcile());
   handle(IPC.offlineClear, () => offline.clear());
+
+  // «Hecho para vos»: ninguno recibe argumentos; la generación corre en main y nunca bloquea la interfaz.
+  handle(IPC.discoverGet, () => discover.get());
+  handle(IPC.discoverRefresh, () => discover.refresh());
+  handle(IPC.tasteReset, () => discover.reset());
 
   handle(IPC.favorites, () => store.favorites());
   handle(IPC.favoriteIds, () => store.favoriteIds());

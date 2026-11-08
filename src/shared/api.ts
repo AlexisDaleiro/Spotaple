@@ -11,6 +11,7 @@ import type {
   Track,
 } from './types';
 import type { JamView } from './jam/types';
+import type { DiscoverState } from './discover';
 import type { AudioFormat, ExportResult, OfflineState } from './offline';
 import type { AppSettings } from './settings';
 
@@ -31,6 +32,9 @@ export const IPC = {
   offlineGet: 'offline:get',
   offlineSync: 'offline:sync',
   offlineClear: 'offline:clear',
+  discoverGet: 'discover:get',
+  discoverRefresh: 'discover:refresh',
+  tasteReset: 'taste:reset',
   favorites: 'lib:favorites',
   favoriteIds: 'lib:favorite-ids',
   toggleFavorite: 'lib:toggle-favorite',
@@ -89,6 +93,14 @@ export interface SpotapleApi {
     clear(): Promise<void>;
     /** Recibe cada cambio del estado. Un solo oyente: suscribirse otra vez reemplaza al anterior. */
     subscribe(cb: (state: OfflineState) => void): Promise<void>;
+  };
+  discover: {
+    /** «Hecho para vos» tal como está guardado, sin tocar la red (las listas de un período anterior vienen con `stale`). */
+    get(): Promise<DiscoverState>;
+    /** Genera lo que falte del período vigente (una corrida a la vez) y devuelve el estado final; un fallo conserva lo anterior. */
+    refresh(): Promise<DiscoverState>;
+    /** «Reiniciar mis gustos»: ignora lo anterior para las listas y la radio, y vacía las listas. No borra historial ni favoritas. */
+    resetTaste(): Promise<DiscoverState>;
   };
   library: {
     favorites(): Promise<Track[]>;

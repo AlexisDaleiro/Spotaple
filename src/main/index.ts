@@ -12,6 +12,7 @@ import { createStore } from './db/store';
 import { registerIpc } from './ipc';
 import { createJamSession } from './jam/session';
 import { withoutCredentials } from './net-fetch';
+import { createDiscover } from './music/discover';
 import { createOffline } from './offline';
 import { createYouTubeProvider } from './music/youtube/provider';
 
@@ -121,6 +122,8 @@ app.whenReady().then(() => {
     provider,
     jam,
     offline,
+    // «Hecho para vos»: se apaga con el ajuste; la generación es perezosa (la pide Inicio) y por período.
+    discover: createDiscover({ source: provider, store, enabled: () => store.getAppSettings().forYou }),
     fetchImpl: netFetch,
     pickSavePath: (suggestedName: string, format: AudioFormat) => pickSavePath(suggestedName, format),
     // Cada cambio de ajustes recolorea la ventana nativa (la interfaz se actualiza sola en el renderer).
