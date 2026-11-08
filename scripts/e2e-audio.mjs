@@ -299,6 +299,29 @@ await step('7 fundido cruzado: los dos suenan a la vez, cambia el título y al f
   return `${title0.slice(0, 24)} → ${title1.slice(0, 24)}; fundido a mitad: ${mid.map((s) => s.fade.toFixed(2)).join(' / ')}; pico ${m.peak.toFixed(2)}`;
 });
 
+await step('8 una descargada sin loudness guardado (bajada antes de «Normalizar») se completa al reproducirla', async () => {
+  await closeApp();
+  const db = new DatabaseSync(join(userData, 'spotaple.db'));
+  db.exec('UPDATE tracks SET loudness = NULL');
+  db.close();
+  writeSettings({ normalize: true });
+  await launch();
+  await page.locator('.nav-item[title="Biblioteca"]').click();
+  await page.waitForSelector('.tracklist__body .row', { timeout: 15000 });
+  await page.locator('.tracklist__body .row .row__title').first().dblclick();
+  await page.waitForSelector('.play-btn[aria-label="Pausar"]', { timeout: 20000 });
+  const gain = await waitFor(async () => {
+    const g = await trackGain();
+    return g < 0.95 ? g : 0;
+  }, 8000, 'una ganancia de normalización menor a 1 para la descargada');
+  await closeApp();
+  const check = new DatabaseSync(join(userData, 'spotaple.db'));
+  const rows = check.prepare('SELECT loudness FROM tracks WHERE loudness IS NOT NULL').all();
+  check.close();
+  if (!rows.length) throw new Error('el loudness completado no quedó guardado en tracks.loudness');
+  return `ganancia ×${gain.toFixed(2)}; guardado ${rows[0].loudness} LUFS`;
+});
+
 await app.close().catch(() => undefined);
 rmSync(userData, { recursive: true, force: true });
 const failed = results.filter((r) => !r.ok);

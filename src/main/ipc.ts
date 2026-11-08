@@ -10,6 +10,7 @@ import type { MusicProvider } from './music/provider';
 import { classify, MusicError } from './music/youtube/errors';
 import type { JamSession } from './jam/session';
 import type { Offline } from './offline';
+import { createLoudnessFill } from './loudness';
 import { createRadio } from './music/radio';
 import { id, int, sanitizeExportRequest, sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack, str } from './validate';
 
@@ -36,6 +37,7 @@ export function registerIpc(deps: {
 }) {
   const { store, provider, jam, offline, discover, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
   const radio = createRadio({ source: provider, history: store });
+  const fillLoudness = createLoudnessFill({ provider, store, enabled: () => store.getAppSettings().normalize });
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) => {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<R>> => {
@@ -63,7 +65,8 @@ export function registerIpc(deps: {
     const trackId = id(x);
     // Descargada: suena del disco, así que se responde sin pasar por YouTube (y por tanto sin red).
     const local = offline.local(trackId);
-    if (local) return { trackId, mimeType: local.mimeType, durationSec: local.durationSec, loudnessLkfs: store.trackLoudness(trackId) };
+    // Bajada antes de «Normalizar»: sin loudness guardado, se completa una vez (ver loudness.ts).
+    if (local) return { trackId, mimeType: local.mimeType, durationSec: local.durationSec, loudnessLkfs: store.trackLoudness(trackId) ?? (await fillLoudness(trackId)) };
     const a = await provider.resolveAudio(trackId, { newPlay: true });
     // Se guarda por si la canción se descarga después: del disco ya no hay a quién preguntarle.
     if (a.loudnessLkfs !== undefined) store.setLoudness(trackId, a.loudnessLkfs);

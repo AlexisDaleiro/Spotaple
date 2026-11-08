@@ -863,3 +863,72 @@ describe('crossfade (fundido entre canciones)', () => {
     expect((r.api.recordPlay.mock.calls as unknown as [Track][]).map((c) => c[0].id)).toEqual([track(0).id, track(1).id]);
   });
 });
+
+describe('crossfade: cambios mientras se espera la fuente de la siguiente', () => {
+  function gated() {
+    const gate = deferred<PreparedAudio>();
+    const audio2 = new FakeAudio();
+    const cf = { seconds: vi.fn(() => 0.3), fadeOut: vi.fn(), fadeIn: vi.fn(), unfade: vi.fn() };
+    const r = setup((id) => (id === track(1).id ? gate.promise : Promise.resolve(ok(id))), { audio2, crossfade: cf });
+    return { ...r, audio2, cf, gate };
+  }
+  type Gated = ReturnType<typeof gated>;
+  /** Suena la canción 0 y, a 0,2 s del final, empieza el fundido: queda esperando la fuente de la 1. */
+  async function waitingForNext(r: Gated) {
+    r.s().playTracks(tracks(4), 0);
+    await flush();
+    r.audio.loaded(200);
+    r.audio.currentTime = 199.8;
+    r.audio.dispatchEvent(new Event('timeupdate'));
+    await flush();
+  }
+
+  it('si la siguiente cambia en la espera no se arranca la vieja: se vuelve a decidir con la nueva', async () => {
+    const r = gated();
+    await waitingForNext(r);
+    r.s().playNext([track(9)]);
+    r.gate.resolve(ok(track(1).id));
+    await flush();
+    expect(r.audio2.src).toBe('');
+    expect(r.s().index).toBe(0);
+    expect(r.s().status).toBe('playing');
+    r.audio.currentTime = 199.85;
+    r.audio.dispatchEvent(new Event('timeupdate'));
+    await flush();
+    expect(r.audio2.src).toBe(`test://${track(9).id}`);
+    expect(r.s().items[r.s().index]!.track.id).toBe(track(9).id);
+  });
+
+  it('pausar en la espera deja todo en pausa cuando llega la fuente', async () => {
+    const r = gated();
+    await waitingForNext(r);
+    r.s().togglePlay();
+    r.gate.resolve(ok(track(1).id));
+    await flush();
+    expect(r.s().status).toBe('paused');
+    expect(r.audio2.src).toBe('');
+    expect(r.audio.paused).toBe(true);
+  });
+
+  it('volver al principio de la canción en la espera cancela el fundido', async () => {
+    const r = gated();
+    await waitingForNext(r);
+    r.s().seek(0);
+    r.gate.resolve(ok(track(1).id));
+    await flush();
+    expect(r.audio2.src).toBe('');
+    expect(r.s().index).toBe(0);
+  });
+
+  it('saltar en pleno fundido deja en volumen pleno el elemento que va a sonar', async () => {
+    const r = gated();
+    r.gate.resolve(ok(track(1).id));
+    await waitingForNext(r);
+    expect(r.s().index).toBe(1);
+    r.cf.unfade.mockClear();
+    r.s().next();
+    await flush();
+    expect(r.cf.unfade.mock.calls.map((c) => c[0])).toContain(r.audio2);
+    expect(r.audio2.src).toBe(`test://${track(2).id}`);
+  });
+});

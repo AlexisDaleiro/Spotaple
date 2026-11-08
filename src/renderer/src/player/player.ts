@@ -311,12 +311,23 @@ export function createPlayer(deps: PlayerDeps) {
       const fade = !opts.user && opts.fade ? opts.fade : 0;
       if (fade) {
         if (deps.reachable && !deps.reachable(item.track.id)) return;
+        const from = cur();
         try {
           early = await api.prepare(item.track.id);
         } catch {
           return;
         }
         if (mine !== token) return;
+        // En la espera la persona pudo pausar, volver atrás o cambiar la cola: se vuelve a decidir con lo de ahora.
+        const s = get();
+        const ni = nextIndex(s.items.length, s.index, s.repeat, true);
+        const unchanged =
+          !!from && s.status === 'playing' && cur()?.uid === from.uid && !jam?.active() && s.repeat !== 'one' && ni !== null && s.items[ni]?.uid === item.uid && audio.duration - audio.currentTime <= fade + 1;
+        if (!unchanged || ni === null) {
+          fadeTriedUid = null;
+          return;
+        }
+        index = ni;
       }
       if (opts.user) {
         retriedUid = null;
@@ -339,6 +350,7 @@ export function createPlayer(deps: PlayerDeps) {
         fadeTriedUid = null;
         prefetchedUid = null;
         endFade();
+        cf?.unfade(audio); // si venía subiendo en un fundido, la que va a sonar arranca en volumen pleno
         audio.pause(); // lo que sonaba se corta ya; la elección nueva no espera
       }
       playedAuto = item.auto === true && !opts.user;
