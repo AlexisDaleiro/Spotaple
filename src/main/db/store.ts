@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { parseFormat, type AudioFormat } from '../../shared/offline';
 import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings';
 import type { AffinityInputs } from '../music/radio';
 import type {
@@ -59,6 +60,15 @@ const MIGRATIONS: string[] = [
   // Marca las reproducciones que empezaron solas desde la radio: no cuentan como gusto del usuario.
   `
   ALTER TABLE plays ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
+  `,
+  // Canciones guardadas en el disco para escucharlas sin internet (el archivo vive en userData/offline).
+  `
+  CREATE TABLE downloads (
+    track_id TEXT PRIMARY KEY REFERENCES tracks(id),
+    format TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   `,
 ];
 
@@ -304,6 +314,32 @@ export function createStore(path: string) {
     return Number((db.prepare('SELECT COUNT(*) AS n FROM plays').get() as Row).n);
   }
 
+  // ---- descargas offline (índice de lo que hay en userData/offline)
+  function downloads(): { trackId: string; format: AudioFormat; bytes: number }[] {
+    const rows = db.prepare('SELECT track_id, format, bytes FROM downloads').all() as Row[];
+    return rows.flatMap((r) => {
+      const format = parseFormat(r.format);
+      return format ? [{ trackId: String(r.track_id), format, bytes: Number(r.bytes) }] : [];
+    });
+  }
+  /** Reemplaza la fila si la canción ya tenía una. La canción debe existir en `tracks`. */
+  function addDownload(trackId: string, format: AudioFormat, bytes: number) {
+    db.prepare(
+      `INSERT INTO downloads(track_id, format, bytes, created_at) VALUES(?,?,?,?)
+       ON CONFLICT(track_id) DO UPDATE SET format=excluded.format, bytes=excluded.bytes, created_at=excluded.created_at`,
+    ).run(trackId, format, bytes, Date.now());
+  }
+  function removeDownload(trackId: string) {
+    db.prepare('DELETE FROM downloads WHERE track_id = ?').run(trackId);
+  }
+  function clearDownloads() {
+    db.exec('DELETE FROM downloads');
+  }
+  function trackDuration(trackId: string): number | undefined {
+    const r = db.prepare('SELECT duration_sec FROM tracks WHERE id = ?').get(trackId) as Row | undefined;
+    return (r?.duration_sec as number | null | undefined) ?? undefined;
+  }
+
   // ---- ajustes / estado del reproductor
   function getSetting<T>(key: string): T | null {
     const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as Row | undefined;
@@ -377,6 +413,11 @@ export function createStore(path: string) {
     affinityInputs,
     getAppSettings,
     setAppSettings,
+    downloads,
+    addDownload,
+    removeDownload,
+    clearDownloads,
+    trackDuration,
     close: () => db.close(),
   };
 }

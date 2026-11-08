@@ -175,13 +175,64 @@ describe('historial para la radio', () => {
       first.recordPlay(t(1));
       first.close();
       const raw = new DatabaseSync(file);
-      raw.exec('ALTER TABLE plays DROP COLUMN auto; PRAGMA user_version = 1;');
+      raw.exec('ALTER TABLE plays DROP COLUMN auto; DROP TABLE downloads; PRAGMA user_version = 1;');
       raw.close();
       const again = createStore(file);
       expect(again.affinityInputs(10).plays).toHaveLength(1);
       again.recordPlay(t(2), true);
       expect(again.recentPlayIds(10)).toEqual([t(2).id, t(1).id]);
       again.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('descargas offline', () => {
+  it('guarda y lista las descargas; otra del mismo id reemplaza a la anterior', () => {
+    store.toggleFavorite(t(1));
+    store.addDownload(t(1).id, 'opus', 123);
+    expect(store.downloads()).toEqual([{ trackId: t(1).id, format: 'opus', bytes: 123 }]);
+    store.addDownload(t(1).id, 'aac', 456);
+    expect(store.downloads()).toEqual([{ trackId: t(1).id, format: 'aac', bytes: 456 }]);
+  });
+
+  it('removeDownload borra una y clearDownloads borra todas', () => {
+    for (const n of [1, 2, 3]) {
+      store.toggleFavorite(t(n));
+      store.addDownload(t(n).id, 'opus', n);
+    }
+    store.removeDownload(t(2).id);
+    expect(store.downloads().map((d) => d.trackId).sort()).toEqual([t(1).id, t(3).id]);
+    store.clearDownloads();
+    expect(store.downloads()).toEqual([]);
+  });
+
+  it('trackDuration devuelve la duración guardada y undefined si falta o la canción no existe', () => {
+    store.toggleFavorite(t(4));
+    store.toggleFavorite(t(5, { durationSec: undefined }));
+    expect(store.trackDuration(t(4).id)).toBe(104);
+    expect(store.trackDuration(t(5).id)).toBeUndefined();
+    expect(store.trackDuration('noExiste123')).toBeUndefined();
+  });
+
+  it('una base en la migración 2 sube a la 3 sin perder favoritas, y las descargas sobreviven al reabrir', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spotaple-dl-'));
+    const file = join(dir, 'old.db');
+    try {
+      const first = createStore(file);
+      first.toggleFavorite(t(1));
+      first.close();
+      const raw = new DatabaseSync(file);
+      raw.exec('DROP TABLE downloads; PRAGMA user_version = 2;');
+      raw.close();
+      const again = createStore(file);
+      expect(again.favoriteIds()).toEqual([t(1).id]);
+      again.addDownload(t(1).id, 'opus', 99);
+      again.close();
+      const third = createStore(file);
+      expect(third.downloads()).toEqual([{ trackId: t(1).id, format: 'opus', bytes: 99 }]);
+      third.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
