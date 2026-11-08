@@ -1,8 +1,12 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 import { LIMITS } from '@shared/jam/types';
+import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
 import { TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
-import { cx } from '../lib/format';
+import { api, errorMessage } from '../api';
+import { cx, formatBytes } from '../lib/format';
+import { useOffline } from '../stores/offline';
 import { settingsStore, useSettings } from '../stores/settings';
+import { toast, useUi } from '../stores/ui';
 
 /** Cada control escribe con esto: se aplica al instante y se guarda con un pequeño retraso. */
 const set = (patch: Partial<AppSettings>) => settingsStore.getState().update(patch);
@@ -18,6 +22,7 @@ const SWATCHES = [
 ];
 const SCALE_LABELS: Record<(typeof TEXT_SCALES)[number], string> = { 0.9: 'Pequeño', 1: 'Normal', 1.1: 'Grande', 1.25: 'Muy grande' };
 const THEME_OPTIONS: { value: ThemeId; label: string }[] = [{ value: 'system', label: 'Sistema' }, ...THEMES.map((t) => ({ value: t.id, label: t.label }))];
+const FORMAT_OPTIONS: { value: AudioFormat; label: string }[] = (['opus', 'aac'] as const).map((f) => ({ value: f, label: AUDIO_FORMATS[f].label }));
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   const id = useId();
@@ -108,6 +113,42 @@ function AccentRow({ accent }: { accent: string | null }) {
   );
 }
 
+/** Cuánto ocupan las descargas y el botón para borrarlas todas (con confirmación). */
+function DownloadsRow() {
+  const hintId = useId();
+  const count = useOffline((s) => s.ids.size);
+  const bytes = useOffline((s) => s.bytes);
+  const clear = () =>
+    useUi.getState().openDialog({
+      kind: 'confirm',
+      title: 'Borrar todas las descargas',
+      message: `Se borran del disco ${count === 1 ? 'la canción descargada' : `las ${count} canciones descargadas`}. Si la descarga automática sigue activada, las favoritas se bajan de nuevo la próxima vez que abras la app.`,
+      confirmLabel: 'Borrar todo',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.offline.clear();
+          toast('Descargas borradas', 'success');
+        } catch (e) {
+          toast(errorMessage(e), 'error');
+        }
+      },
+    });
+  return (
+    <div className="set-row set-row--inline">
+      <div>
+        <span className="set-row__label">Espacio usado</span>
+        <p className="set-row__hint" id={hintId}>
+          {formatBytes(bytes)} en {count === 1 ? '1 canción descargada' : `${count} canciones descargadas`}.
+        </p>
+      </div>
+      <button type="button" className="btn" disabled={count === 0} aria-describedby={hintId} onClick={clear}>
+        Borrar todas las descargas
+      </button>
+    </div>
+  );
+}
+
 function JamNameRow() {
   const hintId = useId();
   const saved = useSettings((s) => s.settings.jamName);
@@ -174,6 +215,23 @@ export function SettingsPage() {
           onChange={(radio) => set({ radio })}
         />
         <Toggle label="Reanudar al abrir la app" hint="Al abrir Spotaple, la canción que estaba en pausa sigue sonando donde la dejaste." on={s.resumeOnOpen} onChange={(resumeOnOpen) => set({ resumeOnOpen })} />
+      </Group>
+
+      <Group title="Descargas">
+        <Toggle
+          label="Descargar las favoritas automáticamente"
+          hint="Cada canción que marcás como favorita se guarda en tu disco para escucharla sin internet. Se guardan siempre en Opus, la mejor calidad."
+          on={s.autoDownload}
+          onChange={(autoDownload) => set({ autoDownload })}
+        />
+        <Choice
+          legend="Formato al descargar una canción"
+          hint="Es el que aparece primero en el menú «Descargar canción» (clic derecho sobre una canción)."
+          value={s.exportFormat}
+          options={FORMAT_OPTIONS}
+          onChange={(exportFormat) => set({ exportFormat })}
+        />
+        <DownloadsRow />
       </Group>
 
       <Group title="Salas">

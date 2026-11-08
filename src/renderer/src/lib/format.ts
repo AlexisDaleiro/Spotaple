@@ -26,6 +26,15 @@ export const artistsText = (artists: ArtistRef[] | undefined): string =>
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** Tamaño en disco: «512 KB», «5,1 MB», «3,00 GB» (coma decimal). */
+export function formatBytes(n: number): string {
+  if (!(n > 0)) return '0 MB';
+  const MB = 1024 * 1024;
+  if (n < MB) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  if (n < 1024 * MB) return `${(n / MB).toFixed(1).replace('.', ',')} MB`;
+  return `${(n / (1024 * MB)).toFixed(2).replace('.', ',')} GB`;
+}
+
 /** Duración total, o undefined si a alguna canción le falta (YouTube no siempre la informa): mejor no mostrar un total falso. */
 export const totalDuration = (tracks: Track[]): number | undefined =>
   tracks.length > 0 && tracks.every((t) => t.durationSec) ? tracks.reduce((a, t) => a + t.durationSec!, 0) : undefined;

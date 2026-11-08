@@ -1,11 +1,15 @@
-import { ArrowLeft, ChevronRight, CircleUserRound, Disc3, Heart, ListEnd, ListMusic, ListPlus, Play, Plus } from 'lucide-react';
+import { ArrowLeft, ChevronRight, CircleUserRound, Disc3, Download, Heart, ListEnd, ListMusic, ListPlus, Play, Plus } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
 import type { Track } from '@shared/types';
+import { exportTrack } from '../lib/actions';
 import { cx } from '../lib/format';
 import { player } from '../player/instance';
 import { inRoom, isAdmin, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
+import { useOffline } from '../stores/offline';
+import { settingsStore } from '../stores/settings';
 import { useUi, type MenuItem } from '../stores/ui';
 
 export interface TrackMenuOptions {
@@ -45,6 +49,16 @@ export function trackMenuItems(track: Track, opts: TrackMenuOptions = {}): MenuI
     })),
   ];
 
+  // «Descargar canción»: el formato de Ajustes va primero. Sin red solo se puede guardar lo que ya está descargado (en Opus).
+  const offline = useOffline.getState();
+  const preferred = settingsStore.getState().settings.exportFormat;
+  const formats: AudioFormat[] = preferred === 'aac' ? ['aac', 'opus'] : ['opus', 'aac'];
+  const downloadItems = formats.map<MenuItem>((f) => ({
+    label: AUDIO_FORMATS[f].label,
+    disabled: !offline.online && f === 'aac',
+    onSelect: () => void exportTrack(track, f),
+  }));
+
   // Dentro de una sala "agregar a la cola" es pedir a la sala (el reproductor lo enruta); "como siguiente" es cosa del admin.
   const jam = useJam.getState().view;
   const queueItems: MenuItem[] = inRoom(jam)
@@ -68,6 +82,7 @@ export function trackMenuItems(track: Track, opts: TrackMenuOptions = {}): MenuI
       onSelect: () => void lib.toggleFavorite(track),
     },
     { label: 'Agregar a playlist', icon: <ListMusic size={15} />, submenu: playlistItems },
+    { label: 'Descargar canción', icon: <Download size={15} />, disabled: !offline.reachable(track.id), submenu: downloadItems },
     { separator: true },
     { label: 'Ir al álbum', icon: <Disc3 size={15} />, disabled: !track.album?.id, onSelect: () => navigate({ page: 'album', id: track.album!.id! }) },
     { label: 'Ir al artista', icon: <CircleUserRound size={15} />, disabled: !artist, onSelect: () => navigate({ page: 'artist', id: artist!.id! }) },

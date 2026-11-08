@@ -1,3 +1,4 @@
+import type { AudioFormat } from '@shared/offline';
 import type { Track } from '@shared/types';
 import { api, errorMessage } from '../api';
 import { player } from '../player/instance';
@@ -9,6 +10,16 @@ import { toast } from '../stores/ui';
 export const toastQueued = (count: number) => {
   if (!inRoom(useJam.getState().view)) toast(`${count} canciones agregadas a la cola`, 'success');
 };
+
+/** «Descargar canción»: main abre «Guardar como»; si la persona cancela no pasa nada, y si guarda se avisa dónde quedó. */
+export async function exportTrack(track: Track, format: AudioFormat): Promise<void> {
+  try {
+    const res = await api.music.export(track, format);
+    if (res.saved) toast(`Guardada: ${res.name}`, 'success');
+  } catch (e) {
+    toast(errorMessage(e), 'error');
+  }
+}
 
 /** Acciones que primero necesitan datos (álbum, artista, playlist) y luego tocan el reproductor. */
 async function withTracks(load: () => Promise<Track[]>, then: (tracks: Track[]) => void, empty = 'No hay canciones para reproducir.') {
