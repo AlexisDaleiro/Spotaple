@@ -1,4 +1,4 @@
-import { Ellipsis, Heart, ListPlus, Pause, Play } from 'lucide-react';
+import { CircleArrowDown, Ellipsis, Heart, ListPlus, Pause, Play } from 'lucide-react';
 import { Fragment, type KeyboardEvent, type MouseEvent } from 'react';
 import type { ArtistRef, Track } from '@shared/types';
 import { artistsText, cx, rowDuration } from '../lib/format';
@@ -7,6 +7,7 @@ import { player, usePlayer } from '../player/instance';
 import { inRoom, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
+import { useOffline } from '../stores/offline';
 import type { MenuItem } from '../stores/ui';
 import { Cover } from './Cover';
 import { onTrackContextMenu, openTrackMenu } from './ContextMenu';
@@ -64,6 +65,9 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
   const status = usePlayer((s) => (s.items[s.index]?.track.id === track.id ? s.status : null));
   const fav = useLibrary((s) => s.favoriteIds.has(track.id));
   const inJam = useJam((s) => inRoom(s.view));
+  // Descargada (suena sin red) y, sin red, las que no lo están se atenúan: no van a sonar.
+  const downloaded = useOffline((s) => s.ids.has(track.id));
+  const unreachable = useOffline((s) => !s.online && !s.ids.has(track.id));
   const current = status !== null && status !== 'idle';
   const sounding = status === 'playing' || status === 'buffering';
 
@@ -88,9 +92,9 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
 
   return (
     <li
-      className={cx('row', current && 'is-current', reorder?.dragging && 'is-dragging', reorder?.dropBefore && 'drop-before', reorder?.dropAfter && 'drop-after', !showAlbum && 'row--no-album')}
+      className={cx('row', current && 'is-current', unreachable && 'is-unreachable', reorder?.dragging && 'is-dragging', reorder?.dropBefore && 'drop-before', reorder?.dropAfter && 'drop-after', !showAlbum && 'row--no-album')}
       tabIndex={0}
-      aria-label={`${track.title}, ${artistsText(track.artists)}`}
+      aria-label={`${track.title}, ${artistsText(track.artists)}${downloaded ? ', disponible sin conexión' : ''}`}
       onDoubleClick={onPlay}
       onKeyDown={onKeyDown}
       onContextMenu={onTrackContextMenu(track, menuOpts)}
@@ -114,7 +118,10 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
       <div className="row__main">
         {showCover && <Cover src={track.thumbnail} size={40} label={track.title} />}
         <div className="row__text">
-          <span className="row__title">{track.title}</span>
+          <span className="row__title">
+            {track.title}
+            {downloaded && <CircleArrowDown size={13} className="row__offline" role="img" aria-label="Disponible sin conexión" />}
+          </span>
           <span className="row__sub">
             <ArtistLinks artists={track.artists} />
           </span>

@@ -5,7 +5,8 @@ import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
-import { useUi } from '../stores/ui';
+import { useOffline } from '../stores/offline';
+import { toast, useUi } from '../stores/ui';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
 import { TrackList, TrackRow } from '../components/TrackRow';
 
@@ -15,10 +16,21 @@ export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'histor
   const history = useResource(() => api.library.recentPlays(100), [tab === 'history' ? 'h' : 'f']);
   const res = tab === 'favorites' ? favs : history;
   const tracks = res.data ?? [];
+  const offlineIds = useOffline((s) => s.ids);
+  const pending = useOffline((s) => s.pending);
+  const failed = useOffline((s) => s.failed);
+  const downloaded = tab === 'favorites' ? tracks.filter((t) => offlineIds.has(t.id)).length : 0;
 
+  // Sin red solo suenan las descargadas: «Reproducir» y «Aleatorio» arman la cola con esas.
   const play = (shuffle: boolean) => {
+    const list = useOffline.getState().playable(tracks);
+    if (!list.length) return toast('Sin conexión: ninguna de estas canciones está descargada.');
     if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(tracks, 0);
+    player().playTracks(list, 0);
+  };
+  const playFrom = (i: number) => {
+    const q = useOffline.getState().queueFrom(tracks, i);
+    player().playTracks(q.tracks, q.start);
   };
 
   return (
@@ -64,11 +76,14 @@ export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'histor
             <span className="toolbar__meta">
               {plural(tracks.length, 'canción', 'canciones')}
               {totalDuration(tracks) !== undefined && ` · ${formatTotal(totalDuration(tracks)!)}`}
+              {downloaded > 0 && ` · ${downloaded} sin conexión`}
+              {tab === 'favorites' && pending > 0 && ` · bajando ${pending}`}
+              {tab === 'favorites' && failed > 0 && ` · ${failed} sin poder descargar`}
             </span>
           </div>
           <TrackList label={tab === 'favorites' ? 'Favoritos' : 'Historial'}>
             {tracks.map((t, i) => (
-              <TrackRow key={t.id} track={t} index={i} onPlay={() => player().playTracks(tracks, i)} />
+              <TrackRow key={t.id} track={t} index={i} onPlay={() => playFrom(i)} />
             ))}
           </TrackList>
         </>

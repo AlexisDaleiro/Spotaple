@@ -72,6 +72,11 @@ export interface PlayerDeps {
   radio?: RadioHook;
   notify?: (message: string, kind?: 'info' | 'error') => void;
   urlFor?: (trackId: string) => string;
+  /**
+   * ¿Se puede reproducir esta canción ahora? Sin red solo suenan las descargadas: lo demás se salta (con el mismo tope
+   * que las no disponibles) sin pedirle nada a main.
+   */
+  reachable?: (trackId: string) => boolean;
 }
 
 export interface PlayerState extends QueueState {
@@ -230,6 +235,10 @@ export function createPlayer(deps: PlayerDeps) {
       playedAuto = item.auto === true && !opts.user;
       maybeRefill();
       if (opts.user) quiet(api.recordSelection(item.track));
+
+      if (deps.reachable && !deps.reachable(item.track.id)) {
+        return fail({ code: 'unavailable', message: 'Sin conexión: esta canción no está descargada.' }, item);
+      }
 
       let prepared: PreparedAudio;
       try {

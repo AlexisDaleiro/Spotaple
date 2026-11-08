@@ -543,6 +543,30 @@
 .row.is-current .row__num {
   color: var(--accent);
 }
+/* Descargada: marca discreta junto al título. Sin red, lo que no está descargado se atenúa (no va a sonar). */
+.row__offline {
+  display: inline-block;
+  margin-left: var(--s-3);
+  vertical-align: -2px;
+  color: var(--accent);
+}
+.row.is-unreachable {
+  opacity: 0.45;
+}
+/* Aviso «Sin conexión» sobre el contenido; vacío no se ve. */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-6);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  background: var(--bg-3);
+  border-bottom: 1px solid var(--line);
+}
+.offline-banner:empty {
+  display: none;
+}
 .row__actions {
   display: flex;
   justify-content: flex-end;

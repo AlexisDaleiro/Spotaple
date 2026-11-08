@@ -607,3 +607,34 @@ describe('volumen', () => {
     expect(s().muted).toBe(false);
   });
 });
+
+describe('sin conexión', () => {
+  it('salta las canciones no descargadas sin pedirlas y suena la primera que sí está', async () => {
+    const { s, api, notify } = setup(undefined, { reachable: (id) => id === track(2).id });
+    s().playTracks(tracks(3), 0);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(api.prepare.mock.calls.map((c) => c[0])).toEqual([track(2).id]);
+    expect(s().index).toBe(2);
+    expect(s().status).toBe('playing');
+    expect(notify).toHaveBeenCalledWith('«Canción 0» no está disponible. Pasando a la siguiente.', 'error');
+  });
+
+  it('con 5 seguidas no descargadas se detiene en error tras 3 saltos, con el motivo y sin pedir nada', async () => {
+    const { s, api, notify } = setup(undefined, { reachable: () => false });
+    s().playTracks(tracks(5), 0);
+    for (let i = 0; i < 6; i++) await flush();
+    expect(api.prepare).not.toHaveBeenCalled();
+    expect(s().status).toBe('error');
+    expect(s().index).toBe(3);
+    expect(s().error?.message).toBe('Sin conexión: esta canción no está descargada.');
+    expect(notify).toHaveBeenLastCalledWith('Sin conexión: esta canción no está descargada.', 'error');
+  });
+
+  it('si todo es alcanzable la reproducción no cambia', async () => {
+    const { s, api } = setup(undefined, { reachable: () => true });
+    s().playTracks(tracks(2), 0);
+    await flush();
+    expect(api.prepare).toHaveBeenCalledTimes(1);
+    expect(s().status).toBe('playing');
+  });
+});

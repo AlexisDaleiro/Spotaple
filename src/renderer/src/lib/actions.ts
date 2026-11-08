@@ -2,6 +2,7 @@ import type { Track } from '@shared/types';
 import { api, errorMessage } from '../api';
 import { player } from '../player/instance';
 import { inRoom, useJam } from '../stores/jam';
+import { useOffline } from '../stores/offline';
 import { toast } from '../stores/ui';
 
 /** "N canciones agregadas a la cola". Dentro de una sala el aviso ("pedidas a la sala") lo da el propio pedido. */
@@ -32,7 +33,17 @@ export const queueAlbum = (id: string) =>
 export const playArtist = (id: string) => withTracks(async () => (await api.music.artist(id)).topSongs, (t) => player().playTracks(t, 0), 'Este artista no tiene canciones populares.');
 export const playRemotePlaylist = (id: string) =>
   withTracks(async () => (await api.music.remotePlaylist(id)).tracks, (t) => player().playTracks(t, 0), 'Esta playlist no tiene canciones disponibles.');
-export const playPlaylist = (id: number) => withTracks(async () => (await api.library.playlist(id)).items.map((i) => i.track), (t) => player().playTracks(t, 0), 'La playlist está vacía.');
+/** Sin red solo suenan las descargadas: la cola se arma con esas, y si no hay ninguna se avisa. */
+export const playPlaylist = (id: number) =>
+  withTracks(
+    async () => (await api.library.playlist(id)).items.map((i) => i.track),
+    (t) => {
+      const list = useOffline.getState().playable(t);
+      if (!list.length) return toast('Sin conexión: ninguna canción de esta playlist está descargada.');
+      player().playTracks(list, 0);
+    },
+    'La playlist está vacía.',
+  );
 export const queuePlaylist = (id: number) =>
   withTracks(
     async () => (await api.library.playlist(id)).items.map((i) => i.track),

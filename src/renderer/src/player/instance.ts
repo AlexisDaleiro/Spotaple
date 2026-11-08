@@ -2,6 +2,7 @@ import { useStore } from 'zustand';
 import { api } from '../api';
 import { artistsText, thumbUrl } from '../lib/format';
 import { useJam } from '../stores/jam';
+import { useOffline } from '../stores/offline';
 import { settingsStore } from '../stores/settings';
 import { toast } from '../stores/ui';
 import { createJamHook } from './jam-sync';
@@ -38,6 +39,8 @@ export const playerStore = createPlayer({
     recordPlay: (t, auto?: boolean) => api.library.recordPlay(t, auto),
   },
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
+  // Sin red solo suenan las canciones descargadas: lo demás se salta con aviso.
+  reachable: (id) => useOffline.getState().reachable(id),
   // Radio automática: el ajuste se lee en cada decisión, así que apagarla vale al instante.
   radio: { enabled: () => settingsStore.getState().settings.radio, fetch: (seed, ids) => api.music.radio(seed, ids) },
   // Dentro de una sala, pedir canciones las manda a la sala (ver jam-sync.ts).

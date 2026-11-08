@@ -11,6 +11,7 @@ import { api, bridgeAvailable } from './api';
 import { persistence, playerStore, startMediaSession, startPlayerPersistence } from './player/instance';
 import { startJamSync } from './player/jam-sync';
 import { startJamBridge, useJam } from './stores/jam';
+import { startOfflineBridge } from './stores/offline';
 import { settingsStore } from './stores/settings';
 
 const root = createRoot(document.getElementById('root')!);
@@ -28,6 +29,8 @@ if (!bridgeAvailable) {
   const settingsReady = settingsStore.getState().load();
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => settingsStore.getState().reapply());
   window.addEventListener('beforeunload', () => void settingsStore.getState().flush());
+  // Descargas y red: el estado de lo que hay en el disco y el aviso «Sin conexión».
+  void startOfflineBridge();
 
   // Primero se restaura la cola personal; recién después el jam puede tomar el reproductor (y guardarla aparte).
   void startPlayerPersistence().then(async () => {

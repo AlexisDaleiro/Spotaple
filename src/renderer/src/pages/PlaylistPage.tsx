@@ -8,6 +8,7 @@ import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
+import { useOffline } from '../stores/offline';
 import { toastQueued } from '../lib/actions';
 import { toast, useUi, type MenuItem } from '../stores/ui';
 import { Hero, PlaylistCover } from '../components/Shelf';
@@ -52,10 +53,17 @@ export function PlaylistPage({ id }: { id: number }) {
   if (res.error && !playlist) return <div className="page"><ErrorState message={res.error} onRetry={res.reload} /></div>;
   if (!playlist) return <div className="page"><RowsSkeleton n={6} /></div>;
 
+  // Sin red solo suenan las descargadas: «Reproducir» y «Aleatorio» arman la cola con esas.
   const play = (shuffle: boolean) => {
     if (!tracks.length) return;
+    const list = useOffline.getState().playable(tracks);
+    if (!list.length) return toast('Sin conexión: ninguna canción de esta playlist está descargada.');
     if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(tracks, 0);
+    player().playTracks(list, 0);
+  };
+  const playFrom = (i: number) => {
+    const q = useOffline.getState().queueFrom(tracks, i);
+    player().playTracks(q.tracks, q.start);
   };
   const summary = { ...playlist, trackCount: items.length };
 
@@ -109,7 +117,7 @@ export function PlaylistPage({ id }: { id: number }) {
                 { label: 'Mover abajo', icon: <ArrowDown size={15} />, disabled: i === items.length - 1, onSelect: () => void move(i, i + 1) },
                 { label: 'Quitar de esta playlist', icon: <X size={15} />, danger: true, onSelect: () => void remove(it.itemId) },
               ];
-              return <TrackRow key={it.itemId} track={it.track} index={i} reorder={reorder(i)} menuExtra={extra} onPlay={() => player().playTracks(tracks, i)} />;
+              return <TrackRow key={it.itemId} track={it.track} index={i} reorder={reorder(i)} menuExtra={extra} onPlay={() => playFrom(i)} />;
             })}
           </TrackList>
           <p className="hint">Arrastrá una fila para reordenar, o usá clic derecho → Mover arriba / abajo.</p>

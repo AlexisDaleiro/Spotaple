@@ -5,6 +5,7 @@ import { useNav, type Route } from './stores/nav';
 import { useUi } from './stores/ui';
 import { DialogHost } from './components/Dialogs';
 import { MenuHost } from './components/ContextMenu';
+import { OfflineBanner } from './components/OfflineBanner';
 import { PlayerBar } from './components/PlayerBar';
 import { QueuePanel } from './components/QueuePanel';
 import { Sidebar } from './components/Sidebar';
@@ -140,6 +141,7 @@ export function App() {
       <TopBar />
       <Sidebar />
       <main className="main" id="main">
+        <OfflineBanner />
         <div className="main__scroll" ref={scroller} tabIndex={-1}>
           <div className="page-enter" key={`${i}:${route.page}:${'id' in route ? route.id : ''}`}>
             <Page route={route} />

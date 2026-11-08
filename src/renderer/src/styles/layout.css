@@ -131,9 +131,13 @@
   border-radius: var(--r-lg);
   overflow: hidden;
   background: linear-gradient(180deg, var(--panel-tint), transparent 240px), var(--bg-1);
+  /* Columna: el aviso «Sin conexión» (si está) arriba y el contenido ocupa el resto. */
+  display: flex;
+  flex-direction: column;
 }
 .main__scroll {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
   container-type: inline-size;
