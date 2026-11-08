@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu, nativeTheme, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeTheme, net, protocol, session, shell } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { AUDIO_SCHEME, IPC } from '../shared/api';
 import { buildCsp } from '../shared/csp';
+import { AUDIO_FORMATS, type AudioFormat } from '../shared/offline';
 import type { AppSettings } from '../shared/settings';
 import { JAM_RELAY_URL } from '../shared/jam/config';
 import { createAudioHandler } from './audio-protocol';
@@ -11,6 +12,7 @@ import { createStore } from './db/store';
 import { registerIpc } from './ipc';
 import { createJamSession } from './jam/session';
 import { withoutCredentials } from './net-fetch';
+import { createOffline } from './offline';
 import { createYouTubeProvider } from './music/youtube/provider';
 
 // Permite aislar los datos (pruebas e2e) sin tocar la biblioteca real del usuario.
@@ -66,6 +68,17 @@ function createWindow(settings: AppSettings) {
   return win;
 }
 
+/** Diálogo «Guardar como» de «Descargar canción»: devuelve la ruta elegida, o null si se canceló. */
+async function pickSavePath(suggestedName: string, format: AudioFormat): Promise<string | null> {
+  const options = {
+    defaultPath: join(app.getPath('downloads'), suggestedName),
+    filters: [{ name: AUDIO_FORMATS[format].label, extensions: [AUDIO_FORMATS[format].ext] }],
+  };
+  const win = BrowserWindow.getFocusedWindow();
+  const res = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+  return res.canceled || !res.filePath ? null : res.filePath;
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   const userData = app.getPath('userData');
@@ -87,7 +100,16 @@ app.whenReady().then(() => {
     fetch: netFetch,
     getQuality: () => store.getAppSettings().streamQuality,
   });
-  protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch));
+  // Las favoritas se guardan en userData/offline y suenan sin red: el protocolo de audio sirve primero el archivo local.
+  const offline = createOffline({
+    dir: join(userData, 'offline'),
+    store,
+    provider,
+    fetchImpl: netFetch,
+    enabled: () => store.getAppSettings().autoDownload,
+    emit: (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.offlineState, state)),
+  });
+  protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch, offline.local));
   // La red del jam vive aquí, no en el renderer: la CSP de la interfaz sigue sin permitir conexiones directas.
   const jam = createJamSession({
     settings: { get: <V>(key: string) => store.getSetting<V>(key), set: (key, value) => store.setSetting(key, value) },
@@ -98,10 +120,15 @@ app.whenReady().then(() => {
     store,
     provider,
     jam,
+    offline,
+    fetchImpl: netFetch,
+    pickSavePath: (suggestedName: string, format: AudioFormat) => pickSavePath(suggestedName, format),
     // Cada cambio de ajustes recolorea la ventana nativa (la interfaz se actualiza sola en el renderer).
     onSettings: (s) => BrowserWindow.getAllWindows().forEach((w) => applyChrome(w, s)),
     rendererOrigin: rendererUrl,
   });
+  // Pone el disco al día con las favoritas (borra restos, baja las que faltan) sin demorar la apertura de la ventana.
+  void offline.reconcile().catch(() => undefined);
   // «Sistema» sigue al sistema operativo con la app abierta: la barra de título nativa se vuelve a pintar.
   nativeTheme.on('updated', () => {
     const settings = store.getAppSettings();

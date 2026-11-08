@@ -13,6 +13,18 @@ const bridge: SpotapleBridge = {
     radio: (seed, excludeIds) => call(IPC.radio, { seed, excludeIds }),
     prepare: (id) => call(IPC.prepare, id),
     invalidate: (id) => call(IPC.invalidate, id),
+    export: (track, format) => call(IPC.export, { track, format }),
+  },
+  offline: {
+    state: () => call(IPC.offlineGet),
+    sync: () => call(IPC.offlineSync),
+    clear: () => call(IPC.offlineClear),
+    // Un solo oyente; suscribirse otra vez reemplaza al anterior (igual que la sala).
+    subscribe: (cb) => {
+      ipcRenderer.removeAllListeners(IPC.offlineState);
+      ipcRenderer.on(IPC.offlineState, (_e, state) => cb(state));
+      return Promise.resolve({ ok: true, data: undefined });
+    },
   },
   library: {
     favorites: () => call(IPC.favorites),

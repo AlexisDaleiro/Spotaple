@@ -1,3 +1,4 @@
+import { parseFormat, type AudioFormat } from '../shared/offline';
 import { sanitizeTrack } from '../shared/track';
 import type { PersistedPlayerState, Track } from '../shared/types';
 import { MusicError } from './music/youtube/errors';
@@ -29,6 +30,14 @@ export function sanitizeRadioRequest(v: unknown): { seed: Track; excludeIds: str
   const r = v as { seed?: unknown; excludeIds?: unknown } | null;
   if (!r || typeof r !== 'object' || !Array.isArray(r.excludeIds) || r.excludeIds.length > 2000) throw bad();
   return { seed: sanitizeTrack(r.seed), excludeIds: r.excludeIds.map((x) => id(x)) };
+}
+
+/** Pedido de «Descargar canción»: la canción y el formato (opus o aac). La ruta de destino nunca viene del renderer. */
+export function sanitizeExportRequest(v: unknown): { track: Track; format: AudioFormat } {
+  const r = v as { track?: unknown; format?: unknown } | null;
+  const format = parseFormat(r?.format);
+  if (!r || typeof r !== 'object' || !format) throw bad();
+  return { track: sanitizeTrack(r.track), format };
 }
 
 export function sanitizePlayerState(v: unknown): PersistedPlayerState {

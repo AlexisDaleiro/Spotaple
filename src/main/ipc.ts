@@ -1,13 +1,16 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../shared/api';
+import type { AudioFormat } from '../shared/offline';
 import { parseSettings, type AppSettings } from '../shared/settings';
 import type { IpcResult, PreparedAudio } from '../shared/types';
 import type { Store } from './db/store';
+import { exportTrack } from './export';
 import type { MusicProvider } from './music/provider';
 import { classify, MusicError } from './music/youtube/errors';
 import type { JamSession } from './jam/session';
+import type { Offline } from './offline';
 import { createRadio } from './music/radio';
-import { id, int, sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack, str } from './validate';
+import { id, int, sanitizeExportRequest, sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack, str } from './validate';
 
 /** Solo la página de la propia app puede invocar el IPC. */
 function trusted(e: IpcMainInvokeEvent, allowedOrigin: string | undefined) {
@@ -20,11 +23,16 @@ export function registerIpc(deps: {
   store: Store;
   provider: MusicProvider;
   jam: JamSession;
+  offline: Offline;
+  /** La red del proceso local (net.fetch con el proxy del sistema), la misma que usa el protocolo de audio. */
+  fetchImpl: typeof fetch;
+  /** Diálogo «Guardar como» del sistema: devuelve la ruta elegida o null si se canceló. */
+  pickSavePath: (suggestedName: string, format: AudioFormat) => Promise<string | null>;
   /** Se llama con los ajustes completos después de cada cambio (p. ej. para recolorear la ventana). */
   onSettings: (settings: AppSettings) => void;
   rendererOrigin?: string;
 }) {
-  const { store, provider, jam, onSettings, rendererOrigin } = deps;
+  const { store, provider, jam, offline, fetchImpl, pickSavePath, onSettings, rendererOrigin } = deps;
   const radio = createRadio({ source: provider, history: store });
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) => {
@@ -51,14 +59,31 @@ export function registerIpc(deps: {
   });
   handle(IPC.prepare, async (x: unknown): Promise<PreparedAudio> => {
     const trackId = id(x);
+    // Descargada: suena del disco, así que se responde sin pasar por YouTube (y por tanto sin red).
+    const local = offline.local(trackId);
+    if (local) return { trackId, mimeType: local.mimeType, durationSec: local.durationSec };
     const a = await provider.resolveAudio(trackId, { newPlay: true });
     return { trackId, mimeType: a.mimeType, durationSec: a.durationSec };
   });
   handle(IPC.invalidate, (x: unknown) => provider.invalidate(id(x)));
+  handle(IPC.export, (o: unknown) => {
+    const r = sanitizeExportRequest(o);
+    return exportTrack({ offline, provider, fetchImpl, pickSavePath }, r.track, r.format);
+  });
+
+  handle(IPC.offlineGet, () => offline.state());
+  handle(IPC.offlineSync, () => offline.reconcile());
+  handle(IPC.offlineClear, () => offline.clear());
 
   handle(IPC.favorites, () => store.favorites());
   handle(IPC.favoriteIds, () => store.favoriteIds());
-  handle(IPC.toggleFavorite, (t: unknown) => store.toggleFavorite(sanitizeTrack(t)));
+  handle(IPC.toggleFavorite, (t: unknown) => {
+    const track = sanitizeTrack(t);
+    const now = store.toggleFavorite(track);
+    // Favorita nueva → se descarga; quitada → se borra la descarga. No se espera: la respuesta no depende del disco.
+    void offline.onFavorite(track.id, now);
+    return now;
+  });
   handle(IPC.playlists, () => store.playlists());
   handle(IPC.playlist, (x: unknown) => store.playlist(int(x)));
   handle(IPC.createPlaylist, (n: unknown) => store.createPlaylist(str(n, 400)));
@@ -80,9 +105,12 @@ export function registerIpc(deps: {
   handle(IPC.savePlayerState, (s: unknown) => store.savePlayerState(sanitizePlayerState(s)));
 
   handle(IPC.settingsGet, () => store.getAppSettings());
-  handle(IPC.settingsSet, (patch: unknown) => {
-    const next = store.setAppSettings(parseSettings(patch));
+  handle(IPC.settingsSet, (raw: unknown) => {
+    const patch = parseSettings(raw);
+    const next = store.setAppSettings(patch);
     onSettings(next);
+    // Encender o apagar la descarga automática: baja las favoritas que faltan o vacía la cola.
+    if (patch.autoDownload !== undefined) void offline.reconcile();
     return next;
   });
 

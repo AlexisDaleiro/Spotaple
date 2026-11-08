@@ -11,6 +11,7 @@ import type {
   Track,
 } from './types';
 import type { JamView } from './jam/types';
+import type { AudioFormat, ExportResult, OfflineState } from './offline';
 import type { AppSettings } from './settings';
 
 /** Esquema de la URL que sirve el audio. El renderer solo conoce el videoId. */
@@ -26,6 +27,10 @@ export const IPC = {
   radio: 'music:radio',
   prepare: 'music:prepare',
   invalidate: 'music:invalidate',
+  export: 'music:export',
+  offlineGet: 'offline:get',
+  offlineSync: 'offline:sync',
+  offlineClear: 'offline:clear',
   favorites: 'lib:favorites',
   favoriteIds: 'lib:favorite-ids',
   toggleFavorite: 'lib:toggle-favorite',
@@ -49,8 +54,10 @@ export const IPC = {
   jamLeave: 'jam:leave',
   jamSend: 'jam:send',
   jamView: 'jam:view',
-  /** Único evento main→renderer: la vista de la sala. */
+  /** Evento main→renderer: la vista de la sala. */
   jamState: 'jam:state',
+  /** Evento main→renderer: lo descargado y la cola de descargas. */
+  offlineState: 'offline:state',
 } as const;
 
 /** API que el preload expone en `window.spotaple`. Cada método lanza `Error` con `.code` si falla. */
@@ -67,6 +74,21 @@ export interface SpotapleApi {
     prepare(trackId: string): Promise<PreparedAudio>;
     /** Descarta la fuente guardada: la URL ya no es válida y debe resolverse de nuevo. */
     invalidate(trackId: string): Promise<void>;
+    /**
+     * «Descargar canción»: main abre el diálogo «Guardar como» y deja la canción en el formato pedido.
+     * `{ saved: false }` si la persona canceló el diálogo.
+     */
+    export(track: Track, format: AudioFormat): Promise<ExportResult>;
+  };
+  offline: {
+    /** Lo descargado y la cola de descargas ahora mismo. */
+    state(): Promise<OfflineState>;
+    /** Pone el disco y la cola de acuerdo con las favoritas (por ejemplo, al volver la red). */
+    sync(): Promise<void>;
+    /** Borra todas las descargas del disco. */
+    clear(): Promise<void>;
+    /** Recibe cada cambio del estado. Un solo oyente: suscribirse otra vez reemplaza al anterior. */
+    subscribe(cb: (state: OfflineState) => void): Promise<void>;
   };
   library: {
     favorites(): Promise<Track[]>;
