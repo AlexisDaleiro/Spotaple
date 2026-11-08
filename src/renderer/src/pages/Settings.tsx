@@ -4,6 +4,7 @@ import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
 import { TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
 import { api, errorMessage } from '../api';
 import { cx, formatBytes } from '../lib/format';
+import { discoverStore } from '../stores/discover';
 import { useOffline } from '../stores/offline';
 import { settingsStore, useSettings } from '../stores/settings';
 import { toast, useUi } from '../stores/ui';
@@ -149,6 +150,40 @@ function DownloadsRow() {
   );
 }
 
+/** «Reiniciar mis gustos»: las listas y la radio ignoran lo anterior. No borra el historial ni las favoritas. */
+function ResetTasteRow() {
+  const hintId = useId();
+  const reset = () =>
+    useUi.getState().openDialog({
+      kind: 'confirm',
+      title: 'Reiniciar mis gustos',
+      message: 'Se ignora lo que escuchaste y las favoritas agregadas hasta ahora para armar las listas y la radio. Tu historial y tus favoritas no se borran.',
+      confirmLabel: 'Reiniciar',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          discoverStore.getState().set(await api.discover.resetTaste());
+          toast('Gustos reiniciados', 'success');
+        } catch (e) {
+          toast(errorMessage(e), 'error');
+        }
+      },
+    });
+  return (
+    <div className="set-row set-row--inline">
+      <div>
+        <span className="set-row__label">Reiniciar mis gustos</span>
+        <p className="set-row__hint" id={hintId}>
+          Las listas se arman de nuevo solo con lo que escuches desde ahora. No borra tu historial ni tus favoritas.
+        </p>
+      </div>
+      <button type="button" className="btn" aria-describedby={hintId} onClick={reset}>
+        Reiniciar mis gustos
+      </button>
+    </div>
+  );
+}
+
 function JamNameRow() {
   const hintId = useId();
   const saved = useSettings((s) => s.settings.jamName);
@@ -232,6 +267,16 @@ export function SettingsPage() {
           onChange={(exportFormat) => set({ exportFormat })}
         />
         <DownloadsRow />
+      </Group>
+
+      <Group title="Hecho para vos">
+        <Toggle
+          label="Mostrar «Hecho para vos» en Inicio"
+          hint="Listas armadas con lo que escuchás y tus favoritas: Descubrimiento semanal, Mixes diarios, Release Radar y artistas que podrías escuchar. Todo sale de tu historial en esta PC."
+          on={s.forYou}
+          onChange={(forYou) => set({ forYou })}
+        />
+        <ResetTasteRow />
       </Group>
 
       <Group title="Salas">
