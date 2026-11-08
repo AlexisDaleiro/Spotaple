@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Spotaple",
+    "slug": "spotaple",
+    "version": "0.1.0",
+    "icon": "../build/icon.png",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.alexis.spotaple.preview",
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
+    ]
+  }
+}
