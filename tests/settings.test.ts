@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../src/shared/jam/types';
 import { DEFAULT_SETTINGS, TEXT_SCALES, THEMES, chromeFor, parseSettings, resolveTheme } from '../src/shared/settings';
+import { EQ_BANDS } from '../src/shared/audio';
 
 describe('parseSettings', () => {
   it('conserva lo válido y normaliza el acento a minúsculas', () => {
@@ -56,6 +57,31 @@ describe('parseSettings', () => {
     for (const s of TEXT_SCALES) expect(parseSettings({ textScale: s })).toEqual({ textScale: s });
     expect(parseSettings({ textScale: 1.05 })).toEqual({});
   });
+
+  it('eqGains solo acepta 10 números finitos dentro de ±12 dB; todo lo demás se descarta entero', () => {
+    const ok = [0, 1.5, -3, 12, -12, 0, 0, 2, 0, 0];
+    expect(parseSettings({ eqGains: ok })).toEqual({ eqGains: ok });
+    expect(parseSettings({ eqGains: ok.slice(1) })).toEqual({});
+    expect(parseSettings({ eqGains: [...ok.slice(1), NaN] })).toEqual({});
+    expect(parseSettings({ eqGains: [...ok.slice(1), 99] })).toEqual({});
+    expect(parseSettings({ eqGains: [...ok.slice(1), '3'] })).toEqual({});
+    expect(parseSettings({ eqGains: 'plano' })).toEqual({});
+  });
+
+  it('eqPreamp acepta números dentro de ±12 dB', () => {
+    expect(parseSettings({ eqPreamp: -4.5 })).toEqual({ eqPreamp: -4.5 });
+    for (const bad of [13, -13, NaN, Infinity, '1']) expect(parseSettings({ eqPreamp: bad })).toEqual({});
+  });
+
+  it('eqOn y normalize solo aceptan booleanos', () => {
+    expect(parseSettings({ eqOn: true, normalize: true })).toEqual({ eqOn: true, normalize: true });
+    expect(parseSettings({ eqOn: 1, normalize: 'si' })).toEqual({});
+  });
+
+  it('crossfade solo acepta enteros de 0 a 12', () => {
+    for (const s of [0, 3, 12]) expect(parseSettings({ crossfade: s })).toEqual({ crossfade: s });
+    for (const bad of [13, -1, 2.5, NaN, '3']) expect(parseSettings({ crossfade: bad })).toEqual({});
+  });
 });
 
 describe('resolveTheme', () => {
@@ -101,6 +127,14 @@ describe('THEMES y valores por defecto', () => {
 
   it('«Hecho para vos» viene activado', () => {
     expect(DEFAULT_SETTINGS.forYou).toBe(true);
+  });
+
+  it('el sonido nace sin tocar: ecualizador plano y apagado, sin normalizar ni fundido', () => {
+    expect(DEFAULT_SETTINGS.eqOn).toBe(false);
+    expect(DEFAULT_SETTINGS.eqGains).toEqual(Array(EQ_BANDS.length).fill(0));
+    expect(DEFAULT_SETTINGS.eqPreamp).toBe(0);
+    expect(DEFAULT_SETTINGS.normalize).toBe(false);
+    expect(DEFAULT_SETTINGS.crossfade).toBe(0);
   });
 
   it('el tema por defecto conserva el aspecto actual (grafito)', () => {

@@ -20,7 +20,8 @@ import { createYouTubeProvider } from './music/youtube/provider';
 if (process.env['SPOTAPLE_USER_DATA']) app.setPath('userData', process.env['SPOTAPLE_USER_DATA']);
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: AUDIO_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  // `corsEnabled`: el <audio> pide el archivo con crossOrigin="anonymous"; sin eso Web Audio (ecualizador) emite silencio.
+  { scheme: AUDIO_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
 const rendererUrl = process.env['ELECTRON_RENDERER_URL'];

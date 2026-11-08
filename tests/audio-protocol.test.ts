@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createResponder, parseRange } from '../src/main/audio-protocol';
+import { createAudioHandler, createResponder, parseRange } from '../src/main/audio-protocol';
 import type { MusicProvider, ResolvedAudio } from '../src/main/music/provider';
 
 const SECRET_URL = 'https://rr1.googlevideo.example/videoplayback?sig=SECRETO&expire=9999999999';
@@ -208,5 +208,20 @@ describe('archivo local (descargas offline)', () => {
     const { handle, req } = make(local);
     expect((await handle(req('id con espacios'))).status).toBe(400);
     expect(local).not.toHaveBeenCalled();
+  });
+});
+
+describe('CORS del protocolo (Web Audio exige un medio con CORS)', () => {
+  it('toda respuesta lleva Access-Control-Allow-Origin: * (200, 206 y error)', async () => {
+    for (const [statuses, range, want] of [[[200], undefined, 200], [[206], 'bytes=100-', 206]] as const) {
+      const { provider, fetchImpl, req } = setup({ statuses: [...statuses] });
+      const res = await createAudioHandler(provider, fetchImpl)(req('abcDEF12345', range));
+      expect(res.status).toBe(want);
+      expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    }
+    const { provider, fetchImpl, req } = setup();
+    const bad = await createAudioHandler(provider, fetchImpl)(req('no'));
+    expect(bad.status).toBe(400);
+    expect(bad.headers.get('access-control-allow-origin')).toBe('*');
   });
 });

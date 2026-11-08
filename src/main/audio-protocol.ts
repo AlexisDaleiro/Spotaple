@@ -51,7 +51,13 @@ async function serveLocal(request: Request, hit: { file: string; mimeType: strin
  * ese trozo como el archivo entero: el salto de posición caía al final y la canción "terminaba".
  */
 export function createAudioHandler(provider: MusicProvider, fetchImpl: typeof fetch = fetch, local?: LocalAudio) {
-  const respond = createResponder(provider, fetchImpl, local);
+  const inner = createResponder(provider, fetchImpl, local);
+  // El <audio> va con crossOrigin="anonymous" (Web Audio exige un medio con CORS): toda respuesta lo permite.
+  const respond = async (request: Request) => {
+    const res = await inner(request);
+    res.headers.set('Access-Control-Allow-Origin', '*');
+    return res;
+  };
   if (process.env['SPOTAPLE_DEBUG'] !== '1') return respond;
   // Diagnóstico opcional (SPOTAPLE_DEBUG=1): una línea por pedido de audio, sin URLs ni credenciales.
   return async (request: Request) => {

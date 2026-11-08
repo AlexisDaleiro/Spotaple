@@ -1,5 +1,6 @@
 // Ajustes de la app compartidos entre main, preload y renderer. Solo datos serializables.
 import { sanitizeName } from './jam/protocol';
+import { EQ_BANDS, EQ_RANGE_DB } from './audio';
 import { parseFormat, type AudioFormat } from './offline';
 
 export type ThemeId = 'system' | 'grafito' | 'claro' | 'medianoche' | 'oceano';
@@ -25,6 +26,16 @@ export interface AppSettings {
   exportFormat: AudioFormat;
   /** Inicio muestra «Hecho para vos» (listas armadas con tu historial y tus favoritas). */
   forYou: boolean;
+  /** Ecualizador de 10 bandas (`EQ_BANDS`); apagado, el sonido pasa plano. */
+  eqOn: boolean;
+  /** Ganancia de cada banda en dB (−12…+12). */
+  eqGains: number[];
+  /** Preamplificador en dB (−12…+12): compensa los realces para no saturar. */
+  eqPreamp: number;
+  /** Iguala el volumen entre canciones: baja las que vienen más fuertes que −14 LUFS (nunca sube). */
+  normalize: boolean;
+  /** Segundos de fundido entre una canción y la siguiente (0 = sin fundido). */
+  crossfade: number;
   /** Nombre por defecto en las salas. Vive en la clave `jam_name` de la tabla `settings`. */
   jamName: string;
 }
@@ -41,8 +52,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoDownload: true,
   exportFormat: 'opus',
   forYou: true,
+  eqOn: false,
+  eqGains: Array<number>(EQ_BANDS.length).fill(0),
+  eqPreamp: 0,
+  normalize: false,
+  crossfade: 0,
   jamName: '',
 };
+
+export const MAX_CROSSFADE_S = 12;
+const inEqRange = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= EQ_RANGE_DB;
 
 export const TEXT_SCALES = [0.9, 1, 1.1, 1.25] as const;
 
@@ -114,6 +133,22 @@ export function parseSettings(raw: unknown): Partial<AppSettings> {
 
   const forYou = get('forYou');
   if (typeof forYou === 'boolean') out.forYou = forYou;
+
+  const eqOn = get('eqOn');
+  if (typeof eqOn === 'boolean') out.eqOn = eqOn;
+
+  // Todo o nada: un arreglo con otro largo o con un valor fuera de rango se descarta entero.
+  const eqGains = get('eqGains');
+  if (Array.isArray(eqGains) && eqGains.length === EQ_BANDS.length && eqGains.every(inEqRange)) out.eqGains = [...eqGains];
+
+  const eqPreamp = get('eqPreamp');
+  if (inEqRange(eqPreamp)) out.eqPreamp = eqPreamp;
+
+  const normalize = get('normalize');
+  if (typeof normalize === 'boolean') out.normalize = normalize;
+
+  const crossfade = get('crossfade');
+  if (typeof crossfade === 'number' && Number.isInteger(crossfade) && crossfade >= 0 && crossfade <= MAX_CROSSFADE_S) out.crossfade = crossfade;
 
   const jamName = get('jamName');
   if (jamName === '') out.jamName = '';
