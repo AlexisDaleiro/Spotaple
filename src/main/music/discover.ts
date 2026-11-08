@@ -81,7 +81,8 @@ export function createDiscover(d: { source: DiscoverSource; store: DiscoverStore
     const current: Record<string, string> = { weekly: periods.weekly, mix: periods.daily, radar: periods.radar };
     const stored = d.store.generatedLists();
     let lists: GeneratedList[] = stored
-      .filter((l) => l.kind in KIND_ORDER)
+      // Una lista vacía es solo la marca de «ya consulté en este período»: no se muestra.
+      .filter((l) => l.kind in KIND_ORDER && (l.items as Track[]).length > 0)
       .map((l) => ({
         kind: l.kind as GeneratedKind,
         slot: l.slot,
@@ -154,26 +155,26 @@ export function createDiscover(d: { source: DiscoverSource; store: DiscoverStore
     async function mixes() {
       const anchors = withSeed.slice(0, DISCOVER.MAX_MIXES);
       if (anchors.length < DISCOVER.MIN_MIXES) return;
-      await Promise.all(
-        anchors.map(async (anchor, i) => {
-          const slot = String(i + 1);
-          if (have('mix', slot, periods.daily)) return;
-          try {
-            const panel = await radioOf(anchor.seedTrackId!);
-            const picked = mixPick({ anchor: { key: anchor.key, name: anchor.name }, radio: panel, known: knownTracks, seed: periods.daily, limit: DISCOVER.MIX_SIZE });
-            if (!picked.length) return;
-            const counts = new Map<string, number>();
-            for (const t of picked) {
-              const name = t.artists[0]?.name;
-              if (name && name !== anchor.name) counts.set(name, (counts.get(name) ?? 0) + 1);
-            }
-            const others = [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, 2).map(([name]) => name);
-            save({ kind: 'mix', slot, period: periods.daily, title: `Mix ${slot}`, subtitle: mixSubtitle([anchor.name, ...others]), items: picked, createdAt: now() });
-          } catch {
-            /* este mix conserva el anterior */
-          }
-        }),
-      );
+      const missing = anchors.map((_, i) => !have('mix', String(i + 1), periods.daily));
+      if (!missing.some(Boolean)) return;
+      // Las radios se piden en paralelo; los mixes se arman en orden de ancla y lo que usa uno no lo repite el siguiente.
+      const panels = await Promise.allSettled(anchors.map((a, i) => (missing[i] ? radioOf(a.seedTrackId!) : Promise.resolve<Track[]>([]))));
+      const used = new Set<string>();
+      anchors.forEach((anchor, i) => {
+        const panel = panels[i]!;
+        if (!missing[i] || panel.status !== 'fulfilled') return; // este mix conserva el anterior
+        const slot = String(i + 1);
+        const picked = mixPick({ anchor: { key: anchor.key, name: anchor.name }, radio: panel.value, known: knownTracks, seed: periods.daily, limit: DISCOVER.MIX_SIZE, avoid: used });
+        if (!picked.length) return;
+        for (const t of picked) used.add(songKey(t));
+        const counts = new Map<string, number>();
+        for (const t of picked) {
+          const name = t.artists[0]?.name;
+          if (name && name !== anchor.name) counts.set(name, (counts.get(name) ?? 0) + 1);
+        }
+        const others = [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, 2).map(([name]) => name);
+        save({ kind: 'mix', slot, period: periods.daily, title: `Mix ${slot}`, subtitle: mixSubtitle([anchor.name, ...others]), items: picked, createdAt: now() });
+      });
     }
 
     async function radar() {
@@ -191,8 +192,9 @@ export function createDiscover(d: { source: DiscoverSource; store: DiscoverStore
       if (epoch !== resetEpoch) return;
       if (!fresh.length) {
         d.store.saveRadarSeen([...d.store.radarSeen(), ...observed]);
-        // Sin novedades se mantiene el radar anterior (con su fecha) para no volver a consultar en cada apertura.
-        if (previous) save({ ...previous, period: periods.radar });
+        // Sin novedades se mantiene el radar anterior (con su fecha); sin radar anterior se anota una lista vacía. En los dos
+        // casos «ya consulté en este período»: no se vuelve a pedir en cada apertura de Inicio.
+        save(previous ? { ...previous, period: periods.radar } : { kind: 'radar', slot: '1', period: periods.radar, title: 'Release Radar', subtitle: '', items: [], createdAt: now() });
         return;
       }
       const shown = fresh.slice(0, DISCOVER.RADAR_ALBUMS);
@@ -223,7 +225,7 @@ export function createDiscover(d: { source: DiscoverSource; store: DiscoverStore
       const details = fulfilled(await Promise.allSettled(anchors.map((a) => artistOf(a.id!))));
       if (!details.length) return;
       const picked = pickSimilarArtists(details.map((a) => a.similar ?? []), knownKeys, DISCOVER.SIMILAR_MAX);
-      if (!picked.length) return;
+      // Sin nadie por sugerir se anota una lista vacía: «ya consulté en este período».
       save({ kind: 'artists', slot: '1', period: periods.weekly, title: 'Artistas que podrías escuchar', subtitle: '', items: picked, createdAt: now() });
     }
 

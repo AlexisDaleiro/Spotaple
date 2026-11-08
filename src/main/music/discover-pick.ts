@@ -103,11 +103,25 @@ export function weeklyPick(
  * en la radio del ancla) y mitad radio, alternadas. Con pocas de una mitad, la otra completa hasta `limit`.
  * La mezcla de las conocidas sale de `seed` (fecha + ancla), así es estable durante el día.
  */
-export function mixPick(o: { anchor: { key: string; name: string }; radio: Track[]; known: Track[]; seed: string; limit: number }): Track[] {
+export function mixPick(o: {
+  anchor: { key: string; name: string };
+  radio: Track[];
+  known: Track[];
+  seed: string;
+  limit: number;
+  /** `songKey` de lo que ya usaron otros mixes: no se repite (así los mixes del día no salen casi iguales). */
+  avoid?: ReadonlySet<string>;
+}): Track[] {
+  const skip = o.avoid ?? new Set<string>();
   const radioArtists = new Set(o.radio.flatMap((x) => x.artists.map(artistKey)));
-  const mine = o.known.filter((x) => x.artists.some((a) => artistKey(a) === o.anchor.key || radioArtists.has(artistKey(a))));
-  const knownList = uniqueSongs(seededShuffle(mine, `${o.seed}:${o.anchor.key}`));
-  const radioList = uniqueSongs(o.radio);
+  const fromAnchor = (x: Track) => x.artists.some((a) => artistKey(a) === o.anchor.key);
+  const mine = o.known.filter((x) => fromAnchor(x) || x.artists.some((a) => radioArtists.has(artistKey(a))));
+  // Primero las canciones del propio ancla y después las de los afines.
+  const knownList = uniqueSongs([
+    ...seededShuffle(mine.filter(fromAnchor), `${o.seed}:${o.anchor.key}`),
+    ...seededShuffle(mine.filter((x) => !fromAnchor(x)), `${o.seed}:${o.anchor.key}:afines`),
+  ]).filter((x) => !skip.has(songKey(x)));
+  const radioList = uniqueSongs(o.radio).filter((x) => !skip.has(songKey(x)));
 
   const half = Math.floor(o.limit / 2);
   let knownPick = knownList.slice(0, half);
@@ -138,8 +152,10 @@ export function mixSubtitle(names: string[]): string {
 
 /**
  * Release Radar. YouTube Music solo informa el año de un lanzamiento, así que «nuevo» es «no visto antes por la app».
- * Sin vistos (primera vez) cuentan los lanzamientos del año en curso. `observed` son todos los ids que aparecieron:
- * se marcan como vistos aunque no se muestren. `fresh` sale del año más nuevo al más viejo (los sin año, al final).
+ * Sin vistos (primera vez) cuentan los lanzamientos del año en curso. Después, los ids no vistos del año en curso o del
+ * anterior: un artista que entra al top más tarde (o que falló la primera vez) no llena el radar con su catálogo viejo.
+ * `observed` son todos los ids que aparecieron: se marcan como vistos aunque no se muestren. `fresh` sale del año más
+ * nuevo al más viejo.
  */
 export function radarPick(
   artists: { albums: AlbumSummary[]; singles: AlbumSummary[] }[],
@@ -151,7 +167,9 @@ export function radarPick(
   const all = [...byId.values()];
   const firstRun = seen.size === 0;
   const yearOf = (r: AlbumSummary): number => (r.year && Number.isFinite(Number(r.year)) ? Number(r.year) : -Infinity);
-  const fresh = all.filter((r) => (firstRun ? r.year === String(ctx.year) : !seen.has(r.id))).sort((x, y) => (yearOf(y) === yearOf(x) ? 0 : yearOf(y) > yearOf(x) ? 1 : -1));
+  const fresh = all
+    .filter((r) => (firstRun ? r.year === String(ctx.year) : !seen.has(r.id) && yearOf(r) >= ctx.year - 1))
+    .sort((x, y) => (yearOf(y) === yearOf(x) ? 0 : yearOf(y) > yearOf(x) ? 1 : -1));
   return { fresh, observed: all.map((r) => r.id) };
 }
 

@@ -157,6 +157,21 @@ describe('generación', () => {
     expect(discover.get().lists.filter((l) => l.kind === 'mix').map((l) => l.slot)).toEqual(['1', '2', '3', '4']);
   });
 
+  it('los mixes no repiten canciones conocidas entre sí, aunque los artistas sean afines', async () => {
+    const base = makeSource().source;
+    // La radio de cada ancla trae canciones de los otros anclas: todos son «afines» de todos.
+    const { discover } = make({
+      getRadio: vi.fn(async (id: string): Promise<Track[]> => [
+        ...Array.from({ length: 12 }, (_, i) => ({ id: `af-${id}-${i}`, title: `Afín ${id} ${i}`, artists: [art((i % 4) + 1)] })),
+        ...(await base.getRadio(id)),
+      ]),
+    });
+    const state = await discover.refresh();
+    const knownInMixes = state.lists.filter((l) => l.kind === 'mix').flatMap((l) => l.tracks.filter((t) => t.id.startsWith('s')).map((t) => t.id));
+    expect(knownInMixes.length).toBeGreaterThan(8);
+    expect(new Set(knownInMixes).size).toBe(knownInMixes.length);
+  });
+
   it('un artista top sin id no entra en getArtist, pero su semilla sigue sirviendo', async () => {
     store.close();
     store = createStore(':memory:');
@@ -300,6 +315,44 @@ describe('Release Radar', () => {
     const before = calls(source);
     await discover.refresh();
     expect(calls(source)).toBe(before);
+  });
+
+  it('sin radar, sin novedades y sin artistas por sugerir: se anota «ya consulté» y no se vuelve a pedir en ese período', async () => {
+    const onlyOld = vi.fn(
+      async (id: string): Promise<ArtistDetail> =>
+        ({
+          id,
+          name: `Artista ${id}`,
+          topSongs: [],
+          albums: [{ id: `MPREb_${id}_13`, title: 'Disco viejo', artists: [], year: '2013' }],
+          singles: [],
+          similar: [{ id: 'UCart2', name: 'Artista 2' }] as ArtistSummary[], // ya está en el historial
+        }) as ArtistDetail,
+    );
+    const { discover, source } = make({ getArtist: onlyOld });
+    const first = await discover.refresh();
+    expect(first.lists.map((l) => l.kind)).toEqual(['weekly', 'mix', 'mix', 'mix', 'mix']); // el radar vacío no se muestra
+    expect(first.artists).toEqual([]);
+    const artistCalls = (source.getArtist as ReturnType<typeof vi.fn>).mock.calls.length;
+    expect(artistCalls).toBeGreaterThan(0);
+    await discover.refresh();
+    vi.setSystemTime(THU); // el mismo período semanal y de radar: solo se renuevan los mixes
+    await discover.refresh();
+    expect((source.getArtist as ReturnType<typeof vi.fn>).mock.calls.length).toBe(artistCalls);
+  });
+
+  it('un artista que entra al top después no llena el radar con su catálogo viejo', async () => {
+    const { discover, releases } = make();
+    await discover.refresh();
+    releases.set('UCart1', [
+      { id: 'MPREb_UCart1_26', title: 'Disco 26 de UCart1', artists: [], year: '2026' },
+      { id: 'MPREb_UCart1_13', title: 'Disco 13 de UCart1', artists: [], year: '2013' },
+      { id: 'MPREb_viejo80', title: 'De 1980', artists: [], year: '1980' },
+    ]);
+    vi.setSystemTime(FRI);
+    const state = await discover.refresh();
+    expect(state.lists.find((l) => l.kind === 'radar')!.tracks.every((t) => !t.id.includes('viejo80'))).toBe(true);
+    expect(store.radarSeen()).toContain('MPREb_viejo80'); // queda observado: no vuelve a aparecer
   });
 
   it('los ids vistos nunca pasan de 2000', async () => {

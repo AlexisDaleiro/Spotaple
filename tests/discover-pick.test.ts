@@ -142,6 +142,21 @@ describe('mixPick', () => {
     expect(ids(run())).toEqual(ids(run()));
     expect(ids(run({ seed: '2026-11-12' }))).not.toEqual(ids(run()));
   });
+
+  it('las conocidas del propio ancla van antes que las de los afines', () => {
+    const afines = Array.from({ length: 20 }, (_, i) => t(`afin${i}`, `De un afín ${i}`, 'Afín 3', 'UCr3'));
+    const out = run({ known: [...afines, ...known(20)] });
+    expect(out.filter((x) => x.id.startsWith('afin'))).toHaveLength(0); // las 15 conocidas son del ancla
+    expect(out.filter((x) => x.id.startsWith('k'))).toHaveLength(15);
+  });
+
+  it('no repite lo que ya usó otro mix (avoid), ni de las conocidas ni de la radio', () => {
+    const first = run();
+    const avoid = new Set(first.map((x) => `${x.title.trim().toLowerCase()}|${x.artists[0]!.id ?? x.artists[0]!.name.toLowerCase()}`));
+    const second = run({ avoid });
+    expect(second.length).toBeGreaterThan(0);
+    expect(ids(second).filter((id) => ids(first).includes(id))).toEqual([]);
+  });
 });
 
 describe('mixSubtitle', () => {
@@ -158,31 +173,38 @@ describe('radarPick', () => {
   const rel = (id: string, year?: string): AlbumSummary => ({ id, title: id, artists: [], year });
   const artists = [
     { albums: [rel('MPREb_new26', '2026'), rel('MPREb_old', '2013')], singles: [rel('MPREb_single26', '2026'), rel('MPREb_dup', '2026')] },
-    { albums: [rel('MPREb_dup', '2026'), rel('MPREb_x24', '2024')], singles: [] },
+    { albums: [rel('MPREb_dup', '2026'), rel('MPREb_x24', '2024'), rel('MPREb_x25', '2025')], singles: [] },
   ];
 
   it('la primera vez (sin vistos) muestra solo lo del año en curso y observa todo, también lo viejo', () => {
     const { fresh, observed } = radarPick(artists, new Set(), { year: 2026 });
     expect(fresh.map((x) => x.id).sort()).toEqual(['MPREb_dup', 'MPREb_new26', 'MPREb_single26']);
-    expect([...observed].sort()).toEqual(['MPREb_dup', 'MPREb_new26', 'MPREb_old', 'MPREb_single26', 'MPREb_x24']);
+    expect([...observed].sort()).toEqual(['MPREb_dup', 'MPREb_new26', 'MPREb_old', 'MPREb_single26', 'MPREb_x24', 'MPREb_x25']);
   });
 
-  it('con vistos solo cuentan los ids nuevos, sin importar el año', () => {
+  it('con vistos solo cuentan los ids nuevos del año en curso o del anterior', () => {
     const seen = new Set(['MPREb_new26', 'MPREb_old', 'MPREb_single26', 'MPREb_dup']);
-    expect(radarPick(artists, seen, { year: 2026 }).fresh.map((x) => x.id)).toEqual(['MPREb_x24']);
+    expect(radarPick(artists, seen, { year: 2026 }).fresh.map((x) => x.id)).toEqual(['MPREb_x25']); // el de 2024 no es una novedad
   });
 
   it('ordena lo nuevo del año más reciente al más viejo y no repite un id', () => {
     const seen = new Set(['MPREb_old']);
     const { fresh } = radarPick(artists, seen, { year: 2026 });
-    expect(fresh.map((x) => x.year)).toEqual(['2026', '2026', '2026', '2024']);
+    expect(fresh.map((x) => x.year)).toEqual(['2026', '2026', '2026', '2025']);
     expect(new Set(fresh.map((x) => x.id)).size).toBe(fresh.length);
   });
 
-  it('los lanzamientos sin año quedan al final', () => {
+  it('los lanzamientos sin año no cuentan como nuevos después de la primera vez', () => {
     const seen = new Set(['MPREb_old']);
     const out = radarPick([{ albums: [rel('MPREb_noyear'), rel('MPREb_y25', '2025')], singles: [] }], seen, { year: 2026 });
-    expect(out.fresh.map((x) => x.id)).toEqual(['MPREb_y25', 'MPREb_noyear']);
+    expect(out.fresh.map((x) => x.id)).toEqual(['MPREb_y25']);
+  });
+
+  it('un artista que entra al top después no inunda el radar con su catálogo viejo, pero igual queda observado', () => {
+    const seen = new Set(['MPREb_algo']);
+    const out = radarPick([{ albums: [rel('MPREb_80', '1980'), rel('MPREb_77', '1977'), rel('MPREb_25', '2025')], singles: [] }], seen, { year: 2026 });
+    expect(out.fresh.map((x) => x.id)).toEqual(['MPREb_25']);
+    expect(out.observed).toEqual(['MPREb_80', 'MPREb_77', 'MPREb_25']);
   });
 });
 
