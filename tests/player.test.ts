@@ -699,3 +699,167 @@ describe('sin conexión', () => {
     expect(s().status).toBe('playing');
   });
 });
+
+describe('crossfade (fundido entre canciones)', () => {
+  const fx = (seconds: number) => ({ seconds: vi.fn(() => seconds), fadeOut: vi.fn(), fadeIn: vi.fn(), unfade: vi.fn() });
+  function setupFade(o: { seconds?: number; prepare?: PlayerApi['prepare']; extra?: Partial<PlayerDeps> } = {}) {
+    const audio2 = new FakeAudio();
+    const cf = fx(o.seconds ?? 0.3);
+    const r = setup(o.prepare, { audio2, crossfade: cf, ...o.extra });
+    return { ...r, audio2, cf };
+  }
+  type Fade = ReturnType<typeof setupFade>;
+  /** Empieza la canción 0 y la deja sonando con `duration` segundos. */
+  async function playing(r: Fade, n = 3, duration = 200) {
+    r.s().playTracks(tracks(n), 0);
+    await flush();
+    r.audio.loaded(duration);
+  }
+  const tick = (a: FakeAudio, t: number) => {
+    a.currentTime = t;
+    a.dispatchEvent(new Event('timeupdate'));
+  };
+  const expectNoFade = async (r: Fade, at: number) => {
+    tick(r.audio, at);
+    await flush();
+    expect(r.audio2.src).toBe('');
+    expect(r.cf.fadeIn).not.toHaveBeenCalled();
+    expect(r.s().index).toBe(0);
+  };
+  const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  it('a duración − fundido arranca la siguiente en el otro elemento y apaga la actual; la vieja se pausa al terminar', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r);
+    tick(r.audio, 199.8);
+    await flush();
+    expect(r.audio2.src).toBe(`test://${track(1).id}`);
+    expect(r.cf.fadeOut).toHaveBeenCalledWith(r.audio, expect.any(Number));
+    expect(r.cf.fadeIn).toHaveBeenCalledWith(r.audio2, expect.any(Number));
+    expect(r.cf.fadeOut.mock.calls[0]![1]).toBeCloseTo(0.2, 1); // dura lo que falta, no más
+    expect(r.s().index).toBe(1);
+    expect(r.audio.paused).toBe(false); // sigue sonando mientras se apaga
+    await wait(600);
+    expect(r.audio.paused).toBe(true);
+    expect(r.cf.unfade).toHaveBeenCalledWith(r.audio);
+  });
+
+  it('sin fundido (0 s) no se dispara', async () => {
+    const r = setupFade({ seconds: 0 });
+    await playing(r);
+    await expectNoFade(r, 199.9);
+  });
+
+  it('con «repetir una» no se dispara', async () => {
+    const r = setupFade();
+    await playing(r);
+    r.s().cycleRepeat();
+    r.s().cycleRepeat();
+    expect(r.s().repeat).toBe('one');
+    await expectNoFade(r, 199.8);
+  });
+
+  it('con una sala activa no se dispara', async () => {
+    let jamOn = false;
+    const r = setupFade({ extra: { jam: { active: () => jamOn, request: vi.fn() } } });
+    await playing(r);
+    jamOn = true;
+    await expectNoFade(r, 199.8);
+  });
+
+  it('en la última canción de la cola no se dispara', async () => {
+    const r = setupFade();
+    await playing(r, 1);
+    await expectNoFade(r, 199.8);
+  });
+
+  it('una canción más corta que 2 × el fundido no se dispara', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r, 3, 0.5);
+    await expectNoFade(r, 0.45);
+  });
+
+  it('la precarga pide la fuente de la siguiente una sola vez, a seconds + 10 s del final', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r);
+    r.api.prepare.mockClear();
+    tick(r.audio, 100);
+    await flush();
+    expect(r.api.prepare).not.toHaveBeenCalled();
+    tick(r.audio, 189.9);
+    tick(r.audio, 190.5);
+    await flush();
+    expect(r.api.prepare).toHaveBeenCalledTimes(1);
+    expect(r.api.prepare).toHaveBeenCalledWith(track(1).id);
+  });
+
+  it('«siguiente» durante el fundido corta la canción que se apaga', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r, 4);
+    tick(r.audio, 199.8);
+    await flush();
+    r.s().next();
+    await flush();
+    expect(r.audio.paused).toBe(true);
+    expect(r.cf.unfade).toHaveBeenCalledWith(r.audio);
+    expect(r.s().index).toBe(2);
+    expect(r.audio2.src).toBe(`test://${track(2).id}`);
+  });
+
+  it('pausar durante el fundido pausa las dos', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r);
+    tick(r.audio, 199.8);
+    await flush();
+    r.s().togglePlay();
+    expect(r.audio.paused).toBe(true);
+    expect(r.audio2.paused).toBe(true);
+  });
+
+  it('si la siguiente falla en pleno fundido la actual sigue, sin aviso y sin reintentar', async () => {
+    let failing = 0;
+    const r = setupFade({
+      seconds: 0.3,
+      prepare: async (id) => {
+        if (id === track(1).id) {
+          failing++;
+          throw Object.assign(new Error('x'), { code: 'unavailable' });
+        }
+        return ok(id);
+      },
+    });
+    await playing(r);
+    tick(r.audio, 199.8);
+    await flush();
+    expect(r.s().status).toBe('playing');
+    expect(r.s().index).toBe(0);
+    expect(r.audio2.src).toBe('');
+    expect(r.cf.fadeIn).not.toHaveBeenCalled();
+    expect(r.notify).not.toHaveBeenCalled();
+    const before = failing;
+    tick(r.audio, 199.85);
+    await flush();
+    expect(failing).toBe(before);
+  });
+
+  it('el «ended» del elemento que se apaga no avanza la cola', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r, 4);
+    tick(r.audio, 199.8);
+    await flush();
+    r.audio.ended();
+    await flush();
+    expect(r.s().index).toBe(1);
+  });
+
+  it('cada canción se registra una sola vez como «sonó», con fundido', async () => {
+    const r = setupFade({ seconds: 0.3 });
+    await playing(r);
+    tick(r.audio, 199.8);
+    await flush();
+    r.audio2.dispatchEvent(new Event('playing'));
+    await flush();
+    expect(r.api.recordPlay).toHaveBeenCalledTimes(2);
+    expect((r.api.recordPlay.mock.calls as unknown as [Track][]).map((c) => c[0].id)).toEqual([track(0).id, track(1).id]);
+  });
+});

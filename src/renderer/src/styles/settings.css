@@ -49,6 +49,21 @@
   max-width: 320px;
 }
 
+/* Deslizador con su valor a la derecha (fundido entre canciones) */
+.set-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: var(--s-4);
+  max-width: 420px;
+}
+.set-range output {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* Ecualizador: un grupo (atenuado con el ecualizador apagado), presets, 10 barras verticales y preamplificador */
 .eqset {
   min-width: 0;

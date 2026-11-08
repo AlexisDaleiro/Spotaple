@@ -20,10 +20,16 @@ audio.preload = 'auto';
 // con `Access-Control-Allow-Origin` (ver audio-protocol.ts).
 audio.crossOrigin = 'anonymous';
 
-// Motor de sonido: ecualizador y ganancia por canción. Si Web Audio no está, `engine` es null y el audio suena como siempre.
-const engine = createAudioEngine([audio]);
-let loudness: number | undefined; // LUFS de la canción en curso
-const applyNormalization = () => engine?.setTrackGainDb(audio, settingsStore.getState().settings.normalize ? normalizationGainDb(loudness) : 0);
+// Segundo elemento: el fundido cruzado alterna entre los dos (la siguiente arranca en el libre mientras la actual se apaga).
+const audio2 = new Audio();
+audio2.preload = 'auto';
+audio2.crossOrigin = 'anonymous';
+
+// Motor de sonido: ecualizador, ganancia por canción y fundido. Si Web Audio no está, `engine` es null y el audio suena
+// como siempre (y sin fundido: no hay quién mueva el volumen).
+const engine = createAudioEngine([audio, audio2]);
+const loudness = new Map<HTMLAudioElement, number | undefined>(); // LUFS de la canción que cargó cada elemento
+const applyNormalization = (el: HTMLAudioElement) => engine?.setTrackGainDb(el, settingsStore.getState().settings.normalize ? normalizationGainDb(loudness.get(el)) : 0);
 if (engine) {
   const applyEq = () => {
     const s = settingsStore.getState().settings;
@@ -35,7 +41,8 @@ if (engine) {
     if (state.settings === seen) return;
     seen = state.settings;
     applyEq();
-    applyNormalization(); // activar o apagar «Normalizar» con una canción sonando vale al instante
+    applyNormalization(audio); // activar o apagar «Normalizar» con una canción sonando vale al instante
+    applyNormalization(audio2);
   });
   // Diagnóstico (mismo interruptor que los eventos del audio): los e2e leen el grafo desde acá.
   try {
@@ -69,10 +76,19 @@ export const playerStore = createPlayer({
     recordPlay: (t, auto?: boolean) => api.library.recordPlay(t, auto),
   },
   notify: (message, kind) => toast(message, kind === 'error' ? 'error' : 'info'),
-  onPrepared: (prepared) => {
-    loudness = prepared.loudnessLkfs;
-    applyNormalization();
+  onPrepared: (prepared, el) => {
+    loudness.set(el as HTMLAudioElement, prepared.loudnessLkfs);
+    applyNormalization(el as HTMLAudioElement);
   },
+  ...(engine && {
+    audio2,
+    crossfade: {
+      seconds: () => settingsStore.getState().settings.crossfade,
+      fadeOut: (el, sec) => engine.fadeOut(el as HTMLAudioElement, sec),
+      fadeIn: (el, sec) => engine.fadeIn(el as HTMLAudioElement, sec),
+      unfade: (el) => engine.unfade(el as HTMLAudioElement),
+    },
+  }),
   // Sin red solo suenan las canciones descargadas: lo demás se salta con aviso.
   reachable: (id) => useOffline.getState().reachable(id),
   isDownloaded: (id) => useOffline.getState().ids.has(id),

@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import { LIMITS } from '@shared/jam/types';
 import { EQ_BANDS, EQ_PRESETS, EQ_RANGE_DB, presetFor, type EqPreset } from '@shared/audio';
 import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
-import { TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
+import { MAX_CROSSFADE_S, TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
 import { api, errorMessage } from '../api';
 import { cx, formatBytes } from '../lib/format';
 import { discoverStore } from '../stores/discover';
@@ -194,6 +194,39 @@ function EqualizerControls({ on, gains, preamp }: { on: boolean; gains: number[]
   );
 }
 
+/** Fundido cruzado: segundos en que la canción que termina se apaga mientras empieza la siguiente (0 = sin fundido). */
+function CrossfadeRow({ seconds }: { seconds: number }) {
+  const inputId = useId();
+  const hintId = useId();
+  const text = seconds === 0 ? 'Sin fundido' : `${seconds} s`;
+  return (
+    <div className="set-row">
+      <label className="set-row__label" htmlFor={inputId}>
+        Fundido entre canciones
+      </label>
+      <p className="set-row__hint" id={hintId}>
+        La canción que termina se apaga mientras empieza la siguiente. No rige dentro de una sala ni con «repetir una».
+      </p>
+      <div className="set-range">
+        <input
+          id={inputId}
+          type="range"
+          className="slider"
+          min={0}
+          max={MAX_CROSSFADE_S}
+          step={1}
+          value={seconds}
+          aria-describedby={hintId}
+          aria-valuetext={text}
+          style={{ '--pct': `${(seconds / MAX_CROSSFADE_S) * 100}%` } as React.CSSProperties}
+          onChange={(e) => set({ crossfade: Number(e.target.value) })}
+        />
+        <output>{text}</output>
+      </div>
+    </div>
+  );
+}
+
 /** Cuánto ocupan las descargas y el botón para borrarlas todas (con confirmación). */
 function DownloadsRow() {
   const hintId = useId();
@@ -337,6 +370,7 @@ export function SettingsPage() {
           on={s.radio}
           onChange={(radio) => set({ radio })}
         />
+        <CrossfadeRow seconds={s.crossfade} />
         <Toggle label="Reanudar al abrir la app" hint="Al abrir Spotaple, la canción que estaba en pausa sigue sonando donde la dejaste." on={s.resumeOnOpen} onChange={(resumeOnOpen) => set({ resumeOnOpen })} />
       </Group>
 

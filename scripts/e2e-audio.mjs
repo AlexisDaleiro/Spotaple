@@ -84,9 +84,11 @@ async function songsTab(q) {
   await page.locator('.tab', { hasText: 'Canciones' }).click().catch(() => undefined);
   await page.waitForSelector('.tracklist__body .row', { timeout: 30000 });
 }
+// El elemento que suena ahora: con fundido los dos se alternan.
 const playedId = () =>
   page.evaluate(() => {
-    const el = globalThis.__spotapleAudio?.elements[0];
+    const e = globalThis.__spotapleAudio;
+    const el = e?.elements.find((x) => !x.paused) ?? e?.elements[0];
     return el?.src ? decodeURIComponent(new URL(el.src).pathname.replace(/^\//, '')) : '';
   });
 /** Busca, toca la primera canción y espera a que suene una distinta de la anterior. Devuelve su id. */
@@ -128,7 +130,17 @@ const measure = (ms) =>
     eng.tap.disconnect(an);
     return { peak, rms: Math.sqrt(sum / n) };
   }, ms);
-const trackGain = () => page.evaluate(() => globalThis.__spotapleAudio.trackGains.get(globalThis.__spotapleAudio.elements[0]).gain.value);
+const trackGain = () =>
+  page.evaluate(() => {
+    const e = globalThis.__spotapleAudio;
+    return e.trackGains.get(e.elements.find((x) => !x.paused) ?? e.elements[0]).gain.value;
+  });
+/** Estado de los dos elementos: si suenan y el volumen de fundido de cada uno. */
+const fadeState = () =>
+  page.evaluate(() => {
+    const e = globalThis.__spotapleAudio;
+    return e.elements.map((el) => ({ playing: !el.paused, fade: e.fadeGains.get(el).gain.value }));
+  });
 const expectedGain = (lkfs) => 10 ** (Math.min(0, Math.max(-12, -14 - lkfs)) / 20);
 const loudnessOfTrack = async (id) => (await page.evaluate((id) => window.spotapleBridge.music.prepare(id), id)).data.loudnessLkfs;
 const openSettings = async () => {
@@ -251,6 +263,40 @@ await step('6 una favorita descargada suena del disco sin red, con su loudness g
   const want = expectedGain(rows[0].loudness);
   await waitFor(async () => Math.abs((await trackGain()) - want) < 0.02, 5000, `ganancia ≈${want.toFixed(3)} desde tracks.loudness (${rows[0].loudness} LUFS)`);
   return `pico ${m.peak.toFixed(2)} sin red; ${rows[0].loudness} LUFS → ×${want.toFixed(2)}`;
+});
+
+await step('7 fundido cruzado: los dos suenan a la vez, cambia el título y al final queda uno solo', async () => {
+  await closeApp();
+  writeSettings({});
+  await launch();
+  await openSettings();
+  await page.locator('.set-range input').fill('4');
+  await waitFor(async () => (await page.locator('.set-range output').innerText()).trim() === '4 s', 3000, 'el valor «4 s»');
+  await sleep(700); // el guardado de ajustes va con un retraso corto
+  await playFirst('Queen Bohemian Rhapsody');
+  // Hace falta una siguiente en la cola: la radio la arma sola.
+  await page.locator('button[aria-label="Mostrar la cola"]').click().catch(() => undefined);
+  await page.waitForSelector('.queue__divider', { timeout: 30000 });
+  const title0 = (await page.locator('.player__title').innerText()).trim();
+  // Salta a 6 s del final: la precarga pide la fuente de la siguiente y a los 4 s arranca el fundido.
+  await page.evaluate(() => {
+    const e = globalThis.__spotapleAudio;
+    const el = e.elements.find((x) => !x.paused) ?? e.elements[0];
+    el.currentTime = el.duration - 6;
+  });
+  await waitFor(async () => (await fadeState()).every((s) => s.playing), 20000, 'los dos elementos sonando a la vez');
+  const mid = await fadeState();
+  const m = await measure(1500);
+  if (!(m.peak > 0.05)) throw new Error(`pico ${m.peak.toFixed(3)} durante el fundido`);
+  await waitFor(async () => (await fadeState()).filter((s) => s.playing).length === 1, 15000, 'que quede un solo elemento sonando');
+  const title1 = (await page.locator('.player__title').innerText()).trim();
+  if (title1 === title0) throw new Error(`el título no cambió (${title0})`);
+  // El elemento que se apagó queda pausado y con el volumen de fundido de vuelta en 1 (listo para la próxima).
+  await waitFor(async () => {
+    const stopped = (await fadeState()).find((s) => !s.playing);
+    return stopped && Math.abs(stopped.fade - 1) < 0.01;
+  }, 4000, 'volumen de fundido del elemento que se apagó de vuelta en 1');
+  return `${title0.slice(0, 24)} → ${title1.slice(0, 24)}; fundido a mitad: ${mid.map((s) => s.fade.toFixed(2)).join(' / ')}; pico ${m.peak.toFixed(2)}`;
 });
 
 await app.close().catch(() => undefined);

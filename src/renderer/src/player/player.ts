@@ -87,6 +87,19 @@ export interface PlayerDeps {
    * normalización a esa canción (`prepared.loudnessLkfs`).
    */
   onPrepared?: (prepared: PreparedAudio, audio: AudioLike) => void;
+  /**
+   * Fundido cruzado: con `audio2` y `crossfade` el reproductor alterna entre los dos elementos y, cuando faltan
+   * `seconds()` segundos, arranca la siguiente en el libre mientras la actual se apaga. `fadeOut` y `fadeIn` mueven el
+   * volumen de cada elemento durante `sec` segundos (la actual sigue sonando); `unfade` los deja otra vez en 1.
+   * Sin estos dos, no hay fundido y todo funciona como siempre.
+   */
+  audio2?: AudioLike;
+  crossfade?: {
+    seconds(): number;
+    fadeOut(el: AudioLike, sec: number): void;
+    fadeIn(el: AudioLike, sec: number): void;
+    unfade(el: AudioLike): void;
+  };
 }
 
 export interface PlayerState extends QueueState {
@@ -133,11 +146,19 @@ const MAX_AUTO_SKIPS = 3;
 /** La radio se pide cuando quedan menos de tantas canciones por sonar. */
 const RADIO_REFILL_BELOW = 3;
 const RESTART_THRESHOLD_S = 3;
+/** La fuente de la siguiente se precarga cuando faltan menos de «fundido + esto» segundos. */
+const PREFETCH_LEAD_S = 10;
+/** Margen para pausar el elemento que se apagó, después de que termina su rampa. */
+const FADE_END_MARGIN_MS = 150;
 
 const isAbort = (e: unknown) => (e as { name?: string })?.name === 'AbortError';
 
 export function createPlayer(deps: PlayerDeps) {
-  const { audio, api } = deps;
+  const { api } = deps;
+  // Con fundido hay dos elementos que se alternan: `audio` es el que suena ahora y `spare` el libre.
+  let audio = deps.audio;
+  let spare = deps.audio2;
+  const cf = deps.crossfade;
   const urlFor = deps.urlFor ?? audioUrl;
   const notify = deps.notify ?? (() => undefined);
   const jam = deps.jam;
@@ -155,14 +176,53 @@ export function createPlayer(deps: PlayerDeps) {
     let radioBlockedUid: string | null = null; // canción para la que la radio falló o no dio nada: no se reintenta
     let playedAuto = false; // la reproducción en curso la puso la radio y avanzó sola
     let radioEpoch = 0; // sube con «Limpiar»: una respuesta de radio anterior ya no vale
+    let fading: { out: AudioLike; timer: ReturnType<typeof setTimeout> } | null = null; // el elemento que se está apagando
+    let fadeTriedUid: string | null = null; // canción para la que ya se intentó el fundido (salió o falló): no se repite
+    let prefetchedUid: string | null = null; // canción cuya siguiente ya se precargó
 
     const cur = (): QueueItem | undefined => get().items[get().index];
     const quiet = (p: Promise<unknown>) => void p.catch(() => undefined);
     const applyVolume = () => {
       const { volume, muted } = get();
-      audio.volume = volume * volume; // curva perceptual: el volumen se oye más natural que lineal
-      audio.muted = muted;
+      for (const el of spare ? [audio, spare] : [audio]) {
+        el.volume = volume * volume; // curva perceptual: el volumen se oye más natural que lineal
+        el.muted = muted;
+      }
     };
+
+    /** Corta ya el elemento que se estaba apagando (si lo hay) y lo deja listo para volver a usarse. */
+    function endFade() {
+      if (!fading) return;
+      const { out, timer } = fading;
+      fading = null;
+      clearTimeout(timer);
+      cf?.unfade(out);
+      out.pause();
+    }
+
+    /**
+     * Fundido cruzado: a `seconds()` del final arranca la siguiente en el otro elemento y la actual se apaga. Solo con
+     * dos elementos, sin sala, sin «repetir una», con una siguiente distinta y una canción de al menos 2 × el fundido.
+     * También precarga la fuente de la siguiente (`PREFETCH_LEAD_S` antes) para que el arranque sea inmediato.
+     */
+    function maybeCrossfade() {
+      const sec = cf?.seconds() ?? 0;
+      const s = get();
+      const item = cur();
+      if (!cf || !spare || sec <= 0 || !item || s.status !== 'playing' || fading || jam?.active() || s.repeat === 'one') return;
+      const dur = audio.duration;
+      if (!Number.isFinite(dur) || dur < 2 * sec) return;
+      const ni = nextIndex(s.items.length, s.index, s.repeat, true);
+      if (ni === null || ni === s.index) return;
+      const remaining = dur - audio.currentTime;
+      if (prefetchedUid !== item.uid && remaining <= sec + PREFETCH_LEAD_S) {
+        prefetchedUid = item.uid;
+        quiet(api.prepare(s.items[ni]!.track.id));
+      }
+      if (remaining > sec || fadeTriedUid === item.uid) return;
+      fadeTriedUid = item.uid;
+      void go(ni, { user: false, fade: Math.max(Math.min(sec, remaining), 0.1) });
+    }
 
     /**
      * Radio automática: si quedan menos de 3 por sonar, la radio está activada, no hay sala ni repetición, y no hay un
@@ -241,10 +301,23 @@ export function createPlayer(deps: PlayerDeps) {
       }
     }
 
-    async function go(index: number, opts: { user: boolean; startAt?: number; retry?: boolean }) {
+    async function go(index: number, opts: { user: boolean; startAt?: number; retry?: boolean; fade?: number }) {
       const item = get().items[index];
       if (!item) return;
       const mine = ++token;
+      // Fundido: la fuente se pide ANTES de tocar el estado. Si no se puede (sin red o falla), la canción actual sigue
+      // sonando sin avisos y termina por el camino de siempre; `fadeTriedUid` evita reintentarlo.
+      let early: PreparedAudio | undefined;
+      const fade = !opts.user && opts.fade ? opts.fade : 0;
+      if (fade) {
+        if (deps.reachable && !deps.reachable(item.track.id)) return;
+        try {
+          early = await api.prepare(item.track.id);
+        } catch {
+          return;
+        }
+        if (mine !== token) return;
+      }
       if (opts.user) {
         retriedUid = null;
         autoSkips = 0;
@@ -253,7 +326,21 @@ export function createPlayer(deps: PlayerDeps) {
       pendingStart = opts.startAt && opts.startAt > 0 ? opts.startAt : null;
       loadedUid = null;
       set({ index, status: 'loading', error: null, position: opts.startAt ?? 0, duration: item.track.durationSec ?? 0 });
-      audio.pause(); // lo que sonaba se corta ya; la elección nueva no espera
+      if (fade && early && spare) {
+        // La actual no se corta: pasa a ser la que se apaga y el elemento libre toma la nueva.
+        endFade();
+        const out = audio;
+        audio = spare;
+        spare = out;
+        fading = { out, timer: setTimeout(endFade, fade * 1000 + FADE_END_MARGIN_MS) };
+        cf?.fadeOut(out, fade);
+        cf?.fadeIn(audio, fade);
+      } else {
+        fadeTriedUid = null;
+        prefetchedUid = null;
+        endFade();
+        audio.pause(); // lo que sonaba se corta ya; la elección nueva no espera
+      }
       playedAuto = item.auto === true && !opts.user;
       maybeRefill();
       if (opts.user) quiet(api.recordSelection(item.track));
@@ -264,7 +351,7 @@ export function createPlayer(deps: PlayerDeps) {
 
       let prepared: PreparedAudio;
       try {
-        prepared = await api.prepare(item.track.id);
+        prepared = early ?? (await api.prepare(item.track.id));
       } catch (e) {
         if (mine !== token) return;
         return fail(skippableOffline(e, item) ?? e, item);
@@ -306,7 +393,10 @@ export function createPlayer(deps: PlayerDeps) {
     }
 
     // --- eventos del elemento de audio
-    const on = (name: string, fn: () => void) => audio.addEventListener(name, fn);
+    // Los dos elementos escuchan, pero solo cuenta el que suena ahora: lo que diga el que se apaga no mueve el estado.
+    const on = (name: string, fn: () => void) => {
+      for (const el of spare ? [audio, spare] : [audio]) el.addEventListener(name, () => el === audio && fn());
+    };
     on('playing', () => {
       const item = cur();
       if (!item || loadedUid !== item.uid) return;
@@ -328,6 +418,7 @@ export function createPlayer(deps: PlayerDeps) {
       const { status } = get();
       if (status === 'loading' || status === 'idle' || status === 'error') return;
       set({ position: audio.currentTime });
+      maybeCrossfade();
     });
     const onMeta = () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0 && get().status !== 'idle') set({ duration: audio.duration });
@@ -405,6 +496,7 @@ export function createPlayer(deps: PlayerDeps) {
         token++; // una carga que todavía resuelve la fuente ya no es la vigente: no pondrá el audio
         pendingStart = null;
         loadedUid = null;
+        endFade();
         audio.pause();
         set({ status: get().index >= 0 ? 'paused' : 'idle', error: null });
       },
@@ -429,6 +521,7 @@ export function createPlayer(deps: PlayerDeps) {
         if (!wasCurrent) return;
         if (state.items.length === 0) {
           token++;
+          endFade();
           audio.pause();
           loadedUid = null;
           set({ index: -1, status: 'idle', position: 0, duration: 0, error: null });
@@ -454,7 +547,10 @@ export function createPlayer(deps: PlayerDeps) {
           return;
         }
         if (audio.paused) audio.play().catch((e) => !isAbort(e) && fail(e, item));
-        else audio.pause();
+        else {
+          endFade(); // pausar corta también la canción que se estaba apagando
+          audio.pause();
+        }
       },
       next() {
         const s = get();
