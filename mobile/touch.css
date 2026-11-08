@@ -1,0 +1,113 @@
+[data-platform="android"] .app {
+  --mobile-nav: 58px;
+  --mobile-player: 144px;
+  height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 54px minmax(0, 1fr) auto var(--mobile-nav);
+  grid-template-areas: "title" "main" "player" "side";
+}
+
+[data-platform="android"] .titlebar {
+  gap: 4px;
+  padding-inline: 8px;
+}
+
+[data-platform="android"] .brand { width: auto; }
+[data-platform="android"] .brand__name,
+[data-platform="android"] .search__kbd,
+[data-platform="android"] .sidebar__lists,
+[data-platform="android"] .titlebar__nav > button:nth-child(2),
+[data-platform="android"] .tracklist__head { display: none; }
+
+[data-platform="android"] .sidebar {
+  padding: 0 2px;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+[data-platform="android"] .sidebar__main,
+[data-platform="android"] .sidebar__foot {
+  display: flex;
+  flex-direction: row;
+  background: transparent;
+  min-width: 0;
+  padding: 0;
+}
+
+[data-platform="android"] .sidebar__main { flex: 1; }
+[data-platform="android"] .sidebar .nav-item {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+}
+
+[data-platform="android"] .sidebar .nav-item__label {
+  display: block !important;
+  font-size: 10px;
+}
+
+[data-platform="android"] .sidebar .jam-entry__live { display: none; }
+[data-platform="android"] .sidebar__foot > .nav-item { min-width: 54px; }
+
+[data-platform="android"] .main { margin: 0; border-radius: 0; }
+[data-platform="android"] .main__scroll { scrollbar-gutter: auto; }
+[data-platform="android"] .page { padding: 16px 12px 22px; }
+
+[data-platform="android"] .queue {
+  position: fixed;
+  inset: 54px 0 calc(var(--mobile-player) + var(--mobile-nav)) 0;
+  z-index: 30;
+  width: auto;
+  margin: 0;
+  border-radius: 0;
+}
+
+[data-platform="android"] .player {
+  min-height: var(--mobile-player);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "now right" "center center";
+  gap: 0 4px;
+  padding: 5px 8px;
+}
+
+[data-platform="android"] .player__now { grid-area: now; gap: 6px; }
+[data-platform="android"] .player__center { grid-area: center; gap: 0; }
+[data-platform="android"] .player__right { grid-area: right; gap: 0; }
+[data-platform="android"] .player__cover,
+[data-platform="android"] .player__idle-cover { width: 36px !important; height: 36px !important; }
+[data-platform="android"] .player__fav { display: grid; }
+[data-platform="android"] .slider--volume { width: 42px !important; }
+[data-platform="android"] .progress { gap: 3px; }
+[data-platform="android"] .progress__buffer { right: 0; }
+
+[data-platform="android"] .tracklist {
+  --cols: 30px minmax(0, 1fr) auto 32px;
+}
+[data-platform="android"] .tracklist .row {
+  grid-template-columns: var(--cols);
+  gap: 4px;
+  padding-inline: 4px;
+}
+[data-platform="android"] .row__album,
+[data-platform="android"] .row__dur { display: none; }
+[data-platform="android"] .row .row__num { opacity: 0; }
+[data-platform="android"] .row .row__play,
+[data-platform="android"] .row .row__more,
+[data-platform="android"] .row .row__fav,
+[data-platform="android"] .row .row__queue { opacity: 1; }
+
+[data-platform="android"] .jam-grid { grid-template-columns: 1fr; }
+[data-platform="android"] .set-row { grid-template-columns: minmax(0, 1fr); }
+[data-platform="android"] .toasts { bottom: calc(var(--mobile-player) + var(--mobile-nav) + 8px); max-width: 95%; }
+
+[data-platform="android"] .row .ibtn,
+[data-platform="android"] .qrow .ibtn { min-width: 32px; min-height: 40px; }
+[data-platform="android"] .qrow__remove { opacity: 1; }
+[data-platform="android"] .qrow__dur { display: none; }
+[data-platform="android"] .set-row--inline { grid-template-columns: minmax(0, 1fr) auto; }
+[data-platform="android"] .jam-relay__actions { flex-wrap: wrap; }

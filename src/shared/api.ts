@@ -68,6 +68,7 @@ export const IPC = {
   jamRelayPrepare: 'jam:relay-prepare',
   jamRelayClaim: 'jam:relay-claim',
   jamRelayActivate: 'jam:relay-activate',
+  jamRelaySetUrl: 'jam:relay-set-url',
   jamRelayState: 'jam:relay-state',
   /** Evento main→renderer: la vista de la sala. */
   jamState: 'jam:state',
@@ -152,6 +153,7 @@ export interface SpotapleApi {
     prepareRelay(accepted: boolean): Promise<void>;
     openRelayClaim(): Promise<void>;
     activateRelay(): Promise<void>;
+    setRelayUrl(url: string): Promise<void>;
     subscribeRelay(cb: (status: JamRelayStatus) => void): Promise<void>;
     /** Crea una sala (local o por internet) y queda como admin. Lanza `Error` con un mensaje listo para mostrar. */
     create(o: { kind: 'local' | 'internet'; name: string }): Promise<JamView>;
@@ -164,7 +166,7 @@ export interface SpotapleApi {
     /** Recibe cada cambio de la vista. Un solo oyente: suscribirse otra vez reemplaza al anterior. */
     subscribe(cb: (view: JamView) => void): Promise<void>;
   };
-  platform: 'win32' | 'darwin' | 'linux';
+  platform: 'win32' | 'darwin' | 'linux' | 'android';
 }
 
 /**

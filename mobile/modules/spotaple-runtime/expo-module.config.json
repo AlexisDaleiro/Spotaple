@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["com.alexis.spotaple.runtime.SpotapleModule"]
+  }
+}

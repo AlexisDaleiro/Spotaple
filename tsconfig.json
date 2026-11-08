@@ -19,5 +19,5 @@
       "@/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src", "tests", "electron.vite.config.ts"]
+  "include": ["src", "tests", "electron.vite.config.ts", "mobile/runtime.ts", "mobile/renderer.ts", "mobile/renderer-platform.ts"]
 }

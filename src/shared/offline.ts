@@ -22,7 +22,7 @@ export interface OfflineState {
   bytes: number;
 }
 
-export type ExportResult = { saved: false } | { saved: true; name: string };
+export type ExportResult = { saved: false } | { saved: true; name: string; transfer?: string };
 
 const MAX_NAME = 150;
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;

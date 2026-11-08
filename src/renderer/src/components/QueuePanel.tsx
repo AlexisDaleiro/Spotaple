@@ -1,4 +1,4 @@
-import { GripVertical, ListMusic, X } from 'lucide-react';
+import { Ellipsis, GripVertical, ListMusic, X } from 'lucide-react';
 import { Fragment, type KeyboardEvent } from 'react';
 import type { JamItem, JamView } from '@shared/jam/types';
 import { api } from '../api';
@@ -72,6 +72,7 @@ function QueueRow({
         <span className="qrow__sub">{artistsText(t.artists)}</span>
       </button>
       <span className="qrow__dur">{rowDuration(t.durationSec)}</span>
+      {api.platform === 'android' && <IconButton size="sm" icon={<Ellipsis size={17} />} label={`Opciones de «${t.title}»`} onClick={(e) => openTrackMenu(e, t, { extra })} />}
       {!current && <IconButton size="sm" tabIndex={-1} className="qrow__remove" icon={<X size={15} />} label={`Quitar «${t.title}» de la cola`} onClick={() => player().removeFromQueue(item.uid)} />}
     </li>
   );
@@ -141,6 +142,8 @@ function JamQueueRow({ item, view, reorder, current }: { item: JamItem; view: Ja
   const who = view.state?.members.find((m) => m.id === item.addedBy)?.name ?? 'alguien';
   const canRemove = !current && (admin || item.addedBy === view.selfId);
   const remove = () => sendJam({ t: 'queue.remove', itemId: item.itemId });
+  const index = view.state?.queue.findIndex((queued) => queued.itemId === item.itemId) ?? -1;
+  const move = (toIndex: number) => sendJam({ t: 'queue.move', itemId: item.itemId, toIndex });
   const extra: MenuItem[] = current
     ? []
     : [
@@ -148,6 +151,8 @@ function JamQueueRow({ item, view, reorder, current }: { item: JamItem; view: Ja
           ? [
               { label: 'Reproducir ahora', onSelect: () => sendJam({ t: 'queue.playNow', itemId: item.itemId }) },
               { label: 'Reproducir a continuación', onSelect: () => sendJam({ t: 'queue.playNext', itemId: item.itemId }) },
+              { label: 'Mover arriba', disabled: index <= 0, onSelect: () => move(index - 1) },
+              { label: 'Mover abajo', disabled: index < 0 || index >= (view.state?.queue.length ?? 0) - 1, onSelect: () => move(index + 1) },
             ]
           : []),
         ...(canRemove ? [{ label: 'Quitar de la cola', danger: true, onSelect: remove }] : []),
@@ -181,6 +186,7 @@ function JamQueueRow({ item, view, reorder, current }: { item: JamItem; view: Ja
         </span>
       </div>
       <span className="qrow__dur">{rowDuration(t.durationSec)}</span>
+      {api.platform === 'android' && <IconButton size="sm" icon={<Ellipsis size={17} />} label={`Opciones de «${t.title}»`} onClick={(e) => openTrackMenu(e, t, { extra })} />}
       {canRemove && <IconButton size="sm" tabIndex={-1} className="qrow__remove" icon={<X size={15} />} label={`Quitar «${t.title}» de la cola`} onClick={remove} />}
     </li>
   );

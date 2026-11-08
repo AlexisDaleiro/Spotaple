@@ -68,6 +68,7 @@ try {
 }
 
 export const playerStore = createPlayer({
+  urlFor: api?.platform === 'android' ? (id) => new URL(`./audio/${encodeURIComponent(id)}`, location.href).href : undefined,
   audio,
   api: {
     prepare: (id) => api.music.prepare(id),

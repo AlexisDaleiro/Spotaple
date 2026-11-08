@@ -47,7 +47,8 @@ export function JamPanel({ view }: { view: JamView }) {
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(view.invite ?? '');
+      if (window.SpotapleAndroid) window.SpotapleAndroid.copy(view.invite ?? '');
+      else await navigator.clipboard.writeText(view.invite ?? '');
       toast('Invitación copiada', 'success');
     } catch {
       toast('No se pudo copiar. Seleccioná el texto y copialo con Ctrl+C.', 'error');
