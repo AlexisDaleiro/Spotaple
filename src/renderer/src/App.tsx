@@ -13,6 +13,7 @@ import { Toasts } from './components/Toasts';
 import { TopBar } from './components/TopBar';
 import { AlbumPage } from './pages/AlbumPage';
 import { ArtistPage } from './pages/ArtistPage';
+import { GeneratedPage } from './pages/GeneratedPage';
 import { HomePage } from './pages/Home';
 import { JamPage } from './pages/Jam';
 import { LibraryPage } from './pages/Library';
@@ -44,6 +45,8 @@ function Page({ route }: { route: Route }) {
       return <SettingsPage />;
     case 'remotePlaylist':
       return <RemotePlaylistPage id={route.id} author={route.author} />;
+    case 'generated':
+      return <GeneratedPage kind={route.kind} slot={route.slot} />;
   }
 }
 

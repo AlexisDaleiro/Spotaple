@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { GeneratedKind } from '@shared/discover';
 
 export type Route =
   | { page: 'home' }
@@ -10,7 +11,8 @@ export type Route =
   | { page: 'artist'; id: string }
   | { page: 'jam' }
   | { page: 'settings' }
-  | { page: 'remotePlaylist'; id: string; author?: string };
+  | { page: 'remotePlaylist'; id: string; author?: string }
+  | { page: 'generated'; kind: GeneratedKind; slot: string };
 
 interface NavState {
   stack: Route[];

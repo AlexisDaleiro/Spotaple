@@ -1,5 +1,6 @@
 import { Play } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
+import type { GeneratedList } from '@shared/discover';
 import type { AlbumSummary, ArtistSummary, PlaylistSummary, RemotePlaylistSummary, Track } from '@shared/types';
 import { artistsText, plural } from '../lib/format';
 import { navigate } from '../stores/nav';
@@ -100,6 +101,20 @@ export function PlaylistCard({ playlist, onPlay, onContextMenu }: { playlist: Pl
       onOpen={() => navigate({ page: 'playlist', id: playlist.id })}
       onPlay={playlist.trackCount ? onPlay : undefined}
       onContextMenu={onContextMenu}
+    />
+  );
+}
+
+/** Lista de «Hecho para vos»: mosaico de las primeras portadas; se abre en su página y se reproduce desde la tarjeta. */
+export function GeneratedCard({ list, onPlay }: { list: GeneratedList; onPlay?: () => void }) {
+  const covers = list.tracks.map((t) => t.thumbnail).filter((x): x is string => !!x).slice(0, 4);
+  return (
+    <MediaCard
+      name={list.title}
+      subtitle={list.subtitle}
+      coverNode={<PlaylistCover covers={covers} name={list.title} />}
+      onOpen={() => navigate({ page: 'generated', kind: list.kind, slot: list.slot })}
+      onPlay={list.tracks.length ? onPlay : undefined}
     />
   );
 }

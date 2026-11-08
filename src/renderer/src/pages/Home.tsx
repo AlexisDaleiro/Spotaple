@@ -1,14 +1,17 @@
 import { Disc3, Play } from 'lucide-react';
+import { useEffect } from 'react';
 import { api } from '../api';
 import { cx } from '../lib/format';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
+import { discoverStore, useDiscover } from '../stores/discover';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
+import { useSettings } from '../stores/settings';
 import { useUi } from '../stores/ui';
 import { playPlaylist } from '../lib/actions';
 import { Cover } from '../components/Cover';
-import { PlaylistCard, Shelf, TrackCard } from '../components/Shelf';
+import { ArtistCard, GeneratedCard, PlaylistCard, Shelf, TrackCard } from '../components/Shelf';
 import { CardsSkeleton, Empty } from '../components/States';
 import { TrackList, TrackRow } from '../components/TrackRow';
 import { Suggestions } from './Search';
@@ -23,6 +26,16 @@ export function HomePage() {
   const playlists = useLibrary((s) => s.playlists);
   const recent = useResource(() => api.library.recentPlays(24), [version]);
   const favs = useResource(() => api.library.favorites(), [version]);
+  const forYouOn = useSettings((s) => s.settings.forYou);
+  const discover = useDiscover((s) => s.state);
+
+  // «Hecho para vos»: se ve enseguida lo guardado y se pide a main que genere lo que falte (una corrida a la vez; sin
+  // internet se siguen viendo las listas anteriores y se reintenta la próxima vez que se abra Inicio).
+  useEffect(() => {
+    if (!forYouOn) return;
+    void discoverStore.getState().load().then(() => discoverStore.getState().refresh());
+  }, [forYouOn]);
+  const showForYou = forYouOn && discover.enabled && discover.ready;
 
   const recents = recent.data ?? [];
   const favorites = favs.data ?? [];
@@ -54,6 +67,23 @@ export function HomePage() {
   return (
     <div className={cx('page page--home', loading && 'is-stale')}>
       <h1 className="h1">{greeting()}</h1>
+
+      {/* Nunca se dibuja una sección vacía ni un esqueleto: sin datos suficientes, «Hecho para vos» simplemente no aparece. */}
+      {showForYou && discover.lists.length > 0 && (
+        <Shelf title="Hecho para vos" id="sec-foryou">
+          {discover.lists.map((l) => (
+            <GeneratedCard key={`${l.kind}-${l.slot}`} list={l} onPlay={() => player().playTracks(l.tracks, 0)} />
+          ))}
+        </Shelf>
+      )}
+
+      {showForYou && discover.artists.length > 0 && (
+        <Shelf title="Artistas que podrías escuchar" id="sec-artists">
+          {discover.artists.map((a) => (
+            <ArtistCard key={a.id} artist={a} />
+          ))}
+        </Shelf>
+      )}
 
       {quick.length > 0 && (
         <section aria-labelledby="sec-continue" className="section">
