@@ -2,7 +2,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { parseFormat, type AudioFormat } from '../../shared/offline';
 import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings';
 import type { AffinityInputs } from '../music/radio';
+import type { TasteInputs } from '../music/taste';
 import type {
+  ArtistSummary,
   PersistedPlayerState,
   PlaylistDetail,
   PlaylistSummary,
@@ -70,7 +72,37 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  // Listas de «Hecho para vos» por período. Para kind = 'artists' la columna `tracks` guarda artistas, no canciones.
+  `
+  CREATE TABLE generated_lists (
+    kind TEXT NOT NULL,
+    slot TEXT NOT NULL,
+    period TEXT NOT NULL,
+    title TEXT NOT NULL,
+    subtitle TEXT NOT NULL,
+    tracks TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, slot, period)
+  );
+  `,
 ];
+
+/** Una lista generada tal como se guarda: canciones, o artistas si `kind` es `'artists'`. */
+export interface StoredList {
+  kind: string;
+  slot: string;
+  period: string;
+  title: string;
+  subtitle: string;
+  items: Track[] | ArtistSummary[];
+  createdAt: number;
+}
+
+const TASTE_RESET_KEY = 'taste_reset_at';
+const RADAR_SEEN_KEY = 'radar_seen';
+const RADAR_SEEN_MAX = 2000;
+/** Períodos que se conservan por lista (el vigente y el anterior, que se muestra mientras se regenera). */
+const KEEP_PERIODS = 2;
 
 type Row = Record<string, unknown>;
 
@@ -295,17 +327,114 @@ export function createStore(path: string) {
   function recentPlayIds(limit: number): string[] {
     return (db.prepare('SELECT track_id FROM plays GROUP BY track_id ORDER BY MAX(id) DESC LIMIT ?').all(limit) as Row[]).map((r) => String(r.track_id));
   }
-  /** Lo que usa la radio para medir afinidad por artista: reproducciones NO automáticas (las últimas `limit`) y favoritas. */
-  function affinityInputs(limit: number): AffinityInputs {
+  /** Marca de «Reiniciar mis gustos» (0 si nunca se reinició). */
+  function tasteResetAt(): number {
+    const v = getSetting<unknown>(TASTE_RESET_KEY);
+    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  }
+  /** Ignora lo anterior a `now` (reproducciones y favoritas agregadas). No borra nada. */
+  function resetTaste(now: number) {
+    setSetting(TASTE_RESET_KEY, now);
+  }
+  /**
+   * Lo que alimenta el perfil de gustos: reproducciones NO automáticas (las últimas `limit`) y favoritas, posteriores a
+   * la marca de «Reiniciar mis gustos».
+   */
+  function tasteInputs(limit: number): TasteInputs {
+    const since = tasteResetAt();
     const artists = (r: Row) => JSON.parse(String(r.artists)) as Track['artists'];
     const plays = db
-      .prepare('SELECT t.artists AS artists, p.played_at AS played_at FROM plays p JOIN tracks t ON t.id = p.track_id WHERE p.auto = 0 ORDER BY p.id DESC LIMIT ?')
-      .all(limit) as Row[];
-    const favorites = db.prepare('SELECT t.artists AS artists FROM favorites f JOIN tracks t ON t.id = f.track_id').all() as Row[];
+      .prepare(
+        `SELECT p.track_id AS track_id, t.artists AS artists, p.played_at AS played_at FROM plays p JOIN tracks t ON t.id = p.track_id
+         WHERE p.auto = 0 AND p.played_at > ? ORDER BY p.id DESC LIMIT ?`,
+      )
+      .all(since, limit) as Row[];
+    const favorites = db
+      .prepare('SELECT f.track_id AS track_id, t.artists AS artists, f.added_at AS added_at FROM favorites f JOIN tracks t ON t.id = f.track_id WHERE f.added_at > ?')
+      .all(since) as Row[];
     return {
-      plays: plays.map((r) => ({ artists: artists(r), playedAt: Number(r.played_at) })),
-      favorites: favorites.map((r) => ({ artists: artists(r) })),
+      plays: plays.map((r) => ({ trackId: String(r.track_id), artists: artists(r), playedAt: Number(r.played_at) })),
+      favorites: favorites.map((r) => ({ trackId: String(r.track_id), artists: artists(r), addedAt: Number(r.added_at) })),
     };
+  }
+  /** Lo que usa la radio para medir afinidad por artista: lo mismo que el perfil de gustos, sin ids de canción. */
+  function affinityInputs(limit: number): AffinityInputs {
+    const input = tasteInputs(limit);
+    return {
+      plays: input.plays.map((p) => ({ artists: p.artists, playedAt: p.playedAt })),
+      favorites: input.favorites.map((f) => ({ artists: f.artists })),
+    };
+  }
+  /** Ids distintos de todo lo que alguna vez sonó (automáticas incluidas): lo que el semanal no vuelve a ofrecer. */
+  function playedTrackIds(): string[] {
+    return (db.prepare('SELECT DISTINCT track_id FROM plays').all() as Row[]).map((r) => String(r.track_id));
+  }
+  /** Canciones distintas que escuchaste (no automáticas) o marcaste favoritas, posteriores al reinicio, las más recientes primero. */
+  function knownTracks(limit: number): Track[] {
+    const since = tasteResetAt();
+    return (
+      db
+        .prepare(
+          `SELECT t.*, MAX(x.at) AS at FROM (
+             SELECT track_id, played_at AS at FROM plays WHERE auto = 0 AND played_at > ?
+             UNION ALL
+             SELECT track_id, added_at AS at FROM favorites WHERE added_at > ?
+           ) x JOIN tracks t ON t.id = x.track_id GROUP BY t.id ORDER BY at DESC LIMIT ?`,
+        )
+        .all(since, since, limit) as Row[]
+    ).map(rowToTrack);
+  }
+
+  // ---- listas generadas de «Hecho para vos»
+  /** La fila del período más nuevo de cada lista (kind + slot). */
+  function generatedLists(): StoredList[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM generated_lists g
+         WHERE g.period = (SELECT MAX(period) FROM generated_lists WHERE kind = g.kind AND slot = g.slot)
+         ORDER BY g.kind, g.slot`,
+      )
+      .all() as Row[];
+    return rows.flatMap((r) => {
+      try {
+        const items = JSON.parse(String(r.tracks)) as StoredList['items'];
+        if (!Array.isArray(items)) return [];
+        return [{ kind: String(r.kind), slot: String(r.slot), period: String(r.period), title: String(r.title), subtitle: String(r.subtitle), items, createdAt: Number(r.created_at) }];
+      } catch {
+        return [];
+      }
+    });
+  }
+  /** Reemplaza la fila del mismo kind + slot + period y conserva solo los 2 períodos más nuevos de esa lista. */
+  function saveGenerated(list: StoredList) {
+    tx(() => {
+      db.prepare(
+        `INSERT INTO generated_lists(kind, slot, period, title, subtitle, tracks, created_at) VALUES(?,?,?,?,?,?,?)
+         ON CONFLICT(kind, slot, period) DO UPDATE SET title=excluded.title, subtitle=excluded.subtitle, tracks=excluded.tracks, created_at=excluded.created_at`,
+      ).run(list.kind, list.slot, list.period, list.title, list.subtitle, JSON.stringify(list.items), list.createdAt);
+      db.prepare(
+        `DELETE FROM generated_lists WHERE kind = ? AND slot = ?
+         AND period NOT IN (SELECT period FROM generated_lists WHERE kind = ? AND slot = ? ORDER BY period DESC LIMIT ?)`,
+      ).run(list.kind, list.slot, list.kind, list.slot, KEEP_PERIODS);
+    });
+  }
+  function clearGenerated() {
+    db.exec('DELETE FROM generated_lists');
+  }
+
+  // ---- lanzamientos que el Release Radar ya mostró
+  function radarSeen(): string[] {
+    const v = getSetting<unknown>(RADAR_SEEN_KEY);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  }
+  /** Sin repetidos (un id repetido cuenta como el más reciente) y con tope: conserva los últimos. */
+  function saveRadarSeen(ids: string[]) {
+    const latest = new Map<string, true>();
+    for (const id of ids) {
+      latest.delete(id);
+      latest.set(id, true);
+    }
+    setSetting(RADAR_SEEN_KEY, [...latest.keys()].slice(-RADAR_SEEN_MAX));
   }
   function selectionCount(): number {
     return Number((db.prepare('SELECT COUNT(*) AS n FROM selections').get() as Row).n);
@@ -418,6 +547,15 @@ export function createStore(path: string) {
     removeDownload,
     clearDownloads,
     trackDuration,
+    tasteInputs,
+    resetTaste,
+    playedTrackIds,
+    knownTracks,
+    generatedLists,
+    saveGenerated,
+    clearGenerated,
+    radarSeen,
+    saveRadarSeen,
     close: () => db.close(),
   };
 }

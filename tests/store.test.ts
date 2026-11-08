@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createStore, type Store } from '../src/main/db/store';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createStore, type Store, type StoredList } from '../src/main/db/store';
 import { sanitizePlayerState, sanitizeRadioRequest, sanitizeTrack } from '../src/main/validate';
 import { DEFAULT_SETTINGS } from '../src/shared/settings';
 import type { Track } from '../src/shared/types';
@@ -175,7 +175,7 @@ describe('historial para la radio', () => {
       first.recordPlay(t(1));
       first.close();
       const raw = new DatabaseSync(file);
-      raw.exec('ALTER TABLE plays DROP COLUMN auto; DROP TABLE downloads; PRAGMA user_version = 1;');
+      raw.exec('ALTER TABLE plays DROP COLUMN auto; DROP TABLE generated_lists; DROP TABLE downloads; PRAGMA user_version = 1;');
       raw.close();
       const again = createStore(file);
       expect(again.affinityInputs(10).plays).toHaveLength(1);
@@ -224,7 +224,7 @@ describe('descargas offline', () => {
       first.toggleFavorite(t(1));
       first.close();
       const raw = new DatabaseSync(file);
-      raw.exec('DROP TABLE downloads; PRAGMA user_version = 2;');
+      raw.exec('DROP TABLE generated_lists; DROP TABLE downloads; PRAGMA user_version = 2;');
       raw.close();
       const again = createStore(file);
       expect(again.favoriteIds()).toEqual([t(1).id]);
@@ -236,6 +236,184 @@ describe('descargas offline', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('gustos para «Hecho para vos»', () => {
+  const ids = (list: { trackId: string }[]) => list.map((x) => x.trackId).sort();
+
+  it('tasteInputs trae reproducciones no automáticas y favoritas con su canción, artistas y fecha', () => {
+    store.recordPlay(t(1));
+    store.recordPlay(t(2), true);
+    store.toggleFavorite(t(3));
+    const input = store.tasteInputs(10);
+    expect(input.plays).toHaveLength(1);
+    expect(input.plays[0]).toMatchObject({ trackId: t(1).id, artists: t(1).artists });
+    expect(typeof input.plays[0]!.playedAt).toBe('number');
+    expect(input.favorites).toHaveLength(1);
+    expect(input.favorites[0]).toMatchObject({ trackId: t(3).id, artists: t(3).artists });
+    expect(typeof input.favorites[0]!.addedAt).toBe('number');
+  });
+
+  it('tasteInputs respeta el límite de reproducciones (las más recientes)', () => {
+    for (let n = 1; n <= 5; n++) store.recordPlay(t(n));
+    expect(ids(store.tasteInputs(2).plays)).toEqual([t(4).id, t(5).id]);
+  });
+
+  it('«Reiniciar mis gustos» ignora lo anterior a la marca, también para la radio, y no borra nada', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(1000);
+      store.recordPlay(t(1));
+      store.toggleFavorite(t(2));
+      vi.setSystemTime(2000);
+      store.resetTaste(2000);
+      vi.setSystemTime(3000);
+      store.recordPlay(t(3));
+      store.toggleFavorite(t(4));
+
+      const input = store.tasteInputs(10);
+      expect(ids(input.plays)).toEqual([t(3).id]);
+      expect(ids(input.favorites)).toEqual([t(4).id]);
+      const radio = store.affinityInputs(10);
+      expect(radio.plays).toHaveLength(1);
+      expect(radio.favorites).toHaveLength(1);
+      expect(store.knownTracks(10).map((x) => x.id).sort()).toEqual([t(3).id, t(4).id]);
+      // El historial y las favoritas siguen intactos.
+      expect(store.playedTrackIds().sort()).toEqual([t(1).id, t(3).id]);
+      expect(store.favoriteIds().sort()).toEqual([t(2).id, t(4).id]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('playedTrackIds incluye también las reproducciones automáticas', () => {
+    store.recordPlay(t(1));
+    store.recordPlay(t(2), true);
+    expect(store.playedTrackIds().sort()).toEqual([t(1).id, t(2).id]);
+  });
+
+  it('knownTracks no repite canciones, junta reproducidas y favoritas, y respeta el límite (las más recientes)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(1000);
+      store.recordPlay(t(1));
+      vi.setSystemTime(2000);
+      store.recordPlay(t(1));
+      store.toggleFavorite(t(1));
+      vi.setSystemTime(3000);
+      store.toggleFavorite(t(2));
+      vi.setSystemTime(4000);
+      store.recordPlay(t(3));
+      expect(store.knownTracks(10).map((x) => x.id)).toEqual([t(3).id, t(2).id, t(1).id]);
+      expect(store.knownTracks(2).map((x) => x.id)).toEqual([t(3).id, t(2).id]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('listas generadas', () => {
+  const list = (period: string, over: Partial<StoredList> = {}): StoredList => ({
+    kind: 'weekly',
+    slot: '1',
+    period,
+    title: 'Descubrimiento semanal',
+    subtitle: 'Para vos',
+    items: [t(1), t(2)],
+    createdAt: 5,
+    ...over,
+  });
+
+  it('guarda y devuelve canciones y artistas', () => {
+    const artists = [{ id: 'UC1abcdef', name: 'Uno', subtitle: '1M', thumbnail: 'https://lh3.googleusercontent.com/a' }];
+    store.saveGenerated(list('2026-11-09'));
+    store.saveGenerated(list('2026-11-09', { kind: 'artists', title: 'Artistas', items: artists }));
+    const got = store.generatedLists();
+    expect(got).toHaveLength(2);
+    expect(got.find((x) => x.kind === 'weekly')).toEqual(list('2026-11-09'));
+    expect(got.find((x) => x.kind === 'artists')!.items).toEqual(artists);
+  });
+
+  it('devuelve el período más nuevo de cada lista y reemplaza el del mismo período', () => {
+    store.saveGenerated(list('2026-11-02', { subtitle: 'vieja' }));
+    store.saveGenerated(list('2026-11-09', { subtitle: 'nueva' }));
+    expect(store.generatedLists().map((x) => [x.period, x.subtitle])).toEqual([['2026-11-09', 'nueva']]);
+    store.saveGenerated(list('2026-11-09', { subtitle: 'otra vez' }));
+    expect(store.generatedLists().map((x) => x.subtitle)).toEqual(['otra vez']);
+  });
+
+  it('conserva solo los 2 períodos más nuevos de cada lista y los mixes no se pisan entre sí', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spotaple-gen-'));
+    const file = join(dir, 'gen.db');
+    try {
+      const s = createStore(file);
+      for (const p of ['2026-11-02', '2026-11-09', '2026-11-16']) s.saveGenerated(list(p));
+      s.saveGenerated(list('2026-11-09', { kind: 'mix', slot: '1' }));
+      s.saveGenerated(list('2026-11-09', { kind: 'mix', slot: '2' }));
+      expect(s.generatedLists().filter((x) => x.kind === 'mix')).toHaveLength(2);
+      s.close();
+      const raw = new DatabaseSync(file);
+      const periods = (raw.prepare("SELECT period FROM generated_lists WHERE kind = 'weekly' AND slot = '1' ORDER BY period").all() as { period: string }[]).map((r) => r.period);
+      raw.close();
+      expect(periods).toEqual(['2026-11-09', '2026-11-16']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('clearGenerated vacía todo', () => {
+    store.saveGenerated(list('2026-11-09'));
+    store.clearGenerated();
+    expect(store.generatedLists()).toEqual([]);
+  });
+
+  it('una base en la migración 3 sube a la 4 sin perder favoritas, y las listas sobreviven al reabrir', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spotaple-gen4-'));
+    const file = join(dir, 'old.db');
+    try {
+      const first = createStore(file);
+      first.toggleFavorite(t(1));
+      first.close();
+      const raw = new DatabaseSync(file);
+      raw.exec('DROP TABLE generated_lists; PRAGMA user_version = 3;');
+      raw.close();
+      const again = createStore(file);
+      expect(again.favoriteIds()).toEqual([t(1).id]);
+      again.saveGenerated(list('2026-11-09'));
+      again.close();
+      const third = createStore(file);
+      expect(third.generatedLists()).toEqual([list('2026-11-09')]);
+      third.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('lanzamientos vistos del Release Radar', () => {
+  it('guarda y lee los ids', () => {
+    expect(store.radarSeen()).toEqual([]);
+    store.saveRadarSeen(['MPREb_a', 'MPREb_b']);
+    expect(store.radarSeen()).toEqual(['MPREb_a', 'MPREb_b']);
+  });
+
+  it('sin repetidos y con tope de 2000: conserva los últimos', () => {
+    const many = Array.from({ length: 2500 }, (_, i) => `MPREb_${i}`);
+    store.saveRadarSeen([...many, 'MPREb_0']);
+    const seen = store.radarSeen();
+    expect(seen).toHaveLength(2000);
+    expect(new Set(seen).size).toBe(2000);
+    expect(seen.at(-1)).toBe('MPREb_0'); // el que se repitió quedó como el más reciente
+    expect(seen).not.toContain('MPREb_1');
+    expect(seen).toContain('MPREb_2499');
+  });
+
+  it('un valor guardado que no es una lista de textos se lee como vacío', () => {
+    store.setSetting('radar_seen', { raro: true });
+    expect(store.radarSeen()).toEqual([]);
+    store.setSetting('radar_seen', ['MPREb_a', 5, null]);
+    expect(store.radarSeen()).toEqual(['MPREb_a']);
   });
 });
 
