@@ -51,7 +51,8 @@ let session = null;
 
 /** Abre la app con un directorio de datos; devuelve app, page y los totales de audio que vio main. */
 async function launch(dir = userData) {
-  const app = await electron.launch({ executablePath: electronPath, args: ['.'], env: { ...process.env, SPOTAPLE_USER_DATA: dir, SPOTAPLE_DEBUG: '1' } });
+  const packaged = process.env.SPOTAPLE_EXE;
+  const app = await electron.launch({ executablePath: packaged || electronPath, args: packaged ? [] : ['.'], env: { ...process.env, SPOTAPLE_USER_DATA: dir, SPOTAPLE_DEBUG: '1' } });
   const audioTotals = [];
   app.process().stdout?.on('data', (chunk) => {
     for (const line of String(chunk).split('\n')) {

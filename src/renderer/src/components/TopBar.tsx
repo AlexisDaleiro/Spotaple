@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { canGoBack, canGoForward, navigate, useNav } from '../stores/nav';
 import { useUi } from '../stores/ui';
 import { IconButton } from './IconButton';
+import { api } from '../api';
 
 const DEBOUNCE_MS = 350;
 
@@ -103,7 +104,7 @@ export function TopBar() {
           </button>
         )}
         <kbd className="search__kbd" aria-hidden="true">
-          Ctrl K
+          {api.platform === 'darwin' ? '⌘ K' : 'Ctrl K'}
         </kbd>
       </form>
     </header>

@@ -32,6 +32,21 @@ La primera vez que se abre, la base de datos se crea sola en `%APPDATA%\Spotaple
 
 Para generar esos mismos archivos localmente, usá `npm run dist:installer`. Los tres deben salir de la misma compilación. Si ya existe un borrador para esa versión, el flujo lo conserva. Revisalo en **Releases** antes de preparar otra versión.
 
+### Probar Spotaple en macOS
+
+En una Mac con Node.js 24, ejecutá `npm ci` y `npm run dist:mac:preview` para generar un DMG en `release/` para la arquitectura de esa Mac. En GitHub, **Actions → Prueba de macOS → Run workflow** genera DMG para Apple Silicon e Intel y los deja en **Artifacts** de la ejecución. Son compilaciones de prueba con firma ad hoc. La notarización y las actualizaciones automáticas para Mac quedan pendientes.
+
+### Probar Spotaple en Android
+
+Con Node.js 24 y el teléfono en la misma red que la computadora, ejecutá desde la raíz:
+
+```bash
+npm --prefix mobile ci
+npm --prefix mobile start
+```
+
+Escaneá el QR desde [Expo Go para Android](https://expo.dev/go?sdkVersion=57&platform=android&device=true). En Spotaple, tocá **Elegir audio**, seleccioná un archivo del teléfono y tocá **Reproducir**. Esta primera prueba se centra en archivos locales. El catálogo y Jam quedan pendientes.
+
 ## Qué incluye
 
 - **Inicio** con lo que escuchaste, tus favoritas y tus playlists; estado vacío con sugerencias de búsqueda.

@@ -328,7 +328,9 @@ function UpdatesRow() {
   const status = state?.status;
   const android = api.platform === 'android';
   const messages = {
-    unsupported: 'Para recibir actualizaciones, usá la versión instalada de Spotaple para Windows.',
+    unsupported: api.platform === 'darwin'
+      ? 'Esta compilación de prueba se actualiza instalando un nuevo archivo DMG.'
+      : 'Para recibir actualizaciones, usá la versión instalada de Spotaple para Windows.',
     idle: 'Buscá una versión nueva en GitHub Releases.',
     checking: 'Buscando actualizaciones…',
     current: 'Ya tenés la última versión.',
