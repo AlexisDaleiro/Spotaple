@@ -20,7 +20,8 @@
   display: flex;
   align-items: center;
   gap: var(--s-5);
-  padding: 0 calc(100vw - env(titlebar-area-width, 100vw)) 0 var(--s-6);
+  padding-inline-start: calc(env(titlebar-area-x, 0px) + var(--s-6));
+  padding-inline-end: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
   -webkit-app-region: drag;
   min-width: 0;
 }

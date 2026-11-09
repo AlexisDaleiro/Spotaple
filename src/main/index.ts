@@ -29,6 +29,7 @@ protocol.registerSchemesAsPrivileged([
 
 const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
 const isDev = Boolean(rendererUrl);
+const isMac = process.platform === 'darwin';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -44,9 +45,8 @@ function createWindow(settings: AppSettings) {
     backgroundColor: chrome.bg,
     title: 'Spotaple',
     autoHideMenuBar: true,
-    titleBarStyle: 'hidden',
-    // Misma altura que la barra superior de la interfaz (--title-h: 48px) para que los botones alineen.
-    titleBarOverlay: { color: chrome.bg, symbolColor: chrome.symbol, height: TITLE_BAR_HEIGHT },
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: isMac ? true : { color: chrome.bg, symbolColor: chrome.symbol, height: TITLE_BAR_HEIGHT },
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -85,7 +85,11 @@ async function pickSavePath(suggestedName: string, format: AudioFormat): Promise
 }
 
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
+  Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate([
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]) : null);
   const userData = app.getPath('userData');
   mkdirSync(userData, { recursive: true });
 
@@ -190,5 +194,5 @@ app.on('second-instance', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (!isMac) app.quit();
 });

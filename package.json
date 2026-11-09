@@ -27,6 +27,7 @@
     "pack": "npm run prepare:relay && electron-vite build && electron-builder --dir",
     "dist": "npm run prepare:relay && electron-vite build && electron-builder --win",
     "dist:installer": "npm run prepare:relay && electron-vite build && electron-builder --win nsis --x64 --publish never",
+    "dist:mac:preview": "npm run prepare:relay && electron-vite build && electron-builder --mac dmg --publish never -c.mac.identity=-",
     "prepare:relay": "node scripts/prepare-relay.mjs",
     "check:jam": "node scripts/jam-probe.mjs",
     "check:relay": "node scripts/check-relay.mjs",
@@ -60,6 +61,10 @@
       "target": [
         "portable"
       ]
+    },
+    "mac": {
+      "artifactName": "Spotaple-${version}-mac-${arch}.dmg",
+      "category": "public.app-category.music"
     },
     "nsis": {
       "artifactName": "Spotaple-Setup-${version}.${ext}",

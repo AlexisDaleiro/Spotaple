@@ -17,6 +17,6 @@ export function prepareChrome(settings: AppSettings): { bg: string; symbol: stri
 export function applyChrome(win: BrowserWindow, settings: AppSettings): void {
   const { bg, symbol } = prepareChrome(settings);
   win.setBackgroundColor(bg);
-  // La superposición de botones nativos solo existe en Windows y Linux.
+  // Electron permite recolorear la superposición en Windows y Linux.
   if (process.platform !== 'darwin') win.setTitleBarOverlay({ color: bg, symbolColor: symbol, height: TITLE_BAR_HEIGHT });
 }
