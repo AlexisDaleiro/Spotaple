@@ -32,7 +32,7 @@ function member(code: string, memberId: string, name: string, create: boolean) {
   const states: JamState[] = [];
   const statuses: [JamConnStatus, JamErrorCode | undefined][] = [];
   const client = new JamClient(
-    { url: `ws://127.0.0.1:${host.port}/${code}`, memberId, name, create },
+    { url: `ws://127.0.0.1:${host.port}/${code}`, memberId, key: `clave-de-prueba-${memberId}`, name, create },
     { onState: (s) => states.push(s), onStatus: (s, r) => statuses.push([s, r]) },
   );
   clients.push(client);

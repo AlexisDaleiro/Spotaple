@@ -34,6 +34,12 @@ const UNCREATED_TTL_MS = 60_000;
 export class RoomHost {
   private state: JamState | null = null;
   private readonly peers = new Set<Peer>();
+  /**
+   * Clave de cada miembro, que nunca se difunde: el `memberId` sí es público (viaja en el estado), así que sin esto
+   * cualquiera podría presentarse con el de otro, tomar su lugar (el del admin incluido) y cortarle la conexión.
+   * ponytail: un miembro que llegó sin clave (cliente viejo) sigue sin protección; exigirla para todos requiere subir PROTOCOL.
+   */
+  private readonly keys = new Map<string, string>();
   private readonly now: () => number;
   private readonly bornAt: number;
   private lastActivity: number;
@@ -101,12 +107,17 @@ export class RoomHost {
     if (msg.create) {
       if (this.state) return this.reject(peer, 'code_taken');
       peer.memberId = msg.memberId;
+      if (msg.key) this.keys.set(msg.memberId, msg.key);
       return this.commit(createRoom({ code: this.o.code, adminId: msg.memberId, adminName: msg.name, transferAdmin: this.o.transferAdmin }, t));
     }
 
     if (!this.state) return this.reject(peer, 'no_room');
+    // Volver con el `memberId` de alguien que ya tiene clave exige esa clave: el id solo no prueba nada.
+    const known = this.keys.get(msg.memberId);
+    if (known !== undefined && known !== msg.key) return this.reject(peer, 'forbidden');
     const r = reduce(this.state, { type: 'join', memberId: msg.memberId, name: msg.name }, t);
     if (r.error) return this.reject(peer, r.error);
+    if (msg.key && !this.state.members.some((m) => m.id === msg.memberId)) this.keys.set(msg.memberId, msg.key);
     // La misma persona reconectando antes de que caiga su socket viejo: la conexión nueva reemplaza a la vieja.
     for (const other of [...this.peers]) if (other !== peer && other.memberId === msg.memberId) this.kill(other, false);
     peer.memberId = msg.memberId;
@@ -129,6 +140,8 @@ export class RoomHost {
   /** Guarda el estado nuevo y lo envía completo a todos los que ya saludaron. Una sala cerrada corta todas las conexiones. */
   private commit(next: JamState): void {
     this.state = next;
+    // Quien ya no es miembro (salió o venció su gracia) deja libre su id: puede volver con otra clave.
+    for (const id of this.keys.keys()) if (!next.members.some((m) => m.id === id)) this.keys.delete(id);
     const data = encode({ t: 'state', state: { ...next, serverTime: this.now() } });
     for (const p of [...this.peers]) {
       if (!p.memberId) continue;

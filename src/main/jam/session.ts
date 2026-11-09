@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { jamErrorMessage } from '../../shared/jam/errors';
 import { formatInvite, newRoomCode, parseInvite } from '../../shared/jam/invite';
 import { parseClientMsg, sanitizeName } from '../../shared/jam/protocol';
@@ -51,6 +51,15 @@ export function createJamSession(d: JamSessionDeps) {
     }
     return id;
   };
+  /** Clave de esta sala: derivada del secreto guardado, así vuelve a salir igual al reabrir la app y no sirve en otra sala. */
+  const memberKey = (code: string): string => {
+    let secret = d.settings.get<string>('jam_member_secret');
+    if (!secret) {
+      secret = randomBytes(32).toString('base64url');
+      d.settings.set('jam_member_secret', secret);
+    }
+    return createHmac('sha256', secret).update(code).digest('base64url');
+  };
   const idle = (): JamView => ({ status: 'idle', kind: null, invite: null, selfId: memberId(), name: d.settings.get<string>('jam_name') ?? '', offsetMs: 0, state: null });
   let view: JamView = idle();
 
@@ -72,7 +81,7 @@ export function createJamSession(d: JamSessionDeps) {
     return new Promise<JamView>((resolve, reject) => {
       let settled = false;
       client = new JamClient(
-        { url: o.url, memberId: view.selfId, name: o.name, create: o.create },
+        { url: o.url, memberId: view.selfId, key: memberKey(o.url.slice(o.url.lastIndexOf('/') + 1)), name: o.name, create: o.create },
         {
           onState: (state) => {
             if (mine !== gen) return;
