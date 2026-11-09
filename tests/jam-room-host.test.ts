@@ -154,6 +154,62 @@ describe('conexiones y difusión', () => {
   });
 });
 
+describe('clave de miembro (nadie puede hacerse pasar por otro)', () => {
+  const KEY_ADMIN = 'clave-admin-0123456789';
+  const KEY_MARA = 'clave-mara-0123456789';
+  const room = () => {
+    const host = new RoomHost({ code: 'K7M2P', transferAdmin: true });
+    const admin = new FakeConn();
+    host.connect(admin).receive(hello(ADMIN, 'Ana', { create: true, key: KEY_ADMIN }));
+    return { host, admin };
+  };
+  const join = (host: RoomHost, id: string, key?: string) => {
+    const c = new FakeConn();
+    const s = host.connect(c);
+    s.receive(hello(id, 'X', key ? { key } : {}));
+    return { c, s };
+  };
+
+  it('quien se presenta con el id del admin pero sin su clave no toma el rol', () => {
+    const { host, admin } = room();
+    const intruso = join(host, ADMIN);
+    expect(intruso.c.errors()).toEqual(['forbidden']);
+    expect(intruso.c.closed).toBe(true);
+    expect(admin.closed).toBe(false);
+    expect(admin.last().adminId).toBe(ADMIN);
+  });
+
+  it('tampoco con una clave equivocada', () => {
+    const { host, admin } = room();
+    const intruso = join(host, ADMIN, 'clave-ajena-0123456789');
+    expect(intruso.c.errors()).toEqual(['forbidden']);
+    expect(admin.closed).toBe(false);
+  });
+
+  it('con su clave el miembro vuelve y la conexión nueva reemplaza a la vieja', () => {
+    const { host, admin } = room();
+    const vuelta = join(host, ADMIN, KEY_ADMIN);
+    expect(vuelta.c.errors()).toEqual([]);
+    expect(admin.closed).toBe(true);
+    expect(vuelta.c.last().adminId).toBe(ADMIN);
+  });
+
+  it('tras salir de la sala, el mismo id puede volver con otra clave', () => {
+    const { host } = room();
+    join(host, MARA, KEY_MARA).s.receive(JSON.stringify({ t: 'leave' }));
+    const otra = join(host, MARA, 'otra-clave-0123456789');
+    expect(otra.c.errors()).toEqual([]);
+    expect(otra.c.last().members.map((m) => m.id)).toContain(MARA);
+  });
+
+  it('la clave nunca viaja en el estado que se difunde', () => {
+    const { host, admin } = room();
+    join(host, MARA, KEY_MARA);
+    expect(JSON.stringify(admin.sent)).not.toContain(KEY_ADMIN);
+    expect(JSON.stringify(admin.sent)).not.toContain(KEY_MARA);
+  });
+});
+
 describe('límites', () => {
   it('más de 30 mensajes en 1 s dan rate_limited y cierran', () => {
     const { host } = setup();

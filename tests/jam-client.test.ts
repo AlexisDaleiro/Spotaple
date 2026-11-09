@@ -38,7 +38,7 @@ function make(h: { port: number }, o: Partial<JamClientOpts> & { memberId: strin
   const states: JamState[] = [];
   const errors: JamErrorCode[] = [];
   const client = new JamClient(
-    { url: `ws://127.0.0.1:${h.port}/K7M2P`, ...o },
+    { url: `ws://127.0.0.1:${h.port}/K7M2P`, key: `clave-de-prueba-${o.memberId}`, ...o },
     { onState: (s) => states.push(s), onStatus: (s, r) => statuses.push([s, r]), onError: (c) => errors.push(c) },
   );
   clients.push(client);

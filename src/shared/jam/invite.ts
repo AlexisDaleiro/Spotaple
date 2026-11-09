@@ -2,7 +2,10 @@
 export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LEN = 5;
 
-export function newRoomCode(rand: () => number = Math.random): string {
+/** Aleatorio de verdad (no `Math.random`, que es predecible): el código es lo único que protege el acceso a una sala. */
+const secureRandom = (): number => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+
+export function newRoomCode(rand: () => number = secureRandom): string {
   let s = '';
   for (let i = 0; i < CODE_LEN; i++) s += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length)];
   return s;

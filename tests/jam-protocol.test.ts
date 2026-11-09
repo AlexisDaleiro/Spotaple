@@ -18,6 +18,13 @@ describe('parseClientMsg: hello', () => {
     expect(parse(hello)).toEqual(hello);
     expect(parse({ ...hello, create: true })).toEqual({ ...hello, create: true });
   });
+  it('acepta una clave de miembro y rechaza una mal formada', () => {
+    const key = 'clave-mara-0123456789';
+    expect(parse({ ...hello, key })).toEqual({ ...hello, key });
+    expect(parse({ ...hello, key: 'corta' })).toBeNull();
+    expect(parse({ ...hello, key: 'x'.repeat(65) })).toBeNull();
+    expect(parse({ ...hello, key: 'con espacios y símbolos!' })).toBeNull();
+  });
   it('rechaza protocol no entero, memberId corto y nombre inválido', () => {
     expect(parse({ ...hello, protocol: 1.5 })).toBeNull();
     expect(parse({ ...hello, memberId: 'abc' })).toBeNull();

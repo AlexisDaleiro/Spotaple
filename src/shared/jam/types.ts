@@ -88,7 +88,8 @@ export type JamErrorCode =
   | 'rate_limited';
 
 export type ClientMsg =
-  | { t: 'hello'; protocol: number; memberId: string; name: string; create?: boolean }
+  /** `key`: secreto propio de este miembro en esta sala; la sala lo guarda sin difundirlo y lo exige para volver con ese `memberId`. */
+  | { t: 'hello'; protocol: number; memberId: string; name: string; create?: boolean; key?: string }
   | { t: 'queue.add'; track: Track; at?: 'end' | 'next' | 'now' }
   | { t: 'queue.remove'; itemId: string }
   | { t: 'queue.move'; itemId: string; toIndex: number }

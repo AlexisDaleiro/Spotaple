@@ -7,6 +7,8 @@ export type { JamConnStatus };
 export interface JamClientOpts {
   url: string;
   memberId: string;
+  /** Secreto de este miembro en esta sala: con él se prueba que el `memberId` es suyo al reconectar. */
+  key: string;
   name: string;
   /** Solo la primera conexión crea la sala; las reconexiones siempre se unen a la existente. */
   create: boolean;
@@ -37,7 +39,7 @@ const RESYNC_MS = 30_000;
 /** Si el servidor no dice nada en este tiempo la conexión se da por muerta (hay un ping cada 30 s). */
 const SILENT_MS = 45_000;
 /** Errores tras los cuales reintentar no sirve de nada. */
-const FATAL: ReadonlySet<JamErrorCode> = new Set<JamErrorCode>(['no_room', 'protocol', 'code_taken', 'room_full', 'closed']);
+const FATAL: ReadonlySet<JamErrorCode> = new Set<JamErrorCode>(['no_room', 'protocol', 'code_taken', 'room_full', 'closed', 'forbidden']);
 
 const isServerMsg = (m: unknown): m is ServerMsg => {
   const o = m as { t?: unknown; state?: { members?: unknown }; serverTime?: unknown; code?: unknown } | null;
@@ -114,6 +116,7 @@ export class JamClient {
         t: 'hello',
         protocol: this.o.protocol ?? PROTOCOL,
         memberId: this.o.memberId,
+        key: this.o.key,
         name: this.o.name,
         ...(this.o.create && !this.everConnected ? { create: true } : {}),
       };

@@ -17,8 +17,10 @@ function build(o: Record<string, unknown>): ClientMsg | null {
     case 'hello': {
       const name = sanitizeName(o['name']);
       const memberId = o['memberId'];
+      const key = o['key'];
       if (!Number.isInteger(o['protocol']) || typeof memberId !== 'string' || !/^[\w-]{8,64}$/.test(memberId) || !name) return null;
-      return { t: 'hello', protocol: o['protocol'] as number, memberId, name, ...(o['create'] === true ? { create: true } : {}) };
+      if (key !== undefined && (typeof key !== 'string' || !/^[\w-]{16,64}$/.test(key))) return null;
+      return { t: 'hello', protocol: o['protocol'] as number, memberId, name, ...(o['create'] === true ? { create: true } : {}), ...(key ? { key: key as string } : {}) };
     }
     case 'queue.add': {
       const at = o['at'];

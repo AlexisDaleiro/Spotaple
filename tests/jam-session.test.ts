@@ -61,6 +61,23 @@ describe('createJamSession', () => {
     expect(b.session.view().reason).toBe('closed');
   });
 
+  it('quien copia el id del admin pero no tiene su clave no entra a la sala', async () => {
+    const a = make();
+    const created = await a.session.create({ kind: 'local', name: 'Ana' });
+    const intruso = make(new Map<string, unknown>([['jam_member_id', created.selfId]]));
+    await expect(intruso.session.join({ invite: loopback(created.invite!), name: 'Intruso' })).rejects.toThrow();
+    expect(a.session.view().status).toBe('connected');
+    expect(a.session.view().state?.adminId).toBe(created.selfId);
+  });
+
+  it('la misma identidad guardada (id y clave) sí vuelve a entrar', async () => {
+    const a = make();
+    const created = await a.session.create({ kind: 'local', name: 'Ana' });
+    const vuelta = await make(a.settings).session.join({ invite: loopback(created.invite!), name: 'Ana' });
+    expect(vuelta.status).toBe('connected');
+    expect(vuelta.state?.adminId).toBe(created.selfId);
+  });
+
   it('rechaza invitaciones inválidas y un relé inalcanzable con mensajes claros', async () => {
     const a = make();
     await expect(a.session.join({ invite: 'xx', name: 'Mara' })).rejects.toThrow('La invitación no es válida. Revisá el código o la dirección.');

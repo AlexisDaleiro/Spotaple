@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CODE_ALPHABET, formatInvite, isRoomCode, newRoomCode, parseInvite } from '../src/shared/jam/invite';
 
 const R = 'wss://relay.example.workers.dev';
@@ -9,6 +9,17 @@ describe('newRoomCode', () => {
     expect(newRoomCode(() => 0)).toBe('22222');
     expect(newRoomCode(() => 0.999999)).toBe('ZZZZZ');
     expect(isRoomCode(newRoomCode())).toBe(true);
+  });
+
+  it('no usa Math.random: el código es lo único que protege la sala', () => {
+    const spy = vi.spyOn(Math, 'random').mockImplementation(() => {
+      throw new Error('Math.random no es aleatorio de verdad');
+    });
+    try {
+      expect(isRoomCode(newRoomCode())).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
