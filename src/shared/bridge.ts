@@ -9,6 +9,7 @@ export function createBridge(
   return {
     music: {
       search: (q) => call(IPC.search, q),
+      copyLink: (id) => call(IPC.copyTrackLink, id),
       album: (id) => call(IPC.album, id),
       artist: (id) => call(IPC.artist, id),
       remotePlaylist: (id) => call(IPC.remotePlaylist, id),

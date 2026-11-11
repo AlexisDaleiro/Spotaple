@@ -1,8 +1,8 @@
-import { ipcMain } from 'electron';
+import { clipboard, ipcMain } from 'electron';
 import { createHandlers } from './handlers';
 
 export function registerIpc({ rendererOrigin, ...deps }: Parameters<typeof createHandlers>[0] & { rendererOrigin?: string }) {
-  for (const [channel, handler] of createHandlers(deps)) {
+  for (const [channel, handler] of createHandlers({ ...deps, copyTrackLink: (link) => clipboard.writeText(link) })) {
     ipcMain.handle(channel, (event, ...args: unknown[]) => {
       const url = event.senderFrame?.url ?? '';
       const trusted = rendererOrigin ? url.startsWith(rendererOrigin) : url.startsWith('file://');

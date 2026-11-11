@@ -15,7 +15,7 @@ export async function shareTrack(track: Track): Promise<void> {
       window.SpotapleAndroid.shareTrack(url);
       return;
     }
-    await navigator.clipboard.writeText(url);
+    await api.music.copyLink(track.id);
     toast('Enlace de la canción copiado.', 'success');
   } catch {
     toast('No se pudo compartir el enlace de la canción.', 'error');

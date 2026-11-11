@@ -31,6 +31,7 @@ export const IPC = {
   prepare: 'music:prepare',
   invalidate: 'music:invalidate',
   export: 'music:export',
+  copyTrackLink: 'music:copy-link',
   offlineGet: 'offline:get',
   offlineSync: 'offline:sync',
   offlineClear: 'offline:clear',
@@ -80,6 +81,7 @@ export const IPC = {
 export interface SpotapleApi {
   music: {
     search(query: string): Promise<SearchResults>;
+    copyLink(trackId: string): Promise<void>;
     album(id: string): Promise<AlbumDetail>;
     artist(id: string): Promise<ArtistDetail>;
     /** Playlist de YouTube Music (id tal como lo devuelve la búsqueda). */
