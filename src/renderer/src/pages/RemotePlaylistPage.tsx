@@ -2,7 +2,7 @@ import { BookmarkPlus, ListMusic, ListPlus, Play, Shuffle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { api } from '../api';
 import { formatTotal, plural, totalDuration } from '../lib/format';
-import { toastQueued } from '../lib/actions';
+import { playCollection, toastQueued } from '../lib/actions';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { useLibrary } from '../stores/library';
@@ -30,11 +30,7 @@ export function RemotePlaylistPage({ id, author }: { id: string; author?: string
   }
 
   const { tracks } = detail;
-  const play = (shuffle: boolean) => {
-    if (!tracks.length) return;
-    if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(tracks, 0);
-  };
+  const play = (shuffle: boolean) => playCollection(tracks, shuffle);
   const save = async () => {
     if (busy.current || !tracks.length) return;
     busy.current = true;

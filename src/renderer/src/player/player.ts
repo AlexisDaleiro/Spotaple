@@ -73,6 +73,7 @@ export interface PlayerDeps {
   radio?: RadioHook;
   notify?: (message: string, kind?: 'info' | 'error') => void;
   urlFor?: (trackId: string) => string;
+  randomCollectionStart?: boolean;
   /**
    * ¿Se puede reproducir esta canción ahora? Sin red solo suenan las descargadas: lo demás se salta (con el mismo tope
    * que las no disponibles) sin pedirle nada a main.
@@ -115,7 +116,7 @@ export interface PlayerState extends QueueState {
 }
 
 export interface PlayerActions {
-  /** Reemplaza la cola y reproduce desde `start` ("reproducir desde esta canción"). */
+  /** Reemplaza la cola. Un índice explícito conserva la canción elegida incluso con aleatorio. */
   playTracks(tracks: Track[], start?: number): void;
   /** Reemplaza la cola por esta canción y arranca en `startSec`. Lo usa el conductor de la sala; no pasa por el gancho jam. */
   playAt(track: Track, startSec: number): void;
@@ -492,12 +493,15 @@ export function createPlayer(deps: PlayerDeps) {
       duration: 0,
       error: null,
 
-      playTracks(tracks, start = 0) {
+      playTracks(tracks, start) {
         if (!tracks.length) return;
+        const shuffle = get().shuffle;
+        const selected = Math.min(Math.max(start ?? 0, 0), tracks.length - 1);
         // En una sala, "reproducir" una lista es pedir solo la canción elegida: no se inunda la cola de todos.
-        if (jam?.active()) return jam.request([tracks[Math.min(Math.max(start, 0), tracks.length - 1)]!], 'end');
-        let q: QueueState = { items: makeItems(tracks), index: Math.min(Math.max(start, 0), tracks.length - 1), original: null };
-        if (get().shuffle) q = enableShuffle(q);
+        if (jam?.active()) return jam.request([tracks[selected]!], 'end');
+        const index = start === undefined && deps.randomCollectionStart && shuffle ? Math.floor(Math.random() * tracks.length) : selected;
+        let q: QueueState = { items: makeItems(tracks), index, original: null };
+        if (shuffle) q = enableShuffle(q);
         commit(q);
         void go(q.index, { user: true });
       },

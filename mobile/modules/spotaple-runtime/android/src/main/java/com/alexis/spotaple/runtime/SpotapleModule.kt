@@ -240,7 +240,8 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
       val info = runCatching {
         val data = JSONObject(raw)
         PlaybackService.MediaInfo(data.getString("title"), data.getString("artist"),
-          data.getString("status"), data.getLong("positionMs"), data.getLong("durationMs"))
+          data.getString("status"), data.getLong("positionMs"), data.getLong("durationMs"),
+          data.optString("artwork").takeIf { it.isNotEmpty() })
       }.getOrNull() ?: return
       post {
         runCatching { PlaybackService.update(context, info) }.onFailure {

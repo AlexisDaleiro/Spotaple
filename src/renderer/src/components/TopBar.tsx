@@ -7,7 +7,8 @@ import { api } from '../api';
 
 const DEBOUNCE_MS = 350;
 
-export function TopBar() {
+export function TopBar({ inert }: { inert?: boolean }) {
+  const mobile = api.platform === 'android';
   const route = useNav((s) => s.route);
   const back = useNav((s) => s.back);
   const forward = useNav((s) => s.forward);
@@ -47,7 +48,7 @@ export function TopBar() {
   };
 
   return (
-    <header className="titlebar">
+    <header className="titlebar" inert={inert}>
       <div className="brand">
         <span className="brand__mark" aria-hidden="true">
           <Disc3 size={18} />
@@ -55,10 +56,12 @@ export function TopBar() {
         <span className="brand__name">Spotaple</span>
       </div>
 
-      <div className="titlebar__nav">
-        <IconButton variant="solid" icon={<ChevronLeft size={18} />} label="Atrás (Alt+←)" disabled={!canBack} onClick={back} />
-        <IconButton variant="solid" icon={<ChevronRight size={18} />} label="Adelante (Alt+→)" disabled={!canFwd} onClick={forward} />
-      </div>
+      {!mobile && (
+        <div className="titlebar__nav">
+          <IconButton variant="solid" icon={<ChevronLeft size={18} />} label="Atrás (Alt+←)" disabled={!canBack} onClick={back} />
+          <IconButton variant="solid" icon={<ChevronRight size={18} />} label="Adelante (Alt+→)" disabled={!canFwd} onClick={forward} />
+        </div>
+      )}
 
       <form
         className="search"

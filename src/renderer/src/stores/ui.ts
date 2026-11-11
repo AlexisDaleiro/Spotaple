@@ -30,6 +30,7 @@ interface UiState {
   dialog: DialogSpec | null;
   menu: { x: number; y: number; items: MenuItem[] } | null;
   queueOpen: boolean;
+  mobilePlayerOpen: boolean;
   /** Se incrementa para pedir que la barra superior enfoque la búsqueda. */
   focusSearchTick: number;
   toggleQueue(): void;
@@ -54,6 +55,7 @@ export const useUi = create<UiState>((set, get) => ({
   dialog: null,
   menu: null,
   queueOpen: readQueueOpen(),
+  mobilePlayerOpen: false,
   focusSearchTick: 0,
   toggleQueue() {
     const queueOpen = !get().queueOpen;

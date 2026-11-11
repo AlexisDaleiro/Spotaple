@@ -51,7 +51,10 @@ jobs:
       - run: ./node_modules/.bin/expo prebuild --platform android --no-install
       - name: Compilar APK con el código de la app incluido
         working-directory: mobile/android
-        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64 -Pexpo.useLegacyPackaging=true --no-daemon --max-workers=2
+        run: |
+          ./gradlew :app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64 \
+            -Pexpo.useLegacyPackaging=true '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g' \
+            --no-daemon --max-workers=2 --stacktrace
       - name: Verificar el APK
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
@@ -61,6 +64,7 @@ jobs:
           "$tools/aapt" dump badging "$apk" | grep -F "package: name='$application_id'"
           zipinfo -1 "$apk" | grep -Fx 'assets/index.android.bundle'
           zipinfo -1 "$apk" | grep -Fx 'assets/spotaple/runtime.cjs'
+          zipinfo -1 "$apk" | grep -E '^assets/spotaple/renderer/assets/brand-[A-Za-z0-9_-]+\.png$'
           zipinfo -1 "$apk" | grep -Fx 'lib/arm64-v8a/libnode.so'
           mkdir -p dist
           cp "$apk" dist/Spotaple-Android-preview.apk

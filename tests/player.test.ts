@@ -375,6 +375,27 @@ describe('la última elección gana', () => {
 });
 
 describe('fin de canción y modos', () => {
+  it('Android empieza una lista en una canción aleatoria y respeta las canciones elegidas explícitamente', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.75);
+    try {
+      const { s, audio } = setup(undefined, { randomCollectionStart: true });
+      s().toggleShuffle();
+      s().playTracks(tracks(4));
+      await flush();
+      expect(audio.src).toBe(`test://${track(3).id}`);
+      expect(s().items.map((item) => item.track.id)).toEqual([3, 0, 1, 2].map((n) => track(n).id));
+      s().toggleShuffle();
+      expect(s().index).toBe(3);
+      expect(s().items.map((item) => item.track.id)).toEqual(tracks(4).map((item) => item.id));
+      s().toggleShuffle();
+      s().playTracks(tracks(4), 1);
+      await flush();
+      expect(audio.src).toBe(`test://${track(1).id}`);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
   it('avanza a la siguiente sin registrar una "selección"', async () => {
     const { s, audio, api, store } = setup();
     s().playTracks(tracks(3), 0);

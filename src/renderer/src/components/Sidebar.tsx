@@ -36,7 +36,7 @@ export function openNewPlaylistDialog(onCreated?: (id: number) => void) {
   });
 }
 
-export function Sidebar() {
+export function Sidebar({ inert }: { inert?: boolean }) {
   const route = useNav((s) => s.route);
   const playlists = useLibrary((s) => s.playlists);
   const favCount = useLibrary((s) => s.favoriteIds.size);
@@ -45,7 +45,7 @@ export function Sidebar() {
   const onFavorites = route.page === 'library' && route.tab !== 'history';
 
   return (
-    <nav className="sidebar" aria-label="Navegación principal">
+    <nav className="sidebar" aria-label="Navegación principal" inert={inert}>
       <div className="sidebar__main">
         <NavItem icon={<House size={20} />} label="Inicio" active={route.page === 'home'} onClick={go({ page: 'home' })} />
         <NavItem

@@ -1,7 +1,7 @@
 import { BookmarkPlus, ListMusic, ListPlus, Play, Shuffle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { GeneratedKind } from '@shared/discover';
-import { toastQueued } from '../lib/actions';
+import { playCollection, toastQueued } from '../lib/actions';
 import { formatTotal, plural, totalDuration } from '../lib/format';
 import { player } from '../player/instance';
 import { useDiscover } from '../stores/discover';
@@ -38,11 +38,7 @@ export function GeneratedPage({ kind, slot }: { kind: GeneratedKind; slot: strin
 
   const { tracks } = list;
   const covers = tracks.map((t) => t.thumbnail).filter((x): x is string => !!x).slice(0, 4);
-  const play = (shuffle: boolean) => {
-    if (!tracks.length) return;
-    if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(tracks, 0);
-  };
+  const play = (shuffle: boolean) => playCollection(tracks, shuffle);
   const save = async () => {
     if (busy.current || !tracks.length) return;
     busy.current = true;
