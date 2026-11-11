@@ -58,15 +58,15 @@ adb shell input tap "$x" "$y"
 wait_for_playing() {
   for _ in {1..30}; do
     local state
-    state=$(adb shell dumpsys media_session)
+    state=$(adb shell dumpsys media_session | sed -n '/Spotaple com\.alexis\.spotaple\.preview\//,/queueTitle=/p')
     if grep -F "description=$1" <<< "$state" >/dev/null &&
       grep -E "$2" <<< "$state" >/dev/null; then return; fi
     sleep 1
   done
   return 1
 }
-wait_for_playing 'Spotaple primera prueba' 'state=3, position='
+wait_for_playing 'Spotaple primera prueba' 'state=(PLAYING\(3\)|3), position='
 adb shell input keyevent KEYCODE_SLEEP
-wait_for_playing 'Spotaple segunda prueba' 'state=3, position=[1-9][0-9]{3,}'
+wait_for_playing 'Spotaple segunda prueba' 'state=(PLAYING\(3\)|3), position=[1-9][0-9]{3,}'
 adb shell input keyevent KEYCODE_WAKEUP
 echo 'Spotaple avanzó a la segunda canción y siguió reproduciendo con la pantalla apagada.'
