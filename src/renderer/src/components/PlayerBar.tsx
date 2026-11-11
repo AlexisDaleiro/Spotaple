@@ -1,10 +1,12 @@
-import { Heart, ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
+import { Heart, ListMusic, Pause, Play, Repeat, Repeat1, Share2, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
 import { useState } from 'react';
 import { skipThreshold } from '@shared/jam/engine';
 import type { JamView } from '@shared/jam/types';
+import { trackLink } from '@shared/track';
 import { api } from '../api';
 import { nextIndex } from '../player/queue';
 import { artistsText, cx, formatTime } from '../lib/format';
+import { shareTrack } from '../lib/actions';
 import { player, usePlayer } from '../player/instance';
 import { canAdvance, inRoom, isAdmin, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
@@ -250,6 +252,9 @@ export function PlayerBar() {
             disabled={room !== null}
             onClick={() => player().cycleRepeat()}
           />
+          {item && trackLink(item.track.id) && (
+            <IconButton icon={<Share2 size={17} />} label="Compartir canción" onClick={() => void shareTrack(item.track)} />
+          )}
         </div>
         <Progress locked={locked} />
       </div>

@@ -42,3 +42,6 @@ export function sanitizeTrack(v: unknown): Track {
     thumbnail: thumb,
   };
 }
+/** Enlace público para una pista del catálogo de YouTube Music. */
+export const trackLink = (id: string): string | null =>
+  /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://music.youtube.com/watch?v=${id}` : null;

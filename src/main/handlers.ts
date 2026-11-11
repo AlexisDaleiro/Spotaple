@@ -1,6 +1,7 @@
 import { IPC } from '../shared/api';
 import type { AudioFormat } from '../shared/offline';
 import { parseSettings, type AppSettings } from '../shared/settings';
+import { trackLink } from '../shared/track';
 import type { IpcResult, PreparedAudio, Track } from '../shared/types';
 import type { Store } from './db/store';
 import { exportTrack } from './export';
@@ -28,6 +29,7 @@ export function createHandlers(deps: {
   /** Diálogo «Guardar como» del sistema: devuelve la ruta elegida o null si se canceló. */
   pickSavePath: (suggestedName: string, format: AudioFormat) => Promise<string | null>;
   exportAudio?: (track: Track, format: AudioFormat) => ReturnType<typeof exportTrack>;
+  copyTrackLink?: (link: string) => void;
   /** Se llama con los ajustes completos después de cada cambio (p. ej. para recolorear la ventana). */
   onSettings: (settings: AppSettings) => void;
 }) {
@@ -49,6 +51,14 @@ export function createHandlers(deps: {
   };
 
   handle(IPC.search, (q: unknown) => provider.search(str(q, 200).trim() || str('', 1)));
+  const { copyTrackLink } = deps;
+  if (copyTrackLink) {
+    handle(IPC.copyTrackLink, (x: unknown) => {
+      const link = typeof x === 'string' ? trackLink(x) : undefined;
+      if (!link) throw new Error('No hay un enlace para esta canción.');
+      copyTrackLink(link);
+    });
+  }
   handle(IPC.album, (x: unknown) => provider.getAlbum(id(x)));
   handle(IPC.artist, (x: unknown) => provider.getArtist(id(x)));
   handle(IPC.remotePlaylist, (x: unknown) => provider.getPlaylist(id(x)));

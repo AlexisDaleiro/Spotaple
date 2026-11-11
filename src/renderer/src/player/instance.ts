@@ -154,6 +154,7 @@ export async function startPlayerPersistence() {
 
 /** Teclas multimedia y tarjeta del sistema (Windows). */
 export function startMediaSession() {
+  if (api.platform === 'android') return; // Android publica la sesión y sus controles desde el servicio nativo.
   if (!('mediaSession' in navigator)) return;
   const ms = navigator.mediaSession;
   const p = () => playerStore.getState();

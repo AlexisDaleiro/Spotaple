@@ -67,7 +67,7 @@ describe('el admin conduce su reproductor y avisa a la sala', () => {
     await flush();
     expect(audio.src).toBe('test://track000000');
     expect(sent).toContainEqual({ t: 'playing', itemId: 'i1', positionSec: 0 });
-    audio.ended();
+    audio.finish();
     await flush();
     expect(sent).toContainEqual({ t: 'ended', itemId: 'i1' });
     expect(sent.some((m) => m.t === 'transport')).toBe(false);
@@ -306,7 +306,7 @@ describe('el admin que se reconecta se reancla a la sala (Critical del revisor)'
     await flush();
     setView(view('admin-1', playingState, { status: 'reconnecting' }));
     sent.length = 0;
-    audio.ended(); // sin conexión: el aviso no puede salir
+    audio.finish(); // sin conexión: el aviso no puede salir
     expect(sent).toEqual([]);
     setView(view('admin-1', { ...playingState, serverTime: CLOCK + 5000 }));
     expect(sent).toContainEqual({ t: 'ended', itemId: 'i1' });

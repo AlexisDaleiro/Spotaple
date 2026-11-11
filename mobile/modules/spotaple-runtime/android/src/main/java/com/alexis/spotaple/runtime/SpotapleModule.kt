@@ -8,9 +8,11 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.Gravity
+import android.util.Log
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
@@ -60,6 +62,7 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
     textSize = 16f
   }
   private var browser: WebView? = null
+  private var lastRecovery = -60_000L
   private var pendingSave: Pair<Int, String>? = null
   private val onOpenLocal by EventDispatcher()
   private val awaitRuntime = object : Runnable {
@@ -100,7 +103,7 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
     if (active?.get() === this) {
       active = null
       PlaybackService.command = null
-      context.stopService(Intent(context, PlaybackService::class.java))
+      PlaybackService.clear()
     }
     super.onDetachedFromWindow()
   }
@@ -154,7 +157,15 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
         removeView(view)
         view.destroy()
         browser = null
-        showError()
+        pendingSave = null
+        PlaybackService.clear()
+        val now = SystemClock.elapsedRealtime()
+        if (isAttachedToWindow && now - lastRecovery >= 60_000L) {
+          lastRecovery = now
+          label.text = "Recuperando Spotaple…"
+          label.visibility = VISIBLE
+          post(awaitRuntime)
+        } else showError()
         return true
       }
     }
@@ -164,6 +175,21 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
   }
 
   private inner class NativeActions(private val url: String) {
+    @JavascriptInterface
+    fun shareTrack(link: String) {
+      if (!link.matches(Regex("https://music[.]youtube[.]com/watch[?]v=[A-Za-z0-9_-]{11}"))) return
+      post {
+        val activity = appContext.currentActivity ?: return@post
+        val share = Intent(Intent.ACTION_SEND).apply {
+          type = "text/plain"
+          putExtra(Intent.EXTRA_TEXT, link)
+        }
+        runCatching { activity.startActivity(Intent.createChooser(share, null)) }.onFailure {
+          Toast.makeText(context, "No se pudo compartir el enlace.", Toast.LENGTH_LONG).show()
+        }
+      }
+    }
+
     @JavascriptInterface
     fun copy(text: String) {
       if (text.length > 200) return
@@ -214,9 +240,13 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
       val info = runCatching {
         val data = JSONObject(raw)
         PlaybackService.MediaInfo(data.getString("title"), data.getString("artist"),
-          data.getBoolean("playing"), data.getLong("positionMs"), data.getLong("durationMs"))
+          data.getString("status"), data.getLong("positionMs"), data.getLong("durationMs"))
       }.getOrNull() ?: return
-      post { runCatching { PlaybackService.update(context, info) } }
+      post {
+        runCatching { PlaybackService.update(context, info) }.onFailure {
+          Log.w("SpotaplePlayback", "No se pudo actualizar el servicio de reproducción", it)
+        }
+      }
     }
 
     @JavascriptInterface

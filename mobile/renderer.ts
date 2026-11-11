@@ -26,6 +26,7 @@ declare global {
       install(): void;
       openLocal(): void;
       copy(text: string): void;
+      shareTrack(url: string): void;
     };
   }
 }

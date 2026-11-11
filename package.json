@@ -1,7 +1,7 @@
 {
   "name": "spotaple",
   "productName": "Spotaple",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Reproductor de música de escritorio, local y personal, con streaming vía YouTube.js",
   "main": "out/main/index.js",
   "type": "module",
