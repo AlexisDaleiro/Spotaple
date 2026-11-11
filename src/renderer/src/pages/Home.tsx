@@ -72,7 +72,7 @@ export function HomePage() {
       {showForYou && discover.lists.length > 0 && (
         <Shelf title="Hecho para vos" id="sec-foryou">
           {discover.lists.map((l) => (
-            <GeneratedCard key={`${l.kind}-${l.slot}`} list={l} onPlay={() => player().playTracks(l.tracks, 0)} />
+            <GeneratedCard key={`${l.kind}-${l.slot}`} list={l} onPlay={() => player().playTracks(l.tracks)} />
           ))}
         </Shelf>
       )}

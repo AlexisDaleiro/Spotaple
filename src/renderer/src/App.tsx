@@ -130,6 +130,7 @@ export function App() {
   const route = useNav((s) => s.route);
   const i = useNav((s) => s.i);
   const queueOpen = useUi((s) => s.queueOpen);
+  const playerOpen = useUi((s) => s.mobilePlayerOpen);
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => void useLibrary.getState().init(), []);
@@ -138,12 +139,12 @@ export function App() {
 
   return (
     <div className="app" data-queue={queueOpen}>
-      <a className="skip-link" href="#main" onClick={(e) => (e.preventDefault(), scroller.current?.focus())}>
+      <a className="skip-link" href="#main" inert={playerOpen} onClick={(e) => (e.preventDefault(), scroller.current?.focus())}>
         Saltar al contenido
       </a>
-      <TopBar />
-      <Sidebar />
-      <main className="main" id="main">
+      <TopBar inert={playerOpen} />
+      <Sidebar inert={playerOpen} />
+      <main className="main" id="main" inert={playerOpen}>
         <OfflineBanner />
         <div className="main__scroll" ref={scroller} tabIndex={-1}>
           <div className="page-enter" key={`${i}:${route.page}:${'id' in route ? route.id : ''}`}>

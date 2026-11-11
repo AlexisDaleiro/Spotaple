@@ -48,7 +48,14 @@ async function withTracks(load: () => Promise<Track[]>, then: (tracks: Track[]) 
   }
 }
 
-export const playAlbum = (id: string) => withTracks(async () => (await api.music.album(id)).tracks, (t) => player().playTracks(t, 0));
+export function playCollection(tracks: Track[], shuffle = player().shuffle) {
+  if (!tracks.length) return;
+  const current = player();
+  if (shuffle !== current.shuffle) current.toggleShuffle();
+  current.playTracks(tracks);
+}
+
+export const playAlbum = (id: string) => withTracks(async () => (await api.music.album(id)).tracks, playCollection);
 export const queueAlbum = (id: string) =>
   withTracks(
     async () => (await api.music.album(id)).tracks,
@@ -57,9 +64,9 @@ export const queueAlbum = (id: string) =>
       toastQueued(t.length);
     },
   );
-export const playArtist = (id: string) => withTracks(async () => (await api.music.artist(id)).topSongs, (t) => player().playTracks(t, 0), 'Este artista no tiene canciones populares.');
+export const playArtist = (id: string) => withTracks(async () => (await api.music.artist(id)).topSongs, playCollection, 'Este artista no tiene canciones populares.');
 export const playRemotePlaylist = (id: string) =>
-  withTracks(async () => (await api.music.remotePlaylist(id)).tracks, (t) => player().playTracks(t, 0), 'Esta playlist no tiene canciones disponibles.');
+  withTracks(async () => (await api.music.remotePlaylist(id)).tracks, playCollection, 'Esta playlist no tiene canciones disponibles.');
 /** Sin red solo suenan las descargadas: la cola se arma con esas, y si no hay ninguna se avisa. */
 export const playPlaylist = (id: number) =>
   withTracks(
@@ -67,7 +74,7 @@ export const playPlaylist = (id: number) =>
     (t) => {
       const list = useOffline.getState().playable(t);
       if (!list.length) return toast('Sin conexión: ninguna canción de esta playlist está descargada.');
-      player().playTracks(list, 0);
+      playCollection(list);
     },
     'La playlist está vacía.',
   );

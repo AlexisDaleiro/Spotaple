@@ -1,5 +1,6 @@
 import { Disc3, ListMusic, Mic2, Music2, Search, SearchX } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { api } from '../api';
 import { cx } from '../lib/format';
 import { playAlbum, playArtist, playRemotePlaylist } from '../lib/actions';
 import { player, usePlayer } from '../player/instance';
@@ -26,6 +27,7 @@ export function Suggestions() {
 }
 
 export function SearchPage({ q }: { q: string }) {
+  const mobile = api.platform === 'android';
   const status = useSearch((s) => s.status);
   const results = useSearch((s) => s.results);
   const error = useSearch((s) => s.error);
@@ -35,7 +37,7 @@ export function SearchPage({ q }: { q: string }) {
   // radio no corre y la canción quedaría en bucle sola), se encolan los resultados como siempre.
   const radio = useSettings((s) => s.settings.radio);
   const repeat = usePlayer((s) => s.repeat);
-  const soloWithRadio = radio && repeat === 'off';
+  const soloWithRadio = !mobile && radio && repeat === 'off';
   const [tab, setTab] = useState<Tab>('all');
 
   useEffect(() => run(q), [q, run]);
@@ -74,6 +76,7 @@ export function SearchPage({ q }: { q: string }) {
     { id: 'albums', label: 'Álbumes', n: albums.length, icon: <Disc3 size={14} /> },
     { id: 'playlists', label: 'Playlists', n: playlists.length, icon: <ListMusic size={14} /> },
   ];
+  const selected = tabs.find((filter) => filter.id === tab);
 
   const songsBlock = (list: typeof songs) => (
     <TrackList label="Canciones">
@@ -101,7 +104,7 @@ export function SearchPage({ q }: { q: string }) {
         </div>
       )}
 
-      <div className="tabs" role="tablist" aria-label="Tipo de resultado">
+      <div className="tabs search-filters" role="tablist" aria-label="Tipo de resultado">
         {tabs.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={cx('tab', tab === t.id && 'is-active')} onClick={() => setTab(t.id)}>
             {t.icon}
@@ -113,6 +116,8 @@ export function SearchPage({ q }: { q: string }) {
 
       {total === 0 ? (
         <Empty icon={<SearchX size={26} />} title={`No encontramos nada para «${results.query}»`} text="Revisá la ortografía o probá con el nombre del artista." />
+      ) : mobile && selected?.n === 0 ? (
+        <Empty icon={<SearchX size={26} />} title={`Sin resultados en ${selected.label.toLowerCase()}`} />
       ) : (
         <>
           {(tab === 'all' || tab === 'songs') && songs.length > 0 && (

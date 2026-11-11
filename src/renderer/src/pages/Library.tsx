@@ -1,5 +1,6 @@
 import { Clock, FileAudio, Heart, Play, Shuffle } from 'lucide-react';
 import { api } from '../api';
+import { playCollection } from '../lib/actions';
 import { cx, formatTotal, plural, totalDuration } from '../lib/format';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
@@ -27,8 +28,7 @@ export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'histor
   const play = (shuffle: boolean) => {
     const list = useOffline.getState().playable(tracks);
     if (!list.length) return toast('Sin conexión: ninguna de estas canciones está descargada.');
-    if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(list, 0);
+    playCollection(list, shuffle);
   };
   const playFrom = (i: number) => {
     const q = useOffline.getState().queueFrom(tracks, i);

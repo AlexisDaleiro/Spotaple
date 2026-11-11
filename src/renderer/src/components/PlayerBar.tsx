@@ -1,4 +1,4 @@
-import { Heart, ListMusic, Pause, Play, Repeat, Repeat1, Share2, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
+import { ChevronDown, Heart, ListMusic, Pause, Play, Repeat, Repeat1, Share2, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
 import { useState } from 'react';
 import { skipThreshold } from '@shared/jam/engine';
 import type { JamView } from '@shared/jam/types';
@@ -157,6 +157,8 @@ export function PlayerBar() {
   const muted = usePlayer((s) => s.muted);
   const hasNext = usePlayer((s) => nextIndex(s.items.length, s.index, s.repeat, false) !== null);
   const queueOpen = useUi((s) => s.queueOpen);
+  const mobile = api.platform === 'android';
+  const expanded = useUi((s) => mobile && s.mobilePlayerOpen);
   const fav = useLibrary((s) => (item ? s.favoriteIds.has(item.track.id) : false));
   // En una sala solo el admin controla la reproducción.
   const locked = room !== null && !admin;
@@ -167,10 +169,25 @@ export function PlayerBar() {
   const effective = muted ? 0 : volume;
   const VolIcon = effective === 0 ? VolumeX : effective < 0.5 ? Volume1 : Volume2;
   const repeatLabel = repeat === 'off' ? 'Repetir: desactivado' : repeat === 'all' ? 'Repetir: toda la cola' : 'Repetir: una canción';
+  const share = item && trackLink(item.track.id)
+    ? <IconButton icon={<Share2 size={17} />} label="Compartir canción" onClick={() => void shareTrack(item.track)} />
+    : null;
 
   return (
-    <footer className="player" aria-label="Reproductor">
+    <footer
+      className={cx('player', mobile && (expanded ? 'player--expanded' : 'player--compact'), mobile && !expanded && !item && !room && 'player--empty')}
+      aria-label="Reproductor"
+    >
+      {expanded && (
+        <div className="player__mobile-head">
+          <IconButton icon={<ChevronDown size={24} />} label="Cerrar reproductor" autoFocus onClick={() => useUi.setState({ mobilePlayerOpen: false })} />
+          <span>Reproduciendo</span>
+        </div>
+      )}
       <div className="player__now">
+        {mobile && !expanded && (item || room) && (
+          <button type="button" className="player__open" aria-label="Abrir reproductor" onClick={() => useUi.setState({ mobilePlayerOpen: true })} />
+        )}
         {item ? (
           <>
             <Cover src={item.track.thumbnail} size={56} label={item.track.title} className="player__cover" />
@@ -239,6 +256,7 @@ export function PlayerBar() {
             {loading ? <Spinner size={18} /> : sounding ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="play-btn__glyph" />}
           </button>
           <IconButton
+            className="player__next"
             icon={<SkipForward size={19} fill="currentColor" />}
             label="Canción siguiente"
             {...(locked ? { title: lockTitle } : {})}
@@ -252,9 +270,7 @@ export function PlayerBar() {
             disabled={room !== null}
             onClick={() => player().cycleRepeat()}
           />
-          {item && trackLink(item.track.id) && (
-            <IconButton icon={<Share2 size={17} />} label="Compartir canción" onClick={() => void shareTrack(item.track)} />
-          )}
+          {!mobile && share}
         </div>
         <Progress locked={locked} />
       </div>
@@ -262,6 +278,7 @@ export function PlayerBar() {
       <div className="player__right">
         {room && now && <JamButtons view={room} />}
         <IconButton icon={<ListMusic size={18} />} label={queueOpen ? 'Ocultar la cola' : 'Mostrar la cola'} pressed={queueOpen} onClick={() => useUi.getState().toggleQueue()} />
+        {mobile && share}
         <div className="volume">
           <IconButton icon={<VolIcon size={18} />} label={muted ? 'Activar sonido' : 'Silenciar'} onClick={() => player().toggleMute()} />
           <Slider

@@ -9,7 +9,7 @@ import { player } from '../player/instance';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
 import { useOffline } from '../stores/offline';
-import { toastQueued } from '../lib/actions';
+import { playCollection, toastQueued } from '../lib/actions';
 import { toast, useUi, type MenuItem } from '../stores/ui';
 import { Hero, PlaylistCover } from '../components/Shelf';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
@@ -58,8 +58,7 @@ export function PlaylistPage({ id }: { id: number }) {
     if (!tracks.length) return;
     const list = useOffline.getState().playable(tracks);
     if (!list.length) return toast('Sin conexión: ninguna canción de esta playlist está descargada.');
-    if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(list, 0);
+    playCollection(list, shuffle);
   };
   const playFrom = (i: number) => {
     const q = useOffline.getState().queueFrom(tracks, i);

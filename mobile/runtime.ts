@@ -27,6 +27,7 @@ import { deployAndroidRelay } from '../src/main/android/relay';
 const MAX_BODY = 2 * 1024 * 1024;
 const MIME: Record<string, string> = {
   html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8',
+  png: 'image/png',
 };
 
 async function requestBody(request: IncomingMessage): Promise<unknown> {

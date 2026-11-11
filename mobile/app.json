@@ -2,12 +2,16 @@
   "expo": {
     "name": "Spotaple",
     "slug": "spotaple",
-    "version": "0.2.1",
-    "icon": "../build/icon.png",
+    "version": "0.2.2",
+    "icon": "./brand.png",
     "platforms": ["android"],
     "android": {
       "package": "com.alexis.spotaple.preview",
-      "versionCode": 3,
+      "adaptiveIcon": {
+        "foregroundImage": "./brand.png",
+        "backgroundColor": "#0c0d0f"
+      },
+      "versionCode": 4,
       "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "plugins": [

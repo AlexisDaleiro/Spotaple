@@ -1,30 +1,46 @@
+[data-platform="android"] { -webkit-tap-highlight-color: transparent; }
+
 [data-platform="android"] .app {
-  --mobile-nav: 58px;
-  --mobile-player: 144px;
+  --mobile-nav: 59px;
+  --mobile-player: 65px;
   height: 100dvh;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 54px minmax(0, 1fr) auto var(--mobile-nav);
+  grid-template-rows: 62px minmax(0, 1fr) auto var(--mobile-nav);
   grid-template-areas: "title" "main" "player" "side";
 }
 
 [data-platform="android"] .titlebar {
-  gap: 4px;
-  padding-inline: 8px;
+  gap: 10px;
+  padding-inline: 14px;
 }
 
 [data-platform="android"] .brand { width: auto; }
+[data-platform="android"] .brand__mark,
+[data-platform="android"] .page--home .empty__icon {
+  background: var(--bg-2) url('./brand.png') center / contain no-repeat;
+  border: 0;
+  box-shadow: none;
+}
+[data-platform="android"] .brand__mark { width: 38px; height: 38px; border-radius: 12px; }
+[data-platform="android"] .page--home .empty__icon { width: 76px; height: 76px; border-radius: 22px; }
+[data-platform="android"] .brand__mark svg,
+[data-platform="android"] .page--home .empty__icon svg,
 [data-platform="android"] .brand__name,
 [data-platform="android"] .search__kbd,
 [data-platform="android"] .sidebar__lists,
-[data-platform="android"] .titlebar__nav > button:nth-child(2),
 [data-platform="android"] .tracklist__head { display: none; }
+[data-platform="android"] .search {
+  height: 42px;
+  max-width: none;
+  border-radius: 14px;
+}
 
 [data-platform="android"] .sidebar {
   padding: 0 2px;
   flex-direction: row;
   align-items: stretch;
   gap: 0;
-  border-top: 1px solid var(--line);
+  border: 0;
 }
 
 [data-platform="android"] .sidebar__main,
@@ -44,7 +60,9 @@
   flex-direction: column;
   gap: 3px;
   font-size: 10px;
+  background: none;
 }
+[data-platform="android"] .sidebar .nav-item.is-active { color: var(--accent); }
 
 [data-platform="android"] .sidebar .nav-item__label {
   display: block !important;
@@ -56,32 +74,152 @@
 
 [data-platform="android"] .main { margin: 0; border-radius: 0; }
 [data-platform="android"] .main__scroll { scrollbar-gutter: auto; }
-[data-platform="android"] .page { padding: 16px 12px 22px; }
+[data-platform="android"] .page { padding: 16px 14px 24px; }
+[data-platform="android"] .page .h1 { font-size: clamp(24px, 7vw, 34px); }
+[data-platform="android"] .page .h2 { font-size: 20px; }
+
+[data-platform="android"] .search-filters {
+  flex-wrap: nowrap;
+  gap: 7px;
+  margin-inline: -14px;
+  padding: 2px 14px 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+[data-platform="android"] .search-filters .tab {
+  flex: none;
+  height: 40px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+[data-platform="android"] .search-filters .tab > svg,
+[data-platform="android"] .search-filters .tab__n { display: none; }
+[data-platform="android"] .search-filters .tab.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+[data-platform="android"] .shelf__row {
+  grid-auto-columns: clamp(136px, 43vw, 182px);
+  gap: 12px;
+  margin-inline: -14px;
+  padding: 0 14px 8px;
+  scroll-padding-inline: 14px;
+  scrollbar-width: none;
+}
+[data-platform="android"] .card__body { padding: 0 0 6px; }
+[data-platform="android"] .card__cover { width: 100%; margin-bottom: 7px; }
+[data-platform="android"] .card__title { max-width: 100%; }
+[data-platform="android"] .card__play {
+  right: 7px;
+  top: calc(100cqw - 51px);
+  width: 44px;
+  height: 44px;
+  opacity: 1;
+  transform: none;
+}
+[data-platform="android"] .quick {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+[data-platform="android"] .quick__tile { gap: 7px; padding-right: 8px; }
+[data-platform="android"] .quick__tile .cover { width: 46px !important; height: 100% !important; }
+[data-platform="android"] .quick__play {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--fg-1);
+  background: none;
+  opacity: 1;
+  transform: none;
+}
 
 [data-platform="android"] .queue {
   position: fixed;
-  inset: 54px 0 calc(var(--mobile-player) + var(--mobile-nav)) 0;
-  z-index: 30;
+  inset: 62px 0 calc(var(--mobile-player) + var(--mobile-nav)) 0;
+  z-index: 50;
   width: auto;
   margin: 0;
   border-radius: 0;
 }
 
-[data-platform="android"] .player {
-  min-height: var(--mobile-player);
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "now right" "center center";
-  gap: 0 4px;
-  padding: 5px 8px;
-}
+[data-platform="android"] .app:has(.player--expanded) .queue { inset: 0; }
 
-[data-platform="android"] .player__now { grid-area: now; gap: 6px; }
-[data-platform="android"] .player__center { grid-area: center; gap: 0; }
-[data-platform="android"] .player__right { grid-area: right; gap: 0; }
-[data-platform="android"] .player__cover,
-[data-platform="android"] .player__idle-cover { width: 36px !important; height: 36px !important; }
+[data-platform="android"] .player--compact {
+  position: relative;
+  min-height: var(--mobile-player);
+  margin: 0 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "now center";
+  gap: 4px;
+  padding: 4px 7px 9px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-2);
+}
+[data-platform="android"] .player--empty { display: none; }
+[data-platform="android"] .player__now { grid-area: now; gap: 8px; position: relative; }
+[data-platform="android"] .player__open { position: absolute; z-index: 1; inset: 0 42px 0 0; border-radius: 8px; }
+[data-platform="android"] .player__center { grid-area: center; }
+[data-platform="android"] .player__right { grid-area: right; }
+[data-platform="android"] .player--compact .player__cover,
+[data-platform="android"] .player--compact .player__idle-cover { width: 40px !important; height: 40px !important; }
+[data-platform="android"] .player--compact .player__right,
+[data-platform="android"] .player--compact .player__controls > :not(.play-btn, .player__next),
+[data-platform="android"] .player--compact .progress__time { display: none; }
+[data-platform="android"] .player--compact .play-btn {
+  width: 40px;
+  height: 40px;
+  background: none;
+  color: var(--fg-0);
+  box-shadow: none;
+}
+[data-platform="android"] .player--compact .progress { position: absolute; inset: auto 9px 0; height: 12px; }
+[data-platform="android"] .player--compact .player__controls { gap: 0; }
+
+[data-platform="android"] .player--expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(min-content, 1fr) auto auto;
+  grid-template-areas: "head" "now" "center" "right";
+  gap: 12px;
+  padding: 14px 18px;
+  overflow-y: auto;
+  border: 0;
+  background: linear-gradient(155deg, var(--bg-3), var(--bg-0) 65%);
+}
+[data-platform="android"] .player__mobile-head {
+  grid-area: head;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  text-align: center;
+  font-weight: 650;
+}
+[data-platform="android"] .player--expanded .player__now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 8px;
+}
+[data-platform="android"] .player--expanded .player__cover {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(100%, 75vw, 44dvh, 360px) !important;
+  height: auto !important;
+  aspect-ratio: 1;
+  border-radius: 15px;
+}
+[data-platform="android"] .player--expanded .player__title { font-size: clamp(18px, 6vw, 26px); }
+[data-platform="android"] .player--expanded .player__controls { justify-content: space-between; gap: 0; }
+[data-platform="android"] .player--expanded .player__controls .ibtn { min-width: 40px; min-height: 44px; }
+[data-platform="android"] .player--expanded .play-btn { width: 54px; height: 54px; }
+[data-platform="android"] .player--expanded .player__controls [aria-pressed="true"] { color: var(--accent); }
+[data-platform="android"] .player--expanded .player__center { gap: 7px; }
+[data-platform="android"] .player--expanded .player__right { justify-content: space-between; }
 [data-platform="android"] .player__fav { display: grid; }
-[data-platform="android"] .slider--volume { width: 42px !important; }
+[data-platform="android"] .slider--volume { width: 66px !important; }
 [data-platform="android"] .progress { gap: 3px; }
 [data-platform="android"] .progress__buffer { right: 0; }
 

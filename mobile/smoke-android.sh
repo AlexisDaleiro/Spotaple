@@ -18,6 +18,22 @@ wait_for_ui() {
   done
   return 1
 }
+tap_control() {
+  local coords x y
+  coords=$(adb shell cat /sdcard/spotaple-view.xml | python3 -c '
+import re, sys, xml.etree.ElementTree as ET
+for node in ET.parse(sys.stdin).iter("node"):
+    if sys.argv[1] in (node.get("text"), node.get("content-desc")) and node.get("enabled") == "true":
+        x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
+        if x2 > x1 and y2 > y1:
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+else:
+    sys.exit(f"No se encontró el control {sys.argv[1]}")
+' "$1")
+  read -r x y <<< "$coords"
+  adb shell input tap "$x" "$y"
+}
 wait_for_ui 'Tu música empieza acá'
 
 # Se prepara una biblioteca sin depender de la red ni del catálogo en el emulador.
@@ -40,33 +56,54 @@ for file in "$data/spotaple.db" "$data/offline/smokeTrack1.webm" "$data/offline/
   adb shell chcon "$label" "$file"
 done
 adb shell am start -W -n "$app/.MainActivity"
-wait_for_ui 'Spotaple primera prueba'
-coords=$(adb shell cat /sdcard/spotaple-view.xml | python3 -c '
-import re, sys, xml.etree.ElementTree as ET
-matches = []
-for node in ET.parse(sys.stdin).iter("node"):
-    if "Reproducir" in (node.get("text"), node.get("content-desc")):
-        x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
-        if x2 > x1 and y2 > y1:
-            matches.append(((y1 + y2) // 2, (x1 + x2) // 2))
-y, x = max(matches)
-print(x, y)
-')
-read -r x y <<< "$coords"
-adb shell input tap "$x" "$y"
+wait_for_ui 'Reproducir Descubrimiento semanal'
+tap_control 'Biblioteca'
+wait_for_ui 'Secciones de la biblioteca'
+if adb shell cat /sdcard/spotaple-view.xml | grep -F 'Atrás (Alt+' >/dev/null; then exit 1; fi
+tap_control 'Inicio'
+wait_for_ui 'Reproducir Descubrimiento semanal'
+tap_control 'Reproducir Descubrimiento semanal'
+wait_for_ui 'Pausar'
+wait_for_ui 'Reproducir Descubrimiento semanal'
 
+media_session() {
+  adb shell dumpsys media_session | sed -n '/Spotaple com\.alexis\.spotaple\.preview\//,/queueTitle=/p'
+}
 wait_for_playing() {
   for _ in {1..30}; do
-    local state
-    state=$(adb shell dumpsys media_session | sed -n '/Spotaple com\.alexis\.spotaple\.preview\//,/queueTitle=/p')
-    if grep -F "description=$1" <<< "$state" >/dev/null &&
-      grep -E "$2" <<< "$state" >/dev/null; then return; fi
+    local state position
+    state=$(media_session)
+    position=$(sed -nE 's/.*state=(PLAYING\(3\)|3), position=([0-9]+),.*/\2/p' <<< "$state" | head -n 1)
+    if [[ -n "$position" ]] && (( position >= $2 )) &&
+      grep -F "description=$1" <<< "$state" >/dev/null; then return; fi
     sleep 1
   done
   return 1
 }
-wait_for_playing 'Spotaple primera prueba' 'state=(PLAYING\(3\)|3), position='
+wait_for_playing 'Spotaple primera prueba' 0
 adb shell input keyevent KEYCODE_SLEEP
-wait_for_playing 'Spotaple segunda prueba' 'state=(PLAYING\(3\)|3), position=[1-9][0-9]{3,}'
+wait_for_playing 'Spotaple segunda prueba' 1000
+media_session | grep -F 'metadata: size=5, description=Spotaple segunda prueba'
 adb shell input keyevent KEYCODE_WAKEUP
+adb shell wm dismiss-keyguard
 echo 'Spotaple avanzó a la segunda canción y siguió reproduciendo con la pantalla apagada.'
+
+adb shell am start -W -a android.settings.SETTINGS
+adb shell dumpsys activity activities | grep -E '(topResumedActivity|mResumedActivity)[=:].*com\.android\.settings' >/dev/null
+wait_for_playing 'Spotaple segunda prueba' 15000
+echo 'La reproducción avanzó con Ajustes de Android en primer plano.'
+
+adb shell am start -W -n "$app/.MainActivity"
+wait_for_ui 'Abrir reproductor'
+tap_control 'Abrir reproductor'
+wait_for_ui 'Aleatorio: desactivado'
+tap_control 'Aleatorio: desactivado'
+wait_for_ui 'Aleatorio: activado'
+tap_control 'Aleatorio: activado'
+wait_for_ui 'Aleatorio: desactivado'
+tap_control 'Repetir: desactivado'
+wait_for_ui 'Repetir: toda la cola'
+tap_control 'Repetir: toda la cola'
+wait_for_ui 'Repetir: una canción'
+adb shell input keyevent KEYCODE_BACK
+wait_for_ui 'Abrir reproductor'

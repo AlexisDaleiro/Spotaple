@@ -1,7 +1,7 @@
 import { Play, Shuffle } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../api';
-import { playAlbum } from '../lib/actions';
+import { playAlbum, playCollection } from '../lib/actions';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { Cover } from '../components/Cover';
@@ -19,11 +19,7 @@ export function ArtistPage({ id }: { id: string }) {
   if (!artist) return <div className="page" aria-busy="true"><RowsSkeleton n={6} /></div>;
 
   const { topSongs } = artist;
-  const play = (shuffle: boolean) => {
-    if (!topSongs.length) return;
-    if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(topSongs, 0);
-  };
+  const play = (shuffle: boolean) => playCollection(topSongs, shuffle);
 
   return (
     <div className="page">

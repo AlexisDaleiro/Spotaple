@@ -4,7 +4,7 @@ import { formatTotal, plural, totalDuration } from '../lib/format';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
 import { navigate } from '../stores/nav';
-import { toastQueued } from '../lib/actions';
+import { playCollection, toastQueued } from '../lib/actions';
 import { Cover } from '../components/Cover';
 import { Hero } from '../components/Shelf';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
@@ -25,11 +25,7 @@ export function AlbumPage({ id }: { id: string }) {
   }
 
   const { tracks } = album;
-  const play = (shuffle: boolean) => {
-    if (!tracks.length) return;
-    if (shuffle !== player().shuffle) player().toggleShuffle();
-    player().playTracks(tracks, 0);
-  };
+  const play = (shuffle: boolean) => playCollection(tracks, shuffle);
   const kind = album.kind === 'Single' ? 'Sencillo' : album.kind === 'EP' ? 'EP' : 'Álbum';
 
   return (

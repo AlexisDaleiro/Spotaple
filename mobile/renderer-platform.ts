@@ -1,10 +1,11 @@
 import '../src/renderer/src/main';
 import { api } from '../src/renderer/src/api';
-import { artistsText } from '../src/renderer/src/lib/format';
+import { artistsText, thumbUrl } from '../src/renderer/src/lib/format';
 import { currentItem, player, playerStore } from '../src/renderer/src/player/instance';
 import { canAdvance, inRoom, isAdmin, useJam } from '../src/renderer/src/stores/jam';
 import { useNav } from '../src/renderer/src/stores/nav';
 import { useUi } from '../src/renderer/src/stores/ui';
+import brand from './brand.png';
 
 Object.assign(window, {
   spotapleBack() {
@@ -12,6 +13,7 @@ Object.assign(window, {
     if (ui.dialog) ui.closeDialog();
     else if (ui.menu) ui.closeMenu();
     else if (ui.queueOpen) ui.toggleQueue();
+    else if (ui.mobilePlayerOpen) useUi.setState({ mobilePlayerOpen: false });
     else {
       const nav = useNav.getState();
       if (!nav.i) return false;
@@ -54,14 +56,17 @@ window.addEventListener('spotaple:open-local', () => {
 });
 
 let lastMedia = '';
+const fallbackArtwork = new URL(brand, location.href).href;
 playerStore.subscribe((state) => {
   const item = currentItem(state);
-  const key = `${item?.uid ?? ''}:${state.status}:${state.duration}:${Math.floor(state.position / 5)}`;
+  const artwork = item ? thumbUrl(item.track.thumbnail, 320) ?? fallbackArtwork : undefined;
+  const key = `${item?.uid ?? ''}:${state.status}:${state.duration}:${Math.floor(state.position / 5)}:${artwork ?? ''}`;
   if (key === lastMedia) return;
   lastMedia = key;
   window.SpotapleAndroid?.media(JSON.stringify({
     title: item?.track.title ?? '',
     artist: item ? artistsText(item.track.artists) : '',
+    artwork,
     status: state.status,
     positionMs: Math.round(state.position * 1000),
     durationMs: Math.round(state.duration * 1000),
