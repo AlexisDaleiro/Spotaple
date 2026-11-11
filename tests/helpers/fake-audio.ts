@@ -37,7 +37,7 @@ export class FakeAudio extends EventTarget implements AudioLike {
     this.duration = duration;
     this.dispatchEvent(new Event('loadedmetadata'));
   }
-  ended() {
+  finish() {
     this.dispatchEvent(new Event('ended'));
   }
   fail(code = 4) {

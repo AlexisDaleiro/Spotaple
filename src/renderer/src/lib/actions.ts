@@ -1,10 +1,26 @@
 import type { AudioFormat } from '@shared/offline';
 import type { Track } from '@shared/types';
+import { trackLink } from '@shared/track';
 import { api, errorMessage } from '../api';
 import { player } from '../player/instance';
 import { inRoom, useJam } from '../stores/jam';
 import { useOffline } from '../stores/offline';
 import { toast } from '../stores/ui';
+
+export async function shareTrack(track: Track): Promise<void> {
+  const url = trackLink(track.id);
+  if (!url) return;
+  try {
+    if (window.SpotapleAndroid) {
+      window.SpotapleAndroid.shareTrack(url);
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    toast('Enlace de la canción copiado.', 'success');
+  } catch {
+    toast('No se pudo compartir el enlace de la canción.', 'error');
+  }
+}
 
 /** "N canciones agregadas a la cola". Dentro de una sala el aviso ("pedidas a la sala") lo da el propio pedido. */
 export const toastQueued = (count: number) => {

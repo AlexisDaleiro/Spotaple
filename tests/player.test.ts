@@ -10,8 +10,10 @@ class FakeAudio extends EventTarget implements AudioLike {
   volume = 1;
   muted = false;
   paused = true;
+  ended = false;
   error: { code: number } | null = null;
   play() {
+    this.ended = false;
     this.paused = false;
     queueMicrotask(() => this.dispatchEvent(new Event('playing')));
     return Promise.resolve();
@@ -26,7 +28,9 @@ class FakeAudio extends EventTarget implements AudioLike {
     this.duration = duration;
     this.dispatchEvent(new Event('loadedmetadata'));
   }
-  ended() {
+  finish() {
+    this.ended = true;
+    this.pause();
     this.dispatchEvent(new Event('ended'));
   }
   fail(code = 4) {
@@ -228,7 +232,7 @@ describe('radio automática', () => {
     await flush();
     expect(radio.fetch).not.toHaveBeenCalled();
     on = true;
-    audio.ended();
+    audio.finish();
     await flush();
     await flush();
     expect(radio.fetch).toHaveBeenCalledTimes(1);
@@ -264,7 +268,7 @@ describe('radio automática', () => {
     await flush();
     expect(api.recordPlay).toHaveBeenLastCalledWith(track(0), false); // la eligió el usuario
 
-    audio.ended(); // avanza sola a la primera de la radio
+    audio.finish(); // avanza sola a la primera de la radio
     await flush();
     expect(api.recordPlay).toHaveBeenLastCalledWith(track(100), true);
 
@@ -372,11 +376,15 @@ describe('la última elección gana', () => {
 
 describe('fin de canción y modos', () => {
   it('avanza a la siguiente sin registrar una "selección"', async () => {
-    const { s, audio, api } = setup();
+    const { s, audio, api, store } = setup();
     s().playTracks(tracks(3), 0);
     await flush();
-    audio.ended();
+    const statuses: string[] = [];
+    const unsubscribe = store.subscribe(({ status }) => statuses.push(status));
+    audio.finish();
     await flush();
+    unsubscribe();
+    expect(statuses).not.toContain('paused');
     expect(s().index).toBe(1);
     expect(api.recordSelection).toHaveBeenCalledTimes(1);
     expect(api.recordPlay).toHaveBeenCalledTimes(2);
@@ -386,7 +394,7 @@ describe('fin de canción y modos', () => {
     const { s, audio } = setup();
     s().playTracks(tracks(2), 1);
     await flush();
-    audio.ended();
+    audio.finish();
     expect(s().status).toBe('ended');
     expect(s().index).toBe(1);
   });
@@ -396,7 +404,7 @@ describe('fin de canción y modos', () => {
     s().cycleRepeat(); // all
     s().playTracks(tracks(2), 1);
     await flush();
-    audio.ended();
+    audio.finish();
     await flush();
     expect(s().index).toBe(0);
     expect(s().status).toBe('playing');
@@ -410,7 +418,7 @@ describe('fin de canción y modos', () => {
     s().playTracks(tracks(3), 1);
     await flush();
     audio.currentTime = 150;
-    audio.ended();
+    audio.finish();
     await flush();
     expect(s().index).toBe(1);
     expect(audio.currentTime).toBe(0);
@@ -847,7 +855,7 @@ describe('crossfade (fundido entre canciones)', () => {
     await playing(r, 4);
     tick(r.audio, 199.8);
     await flush();
-    r.audio.ended();
+    r.audio.finish();
     await flush();
     expect(r.s().index).toBe(1);
   });

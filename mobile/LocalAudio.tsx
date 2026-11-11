@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { getDocumentAsync, type DocumentPickerAsset } from 'expo-document-picker';
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +28,8 @@ function AudioPreview({ file }: { file: DocumentPickerAsset }) {
       if (status.didJustFinish || status.playbackState === 'ended') {
         await player.seekTo(0);
       }
+      await setAudioModeAsync({ shouldPlayInBackground: true, interruptionMode: 'doNotMix' });
+      player.setActiveForLockScreen(true, { title: file.name });
       player.play();
     } catch {
       setError(true);

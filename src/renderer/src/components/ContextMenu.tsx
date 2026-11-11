@@ -1,8 +1,9 @@
-import { ArrowLeft, ChevronRight, CircleUserRound, Disc3, Download, Heart, ListEnd, ListMusic, ListPlus, Play, Plus } from 'lucide-react';
+import { ArrowLeft, ChevronRight, CircleUserRound, Disc3, Download, Heart, ListEnd, ListMusic, ListPlus, Play, Plus, Share2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
 import type { Track } from '@shared/types';
-import { exportTrack } from '../lib/actions';
+import { trackLink } from '@shared/track';
+import { exportTrack, shareTrack } from '../lib/actions';
 import { cx } from '../lib/format';
 import { player } from '../player/instance';
 import { inRoom, isAdmin, useJam } from '../stores/jam';
@@ -83,6 +84,7 @@ export function trackMenuItems(track: Track, opts: TrackMenuOptions = {}): MenuI
     },
     { label: 'Agregar a playlist', icon: <ListMusic size={15} />, submenu: playlistItems },
     { label: 'Descargar canción', icon: <Download size={15} />, disabled: !offline.reachable(track.id), submenu: downloadItems },
+    ...(trackLink(track.id) ? [{ label: 'Compartir canción', icon: <Share2 size={15} />, onSelect: () => void shareTrack(track) }] : []),
     { separator: true },
     { label: 'Ir al álbum', icon: <Disc3 size={15} />, disabled: !track.album?.id, onSelect: () => navigate({ page: 'album', id: track.album!.id! }) },
     { label: 'Ir al artista', icon: <CircleUserRound size={15} />, disabled: !artist, onSelect: () => navigate({ page: 'artist', id: artist!.id! }) },

@@ -22,7 +22,7 @@ Object.assign(window, {
   spotapleMedia(action: 'play' | 'pause' | 'prev' | 'next' | 'seek', position?: number) {
     const p = player();
     const room = useJam.getState().view;
-    const active = p.status === 'playing' || p.status === 'buffering';
+    const active = p.status === 'playing' || p.status === 'buffering' || p.status === 'loading';
     if (inRoom(room)) {
       if (action === 'next' && canAdvance(room)) void api.jam.send({ t: 'transport', action: 'next' });
       if (!isAdmin(room)) return;
@@ -31,7 +31,8 @@ Object.assign(window, {
       if (action === 'seek' && Number.isFinite(position)) void api.jam.send({ t: 'transport', action: 'seek', positionSec: position });
       return;
     }
-    if ((action === 'play' && !active) || (action === 'pause' && active)) p.togglePlay();
+    if (action === 'pause' && p.status === 'loading') p.stop();
+    else if ((action === 'play' && !active) || (action === 'pause' && active)) p.togglePlay();
     else if (action === 'prev') p.prev();
     else if (action === 'next') p.next();
     else if (action === 'seek' && Number.isFinite(position)) p.seek(position!);
@@ -55,14 +56,13 @@ window.addEventListener('spotaple:open-local', () => {
 let lastMedia = '';
 playerStore.subscribe((state) => {
   const item = currentItem(state);
-  const playing = state.status === 'playing' || state.status === 'buffering';
   const key = `${item?.uid ?? ''}:${state.status}:${state.duration}:${Math.floor(state.position / 5)}`;
   if (key === lastMedia) return;
   lastMedia = key;
   window.SpotapleAndroid?.media(JSON.stringify({
     title: item?.track.title ?? '',
     artist: item ? artistsText(item.track.artists) : '',
-    playing,
+    status: state.status,
     positionMs: Math.round(state.position * 1000),
     durationMs: Math.round(state.duration * 1000),
   }));

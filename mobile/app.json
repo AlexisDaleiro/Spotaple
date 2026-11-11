@@ -2,12 +2,12 @@
   "expo": {
     "name": "Spotaple",
     "slug": "spotaple",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "icon": "../build/icon.png",
     "platforms": ["android"],
     "android": {
       "package": "com.alexis.spotaple.preview",
-      "versionCode": 2,
+      "versionCode": 3,
       "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "plugins": [
@@ -15,7 +15,7 @@
         "expo-audio",
         {
           "recordAudioAndroid": false,
-          "enableBackgroundPlayback": false
+          "enableBackgroundPlayback": true
         }
       ]
     ]

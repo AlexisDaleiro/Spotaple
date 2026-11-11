@@ -34,6 +34,7 @@ export interface AudioLike extends EventTarget {
   volume: number;
   muted: boolean;
   readonly paused: boolean;
+  readonly ended?: boolean;
   readonly error: { code: number } | null;
   play(): Promise<void>;
   pause(): void;
@@ -421,7 +422,7 @@ export function createPlayer(deps: PlayerDeps) {
     });
     on('pause', () => {
       const { status } = get();
-      if (status === 'playing' || status === 'buffering') set({ status: 'paused' });
+      if (!audio.ended && (status === 'playing' || status === 'buffering')) set({ status: 'paused' });
     });
     on('waiting', () => {
       if (get().status === 'playing') set({ status: 'buffering' });
