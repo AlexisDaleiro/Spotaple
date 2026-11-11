@@ -63,8 +63,6 @@ if adb shell cat /sdcard/spotaple-view.xml | grep -F 'Atrás (Alt+' >/dev/null; 
 tap_control 'Inicio'
 wait_for_ui 'Reproducir Descubrimiento semanal'
 tap_control 'Reproducir Descubrimiento semanal'
-wait_for_ui 'Pausar'
-wait_for_ui 'Reproducir Descubrimiento semanal'
 
 media_session() {
   adb shell dumpsys media_session | sed -n '/Spotaple com\.alexis\.spotaple\.preview\//,/queueTitle=/p'
@@ -81,6 +79,7 @@ wait_for_playing() {
   return 1
 }
 wait_for_playing 'Spotaple primera prueba' 0
+echo 'La primera canción empezó desde la tarjeta de Descubrimiento semanal.'
 adb shell input keyevent KEYCODE_SLEEP
 wait_for_playing 'Spotaple segunda prueba' 1000
 media_session | grep -F 'metadata: size=5, description=Spotaple segunda prueba'
@@ -94,6 +93,8 @@ wait_for_playing 'Spotaple segunda prueba' 15000
 echo 'La reproducción avanzó con Ajustes de Android en primer plano.'
 
 adb shell am start -W -n "$app/.MainActivity"
+adb shell cmd media_session dispatch pause
+wait_for_ui 'Reproducir Descubrimiento semanal'
 wait_for_ui 'Abrir reproductor'
 tap_control 'Abrir reproductor'
 wait_for_ui 'Aleatorio: desactivado'
@@ -107,3 +108,4 @@ tap_control 'Repetir: toda la cola'
 wait_for_ui 'Repetir: una canción'
 adb shell input keyevent KEYCODE_BACK
 wait_for_ui 'Abrir reproductor'
+echo 'Los controles de aleatorio, repetición y cierre se pueden tocar en Android.'
