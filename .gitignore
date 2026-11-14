@@ -6,5 +6,8 @@ dist
 .e2e
 *.log
 .relay
+*.p12
+*.jks
+*.keystore
 relay/node_modules
 relay/.wrangler

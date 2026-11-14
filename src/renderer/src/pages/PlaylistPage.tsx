@@ -89,7 +89,7 @@ export function PlaylistPage({ id }: { id: number }) {
               <Play size={18} fill="currentColor" /> Reproducir
             </button>
             <IconButton variant="solid" size="lg" icon={<Shuffle size={18} />} label="Reproducir en orden aleatorio" disabled={!items.length} onClick={() => play(true)} />
-            <IconButton variant="solid" size="lg" icon={<ListPlus size={18} />} label="Agregar toda la playlist a la cola" disabled={!items.length} onClick={() => (player().addToQueue(tracks), toastQueued(items.length))} />
+            <IconButton variant="solid" size="lg" icon={<ListPlus size={18} />} label="Agregar toda la playlist a la cola" disabled={!items.length} onClick={() => toastQueued(player().addToQueue(tracks))} />
             <IconButton variant="solid" size="lg" icon={<Pencil size={17} />} label="Cambiar el nombre" onClick={() => renamePlaylistDialog(playlist)} />
             <IconButton variant="solid" size="lg" icon={<Trash2 size={17} />} label="Eliminar playlist" onClick={() => deletePlaylistFlow(summary, () => navigate({ page: 'playlists' }, { replace: true }))} />
           </>

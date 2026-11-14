@@ -12,6 +12,7 @@ import type { MenuItem } from '../stores/ui';
 import { Cover } from './Cover';
 import { onTrackContextMenu, openTrackMenu } from './ContextMenu';
 import { IconButton } from './IconButton';
+import { WindowedList, type ListRowPosition } from './WindowedList';
 
 export function ArtistLinks({ artists }: { artists: ArtistRef[] }) {
   if (!artists.length) return <>Artista desconocido</>;
@@ -58,9 +59,10 @@ interface Props {
   showCover?: boolean;
   menuExtra?: MenuItem[];
   reorder?: ReorderItem;
+  position?: ListRowPosition;
 }
 
-export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = true, menuExtra, reorder }: Props) {
+export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = true, menuExtra, reorder, position }: Props) {
   // null = no es la canción actual; si lo es, su estado.
   const status = usePlayer((s) => (s.items[s.index]?.track.id === track.id ? s.status : null));
   const fav = useLibrary((s) => s.favoriteIds.has(track.id));
@@ -77,6 +79,7 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
 
   const onKeyDown = (e: KeyboardEvent<HTMLLIElement>) => {
     if (e.target !== e.currentTarget) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const li = e.currentTarget;
     if (e.key === 'Enter') onPlay();
     else if (e.key === 'ArrowDown') (li.nextElementSibling as HTMLElement | null)?.focus();
@@ -98,6 +101,7 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
       onDoubleClick={onPlay}
       onKeyDown={onKeyDown}
       onContextMenu={onTrackContextMenu(track, menuOpts)}
+      {...position}
       {...reorder?.props}
     >
       <div className="row__lead">
@@ -168,7 +172,12 @@ export function TrackRow({ track, index, onPlay, showAlbum = true, showCover = t
 }
 
 /** Lista de canciones: contenedor con cabecera sticky y consulta de contenedor para ocultar el álbum. */
-export function TrackList({ children, showAlbum = true, label }: { children: React.ReactNode; showAlbum?: boolean; label: string }) {
+export function TrackList({ children, showAlbum = true, label, windowed }: {
+  children?: React.ReactNode;
+  showAlbum?: boolean;
+  label: string;
+  windowed?: Pick<React.ComponentProps<typeof WindowedList>, 'count' | 'rowHeight' | 'rowKey' | 'renderRow'>;
+}) {
   return (
     <div className={cx('tracklist', !showAlbum && 'tracklist--no-album')}>
       <div className="tracklist__head" aria-hidden="true">
@@ -179,9 +188,11 @@ export function TrackList({ children, showAlbum = true, label }: { children: Rea
         <span className="th-dur">Duración</span>
         <span className="th-more" />
       </div>
-      <ul className="tracklist__body" aria-label={label}>
-        {children}
-      </ul>
+      {windowed ? (
+        <WindowedList {...windowed} className="tracklist__body" label={label} scrollSelector=".main__scroll" stickyHeader={32} />
+      ) : (
+        <ul className="tracklist__body" aria-label={label}>{children}</ul>
+      )}
     </div>
   );
 }

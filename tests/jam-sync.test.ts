@@ -5,6 +5,7 @@ import type { JamState, JamView } from '../src/shared/jam/types';
 import type { PreparedAudio } from '../src/shared/types';
 import { createJamHook, startJamSync, type JamOutMsg } from '../src/renderer/src/player/jam-sync';
 import { createPlayer } from '../src/renderer/src/player/player';
+import { applyPlaybackCommand } from '../src/renderer/src/player/transport';
 import { FakeAudio, flush, ok, track, tracks } from './helpers/fake-audio';
 
 /** Reloj local fijo: así la posición esperada de un seguidor es exacta. */
@@ -60,6 +61,40 @@ function setup(prepare?: (id: string) => Promise<PreparedAudio>) {
 }
 
 describe('el admin conduce su reproductor y avisa a la sala', () => {
+  it('aplica los controles multimedia al audio del admin y sincroniza la pausa', async () => {
+    const { s, audio, sent, setView } = setup();
+    const room = view('admin-1', anchored(withSong(base()), 0));
+    setView(room);
+    await flush();
+    const advance = vi.fn();
+    audio.manualPause = true;
+    applyPlaybackCommand(s(), room, advance, 'pause');
+    applyPlaybackCommand(s(), room, advance, 'pause');
+    expect(audio.paused).toBe(true);
+    audio.firePause();
+    await flush();
+    expect(sent.filter((msg) => msg.t === 'transport')).toEqual([{ t: 'transport', action: 'pause' }]);
+    applyPlaybackCommand(s(), room, advance, 'prev');
+    applyPlaybackCommand(s(), room, advance, 'next');
+    expect(advance).toHaveBeenCalledTimes(1);
+  });
+
+  it('los controles multimedia de un invitado respetan los permisos de la sala', async () => {
+    const { s, audio, setView } = setup();
+    const room = view('u-mara', everyone(anchored(withSong(base()), 12)));
+    setView(room);
+    await flush();
+    expect(s().status).toBe('playing');
+    const advance = vi.fn();
+    applyPlaybackCommand(s(), room, advance, 'pause');
+    applyPlaybackCommand(s(), room, advance, 'seek', 25);
+    applyPlaybackCommand(s(), room, advance, 'prev');
+    applyPlaybackCommand(s(), room, advance, 'next');
+    expect(audio.paused).toBe(false);
+    expect(s().position).toBe(12);
+    expect(advance).not.toHaveBeenCalled();
+  });
+
   it('carga la canción actual, informa que suena y que terminó', async () => {
     const { s, audio, sent, setView } = setup();
     setView(view('admin-1', withSong(base())));

@@ -33,14 +33,26 @@
   flex: none;
 }
 .brand__mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--bg-2);
   flex: none;
+}
+.brand__logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.page--home .empty__icon {
+  width: 76px;
+  height: 76px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--bg-2);
 }
 .brand__name {
   font: 700 var(--fs-xl) / 1 var(--font-display);
@@ -354,6 +366,36 @@
   border-radius: var(--r-sm);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
+.player__details {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  flex: 1;
+  min-width: 0;
+}
+.player__cover-button {
+  position: relative;
+  flex: none;
+  border-radius: var(--r-sm);
+}
+.player__expand-glyph {
+  position: absolute;
+  inset: auto 3px 3px auto;
+  box-sizing: content-box;
+  padding: 4px;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.72);
+  color: white;
+  opacity: 0.84;
+}
+.player__cover-button:hover .cover,
+.player__cover-button:focus-visible .cover {
+  filter: brightness(0.8);
+}
+.player__cover-button:hover .player__expand-glyph,
+.player__cover-button:focus-visible .player__expand-glyph {
+  opacity: 1;
+}
 .player__meta {
   display: flex;
   flex-direction: column;
@@ -459,9 +501,69 @@
   .slider--volume {
     width: 64px !important;
   }
-  .player__fav {
-    display: none;
-  }
+}
+
+:root:not([data-platform="android"]) .player--expanded {
+  position: fixed;
+  inset: var(--title-h) 0 0;
+  z-index: 40;
+  justify-content: center;
+  grid-template-columns: minmax(170px, min(38vw, 420px)) minmax(240px, 450px);
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas:
+    "head head"
+    "cover meta"
+    "cover center"
+    "cover right";
+  column-gap: clamp(20px, 4vw, 58px);
+  row-gap: var(--s-5);
+  padding: var(--s-6) clamp(20px, 4vw, 64px) var(--s-8);
+  overflow-y: auto;
+  background: linear-gradient(145deg, var(--bg-3), var(--bg-0) 70%);
+}
+:root:not([data-platform="android"]) .player--expanded .player__now { display: contents; }
+:root:not([data-platform="android"]) .player--expanded .player__expanded-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  color: var(--fg-1);
+  font-weight: 600;
+}
+:root:not([data-platform="android"]) .player--expanded .player__cover {
+  grid-area: cover;
+  width: min(100%, 60vh, 420px);
+  justify-self: center;
+  border-radius: var(--r-lg);
+}
+:root:not([data-platform="android"]) .player--expanded .player__details {
+  grid-area: meta;
+  align-self: end;
+}
+:root:not([data-platform="android"]) .player--expanded .player__idle { grid-area: meta; }
+:root:not([data-platform="android"]) .player--expanded .player__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: clamp(21px, 3vw, 38px);
+}
+:root:not([data-platform="android"]) .player--expanded .player__artist { font-size: var(--fs-lg); }
+:root:not([data-platform="android"]) .player--expanded .player__center { grid-area: center; }
+:root:not([data-platform="android"]) .player--expanded .play-btn { width: 52px; height: 52px; }
+:root:not([data-platform="android"]) .player--expanded .player__right {
+  grid-area: right;
+  align-self: start;
+}
+:root:not([data-platform="android"]) .app[data-player-expanded="true"][data-queue="true"] .player--expanded {
+  inset-inline-end: calc(var(--queue-w) + var(--gap));
+  padding-inline: clamp(16px, 3vw, 48px);
+}
+:root:not([data-platform="android"]) .app[data-player-expanded="true"] .queue {
+  position: fixed;
+  inset: var(--title-h) 0 0 auto;
+  z-index: 45;
 }
 
 /* Avisos flotantes sobre el reproductor */

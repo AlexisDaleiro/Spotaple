@@ -41,7 +41,7 @@ async function requestBody(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(buffers).toString('utf8'));
 }
 
-export async function startRuntime(dataDir: string, webDir: string, lanAddress?: string, version = '') {
+export async function startRuntime(dataDir: string, webDir: string, lanAddress?: string, version = '', applicationId?: string) {
   await mkdir(dataDir, { recursive: true });
   const prefix = `/${randomBytes(32).toString('hex')}/`;
   const streams = new Set<ServerResponse>();
@@ -84,7 +84,10 @@ export async function startRuntime(dataDir: string, webDir: string, lanAddress?:
     emit: (view) => emit(IPC.jamState, view),
     localAddress: lanAddress ? () => lanAddress : undefined,
   });
-  const updates = createAndroidUpdates(dataDir, version, (state) => emit(IPC.updatesState, state), () => emit('android:install', true), fetchImpl);
+  const updates = createAndroidUpdates(
+    dataDir, version, (state) => emit(IPC.updatesState, state), () => emit('android:install', true), fetchImpl,
+    applicationId === 'com.alexis.spotaple',
+  );
   const handlers = createHandlers({
     store, provider, jam, offline, fetchImpl,
     jamRelay: { ...relay, state: relayStatus },
@@ -118,7 +121,7 @@ export async function startRuntime(dataDir: string, webDir: string, lanAddress?:
     },
     onSettings: () => {},
   });
-  const respondAudio = createResponder(provider, fetchImpl, offline.local);
+  const respondAudio = createResponder(provider, fetchImpl, offline.local, true);
   let origin: string;
   const server = createServer((request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -257,10 +260,10 @@ export async function startRuntime(dataDir: string, webDir: string, lanAddress?:
 }
 
 export async function runRuntime(args: string[]) {
-  const [dataDir, webDir, readyFile, lanAddress, version] = args;
+  const [dataDir, webDir, readyFile, lanAddress, version, applicationId] = args;
   if (!dataDir || !webDir || !readyFile) throw new Error('Faltan las rutas de Android.');
   await readFile(join(webDir, 'index.html'));
-  const { url } = await startRuntime(dataDir, webDir, lanAddress, version);
+  const { url } = await startRuntime(dataDir, webDir, lanAddress, version, applicationId);
   await writeFile(readyFile + '.tmp', url, { mode: 0o600 });
   await rename(readyFile + '.tmp', readyFile);
 }

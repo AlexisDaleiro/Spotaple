@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import { LIMITS } from '@shared/jam/types';
 import { EQ_BANDS, EQ_PRESETS, EQ_RANGE_DB, presetFor, type EqPreset } from '@shared/audio';
 import { AUDIO_FORMATS, type AudioFormat } from '@shared/offline';
-import { MAX_CROSSFADE_S, TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
+import { MAX_CROSSFADE_S, OFFLINE_LIMITS_MIB, TEXT_SCALES, THEMES, type AppSettings, type ThemeId } from '@shared/settings';
 import { api, errorMessage } from '../api';
 import { cx, formatBytes } from '../lib/format';
 import { discoverStore } from '../stores/discover';
@@ -27,6 +27,7 @@ const SWATCHES = [
 const SCALE_LABELS: Record<(typeof TEXT_SCALES)[number], string> = { 0.9: 'Pequeño', 1: 'Normal', 1.1: 'Grande', 1.25: 'Muy grande' };
 const THEME_OPTIONS: { value: ThemeId; label: string }[] = [{ value: 'system', label: 'Sistema' }, ...THEMES.map((t) => ({ value: t.id, label: t.label }))];
 const FORMAT_OPTIONS: { value: AudioFormat; label: string }[] = (['opus', 'aac'] as const).map((f) => ({ value: f, label: AUDIO_FORMATS[f].label }));
+const OFFLINE_LIMIT_OPTIONS = OFFLINE_LIMITS_MIB.map((value) => ({ value, label: formatBytes(value * 1024 * 1024) }));
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   const id = useId();
@@ -234,6 +235,7 @@ function DownloadsRow() {
   const hintId = useId();
   const count = useOffline((s) => s.ids.size);
   const bytes = useOffline((s) => s.bytes);
+  const limited = useOffline((s) => s.limited);
   const clear = () =>
     useUi.getState().openDialog({
       kind: 'confirm',
@@ -256,6 +258,7 @@ function DownloadsRow() {
         <span className="set-row__label">Espacio usado</span>
         <p className="set-row__hint" id={hintId}>
           {formatBytes(bytes)} en {count === 1 ? '1 canción descargada' : `${count} canciones descargadas`}.
+          {limited && ' Se alcanzó el límite de descargas automáticas.'}
         </p>
       </div>
       <button type="button" className="btn" disabled={count === 0} aria-describedby={hintId} onClick={clear}>
@@ -328,6 +331,7 @@ function UpdatesRow() {
   const status = state?.status;
   const android = api.platform === 'android';
   const messages = {
+    store: 'Microsoft Store administra las actualizaciones de esta instalación.',
     unsupported: api.platform === 'darwin'
       ? 'Esta compilación de prueba se actualiza instalando un nuevo archivo DMG.'
       : 'Para recibir actualizaciones, usá la versión instalada de Spotaple para Windows.',
@@ -372,7 +376,7 @@ function UpdatesRow() {
         type="button"
         className="btn"
         aria-describedby={hintId}
-        disabled={saving || !status || status === 'unsupported' || status === 'checking' || status === 'downloading' || status === 'installing'}
+        disabled={saving || !status || status === 'unsupported' || status === 'store' || status === 'checking' || status === 'downloading' || status === 'installing'}
         onClick={() => void run()}
       >
         {status === 'ready' || status === 'installing'
@@ -430,7 +434,7 @@ export function SettingsPage() {
       <Group title="Reproducción">
         <Toggle
           label="Radio automática"
-          hint="Cuando se acaba lo que hay en la cola, sigue sola con canciones del mismo artista y de otros parecidos. Con la radio activada, tocar una canción suelta en la búsqueda suena sola y sigue la radio. Apagada, la reproducción se detiene al terminar la cola."
+          hint="Al terminar la cola, la radio sigue con canciones del mismo artista y de otros parecidos."
           on={s.radio}
           onChange={(radio) => set({ radio })}
         />
@@ -445,6 +449,15 @@ export function SettingsPage() {
           on={s.autoDownload}
           onChange={(autoDownload) => set({ autoDownload })}
         />
+        {api.platform !== 'android' && (
+          <Choice
+            legend="Espacio para descargas automáticas"
+            hint="Se conservan las canciones ya descargadas si reducís el límite."
+            value={s.offlineLimitMiB}
+            options={OFFLINE_LIMIT_OPTIONS}
+            onChange={(offlineLimitMiB) => set({ offlineLimitMiB })}
+          />
+        )}
         <Choice
           legend="Formato al descargar una canción"
           hint="Es el que aparece primero en el menú «Descargar canción» (clic derecho sobre una canción)."

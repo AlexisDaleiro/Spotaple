@@ -19,12 +19,16 @@ export async function openUpstream(o: {
   const resolve = () => (o.variant ? o.provider.resolveAudio(o.id, { variant: o.variant }) : o.provider.resolveAudio(o.id));
   const open = (a: ResolvedAudio) => o.fetchImpl(a.url, { headers: { Range: o.range }, signal: o.signal });
 
+  o.signal?.throwIfAborted();
   let audio = await resolve();
+  o.signal?.throwIfAborted();
   let res = await open(audio);
   if (STALE.has(res.status)) {
     await res.body?.cancel().catch(() => undefined);
+    o.signal?.throwIfAborted();
     o.provider.invalidate(o.id);
     audio = await resolve();
+    o.signal?.throwIfAborted();
     res = await open(audio);
   }
   return { res, audio };

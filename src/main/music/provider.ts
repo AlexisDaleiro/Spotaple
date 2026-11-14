@@ -1,5 +1,5 @@
 import type { StreamQuality } from '../../shared/settings';
-import type { AlbumDetail, ArtistDetail, RemotePlaylistDetail, SearchResults, Track } from '../../shared/types';
+import type { AlbumDetail, ArtistDetail, RemotePlaylistDetail, SearchCategory, SearchResults, Track } from '../../shared/types';
 
 /** Qué audio se pide: la calidad de streaming (Opus) o AAC. Con una variante explícita no rige el ajuste de calidad. */
 export type AudioVariant = StreamQuality | 'aac';
@@ -8,6 +8,8 @@ export type AudioVariant = StreamQuality | 'aac';
 export interface ResolvedAudio {
   url: string;
   mimeType: string;
+  /** Formato del catálogo, para validar que un tramo nuevo corresponde al mismo audio. */
+  formatId?: number;
   contentLength?: number;
   /** epoch ms desde el cual la URL se considera caducada. */
   expiresAt: number;
@@ -21,7 +23,7 @@ export interface ResolvedAudio {
  * cambiarla no debería tocar ni la interfaz ni la base de datos.
  */
 export interface MusicProvider {
-  search(query: string): Promise<SearchResults>;
+  search(query: string, category?: SearchCategory, signal?: AbortSignal): Promise<SearchResults>;
   getAlbum(id: string): Promise<AlbumDetail>;
   getArtist(id: string): Promise<ArtistDetail>;
   /** Playlist de YouTube Music con sus canciones (hasta un tope; `truncated` avisa si había más). */

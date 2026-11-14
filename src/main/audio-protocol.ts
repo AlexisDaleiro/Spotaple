@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import type { MusicProvider } from './music/provider';
 import { classify } from './music/youtube/errors';
 import { openUpstream } from './upstream';
+import { recoverAudioBody } from './audio-recovery';
 
 const ID_RE = /^[\w-]{6,24}$/;
 
@@ -67,7 +68,7 @@ export function createAudioHandler(provider: MusicProvider, fetchImpl: typeof fe
   };
 }
 
-export function createResponder(provider: MusicProvider, fetchImpl: typeof fetch, local?: LocalAudio) {
+export function createResponder(provider: MusicProvider, fetchImpl: typeof fetch, local?: LocalAudio, recoverStreaming = false) {
   return async function handle(request: Request): Promise<Response> {
     let id: string;
     try {
@@ -90,7 +91,8 @@ export function createResponder(provider: MusicProvider, fetchImpl: typeof fetch
 
     try {
       // Si la URL caducó, `openUpstream` la resuelve de nuevo y reintenta una sola vez.
-      const { res, audio } = await openUpstream({ provider, fetchImpl, id, range, signal: request.signal });
+      const open = (range: string, signal: AbortSignal) => openUpstream({ provider, fetchImpl, id, range, signal });
+      const { res, audio } = await open(range, request.signal);
       if (audio.contentLength && start >= audio.contentLength) {
         await res.body?.cancel().catch(() => undefined);
         return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${audio.contentLength}` } });
@@ -110,7 +112,8 @@ export function createResponder(provider: MusicProvider, fetchImpl: typeof fetch
         const v = res.headers.get(h);
         if (v) headers.set(h, v);
       }
-      return new Response(res.body, { status: res.status, headers });
+      const body = recoverStreaming ? recoverAudioBody(res, audio, start, request.signal, open) : res.body;
+      return new Response(body, { status: res.status, headers });
     } catch (e) {
       const err = classify(e);
       return new Response(err.message, { status: err.code === 'network' ? 504 : 502 });

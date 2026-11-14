@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { player } from './player/instance';
+import { dispatchPlayback, player } from './player/instance';
+import { playbackActive } from './player/transport';
 import { useLibrary } from './stores/library';
 import { useNav, type Route } from './stores/nav';
 import { useUi } from './stores/ui';
@@ -59,14 +60,25 @@ const isActivatable = (el: HTMLElement | null) =>
 function useGlobalShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const ui = useUi.getState();
+      if (ui.dialog || ui.menu) return;
       const el = e.target as HTMLElement | null;
       const typing = isEditable(el);
       const p = player();
       const k = e.key;
 
-      if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'k') {
+      if (k === 'Escape') {
+        if (!typing && (ui.queueOpen || ui.playerOpen)) {
+          e.preventDefault();
+          if (ui.queueOpen) ui.toggleQueue();
+          else ui.setPlayerOpen(false);
+        }
+      } else if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'k') {
         e.preventDefault();
         useUi.getState().focusSearch();
+      } else if (typing) {
+        return;
       } else if (e.altKey && k === 'ArrowLeft') {
         e.preventDefault();
         useNav.getState().back();
@@ -75,24 +87,22 @@ function useGlobalShortcuts() {
         useNav.getState().forward();
       } else if ((e.ctrlKey || e.metaKey) && k === 'ArrowRight') {
         e.preventDefault();
-        p.next();
+        dispatchPlayback('next');
       } else if ((e.ctrlKey || e.metaKey) && k === 'ArrowLeft') {
         e.preventDefault();
-        p.prev();
+        dispatchPlayback('prev');
       } else if ((e.ctrlKey || e.metaKey) && (k === 'ArrowUp' || k === 'ArrowDown')) {
         e.preventDefault();
         p.setVolume(p.volume + (k === 'ArrowUp' ? 0.05 : -0.05));
-      } else if (typing) {
-        return;
       } else if (k === '/') {
         e.preventDefault();
         useUi.getState().focusSearch();
       } else if (k === ' ' && !isActivatable(el)) {
         e.preventDefault();
-        p.togglePlay();
+        dispatchPlayback(playbackActive(p.status) ? 'pause' : 'play');
       } else if (e.shiftKey && (k === 'ArrowRight' || k === 'ArrowLeft')) {
         e.preventDefault();
-        p.seekBy(k === 'ArrowRight' ? 10 : -10);
+        dispatchPlayback('seek', p.position + (k === 'ArrowRight' ? 10 : -10));
       } else if (!e.ctrlKey && !e.altKey && !e.metaKey && k.toLowerCase() === 'm') {
         p.toggleMute();
       } else if (!e.ctrlKey && !e.altKey && !e.metaKey && k.toLowerCase() === 'q') {
@@ -104,47 +114,59 @@ function useGlobalShortcuts() {
   }, []);
 }
 
-const scrollMemory = new Map<number, number>();
+const scrollMemory = new WeakMap<Route, number>();
 
 /** Recuerda el scroll por posición del historial y lo restaura cuando el contenido ya tiene altura. */
-function useScrollMemory(ref: React.RefObject<HTMLDivElement | null>, i: number) {
+function useScrollMemory(ref: React.RefObject<HTMLDivElement | null>, route: Route) {
+  useLayoutEffect(() => useNav.subscribe((next, previous) => {
+    if (next.route !== previous.route && ref.current) scrollMemory.set(previous.route, ref.current.scrollTop);
+  }), [ref]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const target = scrollMemory.get(i) ?? 0;
-    let tries = 0;
+    const target = scrollMemory.get(route) ?? 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const content = el.firstElementChild;
+    const observer = content ? new ResizeObserver(() => apply()) : undefined;
     const apply = () => {
       el.scrollTop = target;
-      if (target > 0 && Math.abs(el.scrollTop - target) > 2 && tries++ < 16) timer = setTimeout(apply, 50);
+      if (Math.abs(el.scrollTop - target) <= 2) observer?.disconnect();
     };
-    let timer: ReturnType<typeof setTimeout> | undefined;
     apply();
+    if (target > 0 && Math.abs(el.scrollTop - target) > 2 && content && observer) {
+      observer.observe(content);
+      timer = setTimeout(() => observer.disconnect(), 5000);
+    }
     return () => {
       clearTimeout(timer);
-      scrollMemory.set(i, el.scrollTop);
+      observer?.disconnect();
     };
-  }, [ref, i]);
+  }, [ref, route]);
 }
 
 export function App() {
   const route = useNav((s) => s.route);
   const i = useNav((s) => s.i);
   const queueOpen = useUi((s) => s.queueOpen);
-  const playerOpen = useUi((s) => s.mobilePlayerOpen);
+  const playerOpen = useUi((s) => s.playerOpen);
+  const dialogOpen = useUi((s) => Boolean(s.dialog));
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => void useLibrary.getState().init(), []);
+  useEffect(() => useNav.subscribe((current, previous) => {
+    if (current.route !== previous.route && useUi.getState().playerOpen) useUi.getState().setPlayerOpen(false);
+  }), []);
   useGlobalShortcuts();
-  useScrollMemory(scroller, i);
+  useScrollMemory(scroller, route);
 
   return (
-    <div className="app" data-queue={queueOpen}>
-      <a className="skip-link" href="#main" inert={playerOpen} onClick={(e) => (e.preventDefault(), scroller.current?.focus())}>
+    <div className="app" data-queue={queueOpen} data-player-expanded={playerOpen}>
+      <a className="skip-link" href="#main" inert={playerOpen || dialogOpen} onClick={(e) => (e.preventDefault(), scroller.current?.focus())}>
         Saltar al contenido
       </a>
-      <TopBar inert={playerOpen} />
-      <Sidebar inert={playerOpen} />
-      <main className="main" id="main" inert={playerOpen}>
+      <TopBar inert={playerOpen || dialogOpen} />
+      <Sidebar inert={playerOpen || dialogOpen} />
+      <main className="main" id="main" inert={playerOpen || dialogOpen}>
         <OfflineBanner />
         <div className="main__scroll" ref={scroller} tabIndex={-1}>
           <div className="page-enter" key={`${i}:${route.page}:${'id' in route ? route.id : ''}`}>
@@ -152,8 +174,8 @@ export function App() {
           </div>
         </div>
       </main>
-      {queueOpen && <QueuePanel />}
-      <PlayerBar />
+      {queueOpen && <QueuePanel inert={dialogOpen} />}
+      <PlayerBar inert={dialogOpen} />
       <Toasts />
       <MenuHost />
       <DialogHost />

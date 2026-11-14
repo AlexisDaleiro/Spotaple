@@ -12,11 +12,13 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -60,11 +62,15 @@ class PlaybackService : Service() {
       latest = null
       if (!starting) current?.stopSelf()
     }
+
+    fun recoveryPoint(): String? = latest?.takeIf { it.keepForeground && it.recoverable && it.trackId.isNotEmpty() }
+      ?.let { "${it.trackId}:${it.position}" }
   }
 
   data class MediaInfo(
     val title: String, val artist: String, val status: String, val position: Long, val duration: Long,
-    val artwork: String? = null,
+    val artwork: String? = null, val streaming: Boolean = false,
+    val trackId: String = "", val recoverable: Boolean = false,
   ) {
     val keepForeground get() = status == "playing" || status == "buffering" || status == "loading"
     val playbackState get() = when (status) {
@@ -77,6 +83,7 @@ class PlaybackService : Service() {
   private lateinit var session: MediaSession
   private lateinit var manager: NotificationManager
   private var wakeLock: PowerManager.WakeLock? = null
+  private var wifiLock: WifiManager.WifiLock? = null
   private var active = false
   private val main = Handler(Looper.getMainLooper())
   private val artworkExecutor = Executors.newSingleThreadExecutor()
@@ -152,12 +159,31 @@ class PlaybackService : Service() {
         wakeLock = getSystemService(PowerManager::class.java)
           .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:playback").apply { acquire() }
       }
+      keepWifi(info.streaming)
     } else {
+      keepWifi(false)
       wakeLock?.takeIf { it.isHeld }?.release()
       if (active) stopForeground(STOP_FOREGROUND_DETACH)
       active = false
       manager.notify(NOTIFICATION, note)
     }
+  }
+
+  @Suppress("DEPRECATION")
+  private fun keepWifi(streaming: Boolean) {
+    // Android 14 reemplaza este modo por uno que no opera en segundo plano.
+    if (Build.VERSION.SDK_INT >= 34) return
+    if (!streaming) {
+      wifiLock?.takeIf { it.isHeld }?.release()
+      return
+    }
+    if (wifiLock?.isHeld == true) return
+    runCatching {
+      val lock = wifiLock ?: applicationContext.getSystemService(WifiManager::class.java)
+        ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "$packageName:streaming")
+      wifiLock = lock
+      lock?.acquire()
+    }.onFailure { Log.w("SpotaplePlayback", "No se pudo mantener la conexión Wi-Fi para el streaming", it) }
   }
 
   private fun requestArtwork(url: String?) {
@@ -247,6 +273,7 @@ class PlaybackService : Service() {
     artworkExecutor.shutdownNow()
     main.removeCallbacksAndMessages(null)
     wakeLock?.takeIf { it.isHeld }?.release()
+    keepWifi(false)
     session.release()
     manager.cancel(NOTIFICATION)
     current = null

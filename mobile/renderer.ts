@@ -22,6 +22,7 @@ declare global {
     SpotapleAndroid?: {
       save(id: number, token: string, name: string): void;
       media(state: string): void;
+      takeRecovery?(trackId: string): string | null;
       open(url: string): void;
       install(): void;
       openLocal(): void;
@@ -48,7 +49,13 @@ async function request<T>(channel: string, ...args: unknown[]): Promise<IpcResul
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, args }),
+  }).catch((error) => {
+    if (channel === IPC.prepare && error instanceof TypeError) return undefined;
+    throw error;
   });
+  if (!response || (channel === IPC.prepare && response.status >= 500)) {
+    return { ok: false, error: { code: 'network', message: 'Se interrumpió la conexión con el reproductor. Probá de nuevo.' } };
+  }
   if (!response.ok) throw new Error('No se pudo comunicar con Spotaple.');
   return response.json();
 }

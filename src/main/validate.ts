@@ -1,6 +1,6 @@
 import { parseFormat, type AudioFormat } from '../shared/offline';
 import { sanitizeTrack } from '../shared/track';
-import type { PersistedPlayerState, Track } from '../shared/types';
+import { MAX_QUEUE_ITEMS, type PersistedPlayerState, type Track } from '../shared/types';
 import { MusicError } from './music/youtube/errors';
 
 export { sanitizeTrack };
@@ -28,7 +28,7 @@ export const int = (v: unknown): number => {
 /** Pedido de radio: la canción semilla y los ids que ya están en la cola (hasta 2000, con el patrón de ids). */
 export function sanitizeRadioRequest(v: unknown): { seed: Track; excludeIds: string[] } {
   const r = v as { seed?: unknown; excludeIds?: unknown } | null;
-  if (!r || typeof r !== 'object' || !Array.isArray(r.excludeIds) || r.excludeIds.length > 2000) throw bad();
+  if (!r || typeof r !== 'object' || !Array.isArray(r.excludeIds) || r.excludeIds.length > MAX_QUEUE_ITEMS) throw bad();
   return { seed: sanitizeTrack(r.seed), excludeIds: r.excludeIds.map((x) => id(x)) };
 }
 
@@ -42,8 +42,13 @@ export function sanitizeExportRequest(v: unknown): { track: Track; format: Audio
 
 export function sanitizePlayerState(v: unknown): PersistedPlayerState {
   const s = v as Partial<PersistedPlayerState> | null;
-  if (!s || typeof s !== 'object' || !Array.isArray(s.queue) || s.queue.length > 2000) throw bad();
+  if (!s || typeof s !== 'object' || !Array.isArray(s.queue) || s.queue.length > MAX_QUEUE_ITEMS) throw bad();
   const queue = s.queue.map(sanitizeTrack);
+  const order = s.originalOrder;
+  const originalOrder = s.shuffle === true && Array.isArray(order) && order.length === queue.length &&
+    Array.from(order).every((i) => Number.isInteger(i) && i >= 0 && i < queue.length) && new Set(order).size === queue.length
+    ? order
+    : undefined;
   const num = (x: unknown, d: number, lo: number, hi: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
   return {
     queue,
@@ -53,5 +58,6 @@ export function sanitizePlayerState(v: unknown): PersistedPlayerState {
     muted: s.muted === true,
     repeat: s.repeat === 'all' || s.repeat === 'one' ? s.repeat : 'off',
     shuffle: s.shuffle === true,
+    ...(originalOrder && { originalOrder }),
   };
 }

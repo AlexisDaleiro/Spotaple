@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PersistedPlayerState, PreparedAudio, Track } from '../src/shared/types';
+import { MAX_QUEUE_ITEMS, type PersistedPlayerState, type PreparedAudio, type Track } from '../src/shared/types';
 import { createPlayer, type AudioLike, type PlayerApi, type PlayerDeps, type RadioHook } from '../src/renderer/src/player/player';
 
 /** Audio simulado: reproduce eventos como lo haría un HTMLAudioElement. */
@@ -68,6 +68,24 @@ describe('radio automática', () => {
   const batch = (n: number, from = 100) => Array.from({ length: n }, (_, i) => track(from + i));
   const radioOf = (result: () => Promise<Track[]>, on = true) => ({ enabled: () => on, fetch: vi.fn(async (_seed: Track, _ids: string[]) => result()) }) satisfies RadioHook;
   const saved = (queue: Track[]): PersistedPlayerState => ({ queue, index: 0, positionSec: 0, volume: 0.8, muted: false, repeat: 'off', shuffle: false });
+
+  it('vuelve a pedir radio cuando vuelve internet y continúa después de la última canción', async () => {
+    let connected = false;
+    const radio = radioOf(async () => {
+      if (!connected) throw Object.assign(new Error('Sin red'), { code: 'network' });
+      return [track(100)];
+    });
+    const { s, audio } = setup(undefined, { radio });
+    s().playTracks([track(0)]);
+    await flush();
+    audio.finish();
+    connected = true;
+    s().networkRestored();
+    await flush();
+    expect(radio.fetch.mock.calls.some(([seed]) => seed.id === track(0).id)).toBe(true);
+    expect(s().items[s().index]?.track.id).toBe(track(100).id);
+    expect(s().status).toBe('playing');
+  });
 
   it('con la radio activa, al empezar una canción suelta se piden sugerencias y se agregan marcadas', async () => {
     const radio = radioOf(async () => batch(5));
@@ -317,6 +335,280 @@ describe('estados de reproducción', () => {
     expect(s().status).toBe('playing');
   });
 
+  it('recupera un stream bloqueado en la misma posición, tras invalidar su fuente', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000 });
+      const invalidation = deferred<undefined>();
+      api.invalidate.mockReturnValueOnce(invalidation.promise);
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      audio.currentTime = 42;
+      audio.dispatchEvent(new Event('timeupdate'));
+      audio.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(api.invalidate).toHaveBeenCalledWith(track(0).id);
+      expect(api.prepare).toHaveBeenCalledTimes(1);
+      expect(s().status).toBe('loading');
+      invalidation.resolve(undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      expect(api.prepare).toHaveBeenCalledTimes(2);
+      expect(audio.currentTime).toBe(42);
+      expect(s().status).toBe('playing');
+
+      audio.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(s()).toMatchObject({ status: 'error', error: { code: 'network' }, position: 42 });
+      expect(api.prepare).toHaveBeenCalledTimes(2);
+      s().play();
+      await vi.advanceTimersByTimeAsync(0);
+      audio.currentTime = 0;
+      audio.loaded(180);
+      expect(audio.currentTime).toBe(42);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('respeta una pausa manual aunque el stream siga sin entregar datos', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000 });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.dispatchEvent(new Event('waiting'));
+      s().pause();
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(s().status).toBe('paused');
+      expect(api.prepare).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('detecta falta de progreso aunque el audio no emita waiting', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000 });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      await vi.advanceTimersByTimeAsync(10_000);
+      audio.currentTime = 9;
+      audio.dispatchEvent(new Event('timeupdate'));
+      await vi.advanceTimersByTimeAsync(11_999);
+      expect(api.invalidate).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(api.invalidate).toHaveBeenCalledWith(track(0).id);
+      expect(s().position).toBe(9);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('recupera la pista truncada en vez de saltar a la siguiente', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000 });
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(64);
+      audio.currentTime = 64;
+      audio.finish();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.prepare.mock.calls.map(([id]) => id)).toEqual([track(0).id, track(0).id]);
+      expect(s()).toMatchObject({ index: 0, position: 64 });
+      audio.loaded(180);
+      expect(audio.currentTime).toBe(64);
+      audio.currentTime = 180;
+      audio.finish();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(s().index).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sin red salta directamente a una descarga aunque haya cuatro pistas inaccesibles', async () => {
+    let online = true;
+    const isDownloaded = (id: string) => id === track(5).id;
+    const { s, audio, api } = setup(undefined, { isDownloaded, reachable: (id) => online || isDownloaded(id) });
+    s().playTracks(tracks(6), 0);
+    await flush();
+    online = false;
+    audio.finish();
+    await flush();
+    expect(s()).toMatchObject({ index: 5, status: 'playing' });
+    expect(api.prepare.mock.calls.map(([id]) => id)).toEqual([track(0).id, track(5).id]);
+  });
+
+  it('la preparación fallida del fundido conserva el temporizador de la pista actual', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(async (id) => {
+        if (id === track(1).id) throw new Error('Sin fuente para el fundido');
+        return ok(id);
+      }, {
+        stallTimeoutMs: 12_000,
+        audio2: new FakeAudio(),
+        crossfade: { seconds: () => 10, fadeIn: vi.fn(), fadeOut: vi.fn(), unfade: vi.fn() },
+      });
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      audio.currentTime = 171;
+      audio.dispatchEvent(new Event('timeupdate'));
+      audio.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(api.invalidate).toHaveBeenCalledWith(track(0).id);
+      expect(s()).toMatchObject({ index: 0, position: 171, status: 'playing' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('un corte nuevo tiene sus propios intentos tras 30 segundos de audio continuo', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000, reconnectDelaysMs: [2000] });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      s().seek(40);
+      audio.fail(2);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      for (let time = 41; time <= 72; time++) {
+        await vi.advanceTimersByTimeAsync(1000);
+        audio.currentTime = time;
+        audio.dispatchEvent(new Event('timeupdate'));
+      }
+      audio.fail(2);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      expect(api.prepare).toHaveBeenCalledTimes(3);
+      expect(audio.currentTime).toBe(72);
+      expect(s().status).toBe('playing');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('espera la vuelta de la red y retoma la pista en el punto del corte', async () => {
+    vi.useFakeTimers();
+    try {
+      let connected = true;
+      const { s, audio, api, notify } = setup(async (id) => {
+        if (!connected) throw Object.assign(new Error('Sin conexión'), { code: 'network' });
+        return ok(id);
+      }, { reconnectDelaysMs: [2000, 6000] });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      s().seek(42);
+      connected = false;
+      audio.fail(2);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(s()).toMatchObject({ status: 'loading', reconnecting: true, position: 42, error: null });
+      expect(notify).not.toHaveBeenCalled();
+      expect(api.prepare).toHaveBeenCalledTimes(2);
+
+      connected = true;
+      s().networkRestored();
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      expect(api.prepare).toHaveBeenCalledTimes(3);
+      expect(audio.currentTime).toBe(42);
+      expect(s()).toMatchObject({ status: 'playing', reconnecting: false });
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(api.prepare).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('espera la red cuando termina una pista y la siguiente necesita internet', async () => {
+    vi.useFakeTimers();
+    try {
+      let online = true;
+      const { s, audio, api } = setup(undefined, { reconnectDelaysMs: [2000], reachable: () => online });
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(0);
+      online = false;
+      audio.finish();
+      expect(s()).toMatchObject({ index: 1, reconnecting: true, error: null });
+      expect(api.prepare).toHaveBeenCalledTimes(1);
+      online = true;
+      s().networkRestored();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(s()).toMatchObject({ index: 1, status: 'playing', reconnecting: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('muestra el error solo cuando se agotan los intentos de conexión', async () => {
+    vi.useFakeTimers();
+    try {
+      let online = true;
+      const { s, api, notify } = setup(async () => {
+        throw Object.assign(new Error('Sin conexión'), { code: 'network' });
+      }, { reconnectDelaysMs: [2000, 6000], reachable: () => online });
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(7999);
+      expect(s()).toMatchObject({ status: 'loading', reconnecting: true, error: null });
+      expect(api.prepare).toHaveBeenCalledTimes(2);
+      expect(notify).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(s()).toMatchObject({ status: 'error', reconnecting: false, error: { code: 'network' } });
+      expect(api.prepare).toHaveBeenCalledTimes(3);
+      expect(notify).toHaveBeenCalledTimes(1);
+      online = false;
+      s().play();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(s()).toMatchObject({ index: 0, status: 'loading', reconnecting: true });
+      expect(api.prepare.mock.calls.map(([id]) => id)).toEqual(Array(5).fill(track(0).id));
+      s().pause();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pausar durante la reconexión cancela los intentos pendientes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, api } = setup(async () => {
+        throw Object.assign(new Error('Sin conexión'), { code: 'network' });
+      }, { reconnectDelaysMs: [2000] });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(s().reconnecting).toBe(true);
+      s().pause();
+      s().networkRestored();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(s()).toMatchObject({ status: 'paused', reconnecting: false });
+      expect(api.prepare).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una canción descargada nunca se vuelve a pedir por el temporizador de streaming', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000, isDownloaded: () => true });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(api.invalidate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('completa la duración que YouTube no informó en la lista, y la guarda con la reproducción', async () => {
     const { s, api } = setup(async (id) => ({ ...ok(id), durationSec: 241 }));
     s().playTracks([{ ...track(0), durationSec: undefined }], 0);
@@ -375,10 +667,10 @@ describe('la última elección gana', () => {
 });
 
 describe('fin de canción y modos', () => {
-  it('Android empieza una lista en una canción aleatoria y respeta las canciones elegidas explícitamente', async () => {
+  it('empieza una lista en una canción aleatoria y respeta las canciones elegidas explícitamente', async () => {
     const random = vi.spyOn(Math, 'random').mockReturnValue(0.75);
     try {
-      const { s, audio } = setup(undefined, { randomCollectionStart: true });
+      const { s, audio } = setup();
       s().toggleShuffle();
       s().playTracks(tracks(4));
       await flush();
@@ -394,6 +686,41 @@ describe('fin de canción y modos', () => {
     } finally {
       random.mockRestore();
     }
+  });
+
+  it('conserva la canción elegida al abrir una lista mayor que el límite de guardado', async () => {
+    const { s, audio, notify } = setup();
+    const list = tracks(MAX_QUEUE_ITEMS + 200);
+    s().playTracks(list, MAX_QUEUE_ITEMS + 10);
+    await flush();
+    const saved = s().snapshot();
+    expect(saved.queue).toHaveLength(MAX_QUEUE_ITEMS);
+    expect(saved.queue[saved.index]!.id).toBe(list[MAX_QUEUE_ITEMS + 10]!.id);
+    expect(audio.src).toBe(`test://${list[MAX_QUEUE_ITEMS + 10]!.id}`);
+    expect(notify).toHaveBeenCalledOnce();
+  });
+
+  it('agregar a la cola y reproducir a continuación respetan la capacidad disponible', () => {
+    const { s, notify } = setup();
+    s().addToQueue(tracks(MAX_QUEUE_ITEMS - 1));
+    s().playNext([track(4000), track(4001)]);
+    expect(s().items).toHaveLength(MAX_QUEUE_ITEMS);
+    expect(s().items[1]!.track.id).toBe(track(4000).id);
+    s().addToQueue([track(4002)]);
+    expect(s().items).toHaveLength(MAX_QUEUE_ITEMS);
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it('recupera el orden original y la canción actual después de guardar una cola mezclada', () => {
+    const list = tracks(4);
+    const first = setup().s;
+    first().playTracks(list, 2);
+    first().toggleShuffle();
+    const restored = setup().s;
+    restored().hydrate(first().snapshot());
+    restored().toggleShuffle();
+    expect(restored().items.map((item) => item.track.id)).toEqual(list.map((item) => item.id));
+    expect(restored().index).toBe(2);
   });
 
   it('avanza a la siguiente sin registrar una "selección"', async () => {

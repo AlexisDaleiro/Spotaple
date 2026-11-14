@@ -22,6 +22,8 @@ export interface AppSettings {
   radio: boolean;
   /** Cada canción favorita se guarda en el disco para escucharla sin internet. */
   autoDownload: boolean;
+  /** Espacio máximo de descargas automáticas en escritorio. */
+  offlineLimitMiB: number;
   /** Formato que aparece primero en el menú «Descargar canción». */
   exportFormat: AudioFormat;
   /** Inicio muestra «Hecho para vos» (listas armadas con tu historial y tus favoritas). */
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeOnOpen: false,
   radio: true,
   autoDownload: true,
+  offlineLimitMiB: 2048,
   exportFormat: 'opus',
   forYou: true,
   eqOn: false,
@@ -61,6 +64,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export const MAX_CROSSFADE_S = 12;
+export const OFFLINE_LIMITS_MIB = [512, 2048, 5120, 10240] as const;
 const inEqRange = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= EQ_RANGE_DB;
 
 export const TEXT_SCALES = [0.9, 1, 1.1, 1.25] as const;
@@ -127,6 +131,8 @@ export function parseSettings(raw: unknown): Partial<AppSettings> {
 
   const autoDownload = get('autoDownload');
   if (typeof autoDownload === 'boolean') out.autoDownload = autoDownload;
+  const offlineLimitMiB = get('offlineLimitMiB');
+  if (typeof offlineLimitMiB === 'number' && OFFLINE_LIMITS_MIB.some((limit) => limit === offlineLimitMiB)) out.offlineLimitMiB = offlineLimitMiB;
 
   const exportFormat = parseFormat(get('exportFormat'));
   if (exportFormat) out.exportFormat = exportFormat;

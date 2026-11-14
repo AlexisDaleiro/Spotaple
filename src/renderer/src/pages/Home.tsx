@@ -1,6 +1,7 @@
-import { Disc3, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { useEffect } from 'react';
-import { api } from '../api';
+import brand from '@shared/assets/brand.png';
+import { api, errorMessage } from '../api';
 import { cx } from '../lib/format';
 import { useResource } from '../lib/useResource';
 import { player } from '../player/instance';
@@ -8,8 +9,8 @@ import { discoverStore, useDiscover } from '../stores/discover';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
 import { useSettings } from '../stores/settings';
-import { useUi } from '../stores/ui';
-import { playPlaylist } from '../lib/actions';
+import { toast, useUi } from '../stores/ui';
+import { playArtist, playPlaylist } from '../lib/actions';
 import { Cover } from '../components/Cover';
 import { ArtistCard, GeneratedCard, PlaylistCard, Shelf, TrackCard } from '../components/Shelf';
 import { CardsSkeleton, Empty } from '../components/States';
@@ -25,7 +26,8 @@ export function HomePage() {
   const version = useLibrary((s) => s.version);
   const playlists = useLibrary((s) => s.playlists);
   const recent = useResource(() => api.library.recentPlays(24), [version]);
-  const favs = useResource(() => api.library.favorites(), [version]);
+  const favs = useResource(() => api.library.favorites(5), [version]);
+  const favoriteCount = useLibrary((s) => s.favoriteIds.size);
   const forYouOn = useSettings((s) => s.settings.forYou);
   const discover = useDiscover((s) => s.state);
 
@@ -47,7 +49,7 @@ export function HomePage() {
       <div className="page page--home">
         <Empty
           heading="h1"
-          icon={<Disc3 size={30} />}
+          icon={<img className="brand__logo" src={brand} alt="" draggable={false} />}
           title="Tu música empieza acá"
           text="Buscá una canción y escuchala al instante. Lo que reproduzcas, tus favoritas y tus playlists van a aparecer en esta pantalla."
           action={
@@ -64,6 +66,17 @@ export function HomePage() {
   }
 
   const quick = recents.slice(0, 6);
+  const playFavorite = async (trackId: string) => {
+    const current = player().claimPlayback();
+    try {
+      const list = await api.library.favorites();
+      if (!current()) return;
+      const index = list.findIndex((track) => track.id === trackId);
+      if (index >= 0) player().playTracks(list, index);
+    } catch (error) {
+      if (current()) toast(errorMessage(error), 'error');
+    }
+  };
   return (
     <div className={cx('page page--home', loading && 'is-stale')}>
       <h1 className="h1">{greeting()}</h1>
@@ -80,7 +93,7 @@ export function HomePage() {
       {showForYou && discover.artists.length > 0 && (
         <Shelf title="Artistas que podrías escuchar" id="sec-artists">
           {discover.artists.map((a) => (
-            <ArtistCard key={a.id} artist={a} />
+            <ArtistCard key={a.id} artist={a} onPlay={() => void playArtist(a.id)} />
           ))}
         </Shelf>
       )}
@@ -119,12 +132,12 @@ export function HomePage() {
               Tus favoritas
             </h2>
             <button type="button" className="link link--accent" onClick={() => navigate({ page: 'library', tab: 'favorites' })}>
-              Ver todas ({favorites.length})
+              Ver todas ({Math.max(favoriteCount, favorites.length)})
             </button>
           </header>
           <TrackList label="Favoritas" showAlbum={false}>
-            {favorites.slice(0, 5).map((t, i) => (
-              <TrackRow key={t.id} track={t} index={i} showAlbum={false} onPlay={() => player().playTracks(favorites, i)} />
+            {favorites.map((t, i) => (
+              <TrackRow key={t.id} track={t} index={i} showAlbum={false} onPlay={() => void playFavorite(t.id)} />
             ))}
           </TrackList>
         </section>

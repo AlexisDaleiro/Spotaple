@@ -78,7 +78,7 @@ export function GeneratedPage({ kind, slot }: { kind: GeneratedKind; slot: strin
               icon={<ListPlus size={18} />}
               label="Agregar la lista a la cola"
               disabled={!tracks.length}
-              onClick={() => (player().addToQueue(tracks), toastQueued(tracks.length))}
+              onClick={() => toastQueued(player().addToQueue(tracks))}
             />
             <button type="button" className="btn btn--solid btn--lg" disabled={!tracks.length || saving} onClick={() => void save()}>
               <BookmarkPlus size={18} /> {saving ? 'Guardando…' : 'Guardar en mi biblioteca'}

@@ -7,6 +7,7 @@ import type {
   PlaylistSummary,
   PreparedAudio,
   RemotePlaylistDetail,
+  SearchCategory,
   SearchResults,
   Track,
 } from './types';
@@ -24,6 +25,7 @@ export const audioUrl = (trackId: string) => `${AUDIO_SCHEME}://track/${encodeUR
 /** Canales IPC. Única lista: main registra y preload invoca desde aquí. */
 export const IPC = {
   search: 'music:search',
+  cancelSearch: 'music:cancel-search',
   album: 'music:album',
   artist: 'music:artist',
   remotePlaylist: 'music:remote-playlist',
@@ -80,7 +82,8 @@ export const IPC = {
 /** API que el preload expone en `window.spotaple`. Cada método lanza `Error` con `.code` si falla. */
 export interface SpotapleApi {
   music: {
-    search(query: string): Promise<SearchResults>;
+    search(query: string, category?: SearchCategory, requestId?: string): Promise<SearchResults>;
+    cancelSearch(requestId: string): Promise<void>;
     copyLink(trackId: string): Promise<void>;
     album(id: string): Promise<AlbumDetail>;
     artist(id: string): Promise<ArtistDetail>;
@@ -117,7 +120,7 @@ export interface SpotapleApi {
     resetTaste(): Promise<DiscoverState>;
   };
   library: {
-    favorites(): Promise<Track[]>;
+    favorites(limit?: number): Promise<Track[]>;
     favoriteIds(): Promise<string[]>;
     toggleFavorite(track: Track): Promise<boolean>;
     playlists(): Promise<PlaylistSummary[]>;

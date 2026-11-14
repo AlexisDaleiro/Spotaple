@@ -7,16 +7,27 @@ const VARIANTS: readonly AudioVariant[] = ['high', 'saver', 'aac'];
  * Caché de audio ya resuelto. La clave incluye la variante: una URL resuelta en Alta no se reutiliza
  * en Ahorro ni en AAC (ni al revés), así que cambiar el ajuste no necesita vaciar nada.
  */
-export function createAudioCache(now: () => number) {
+export function createAudioCache(now: () => number, max = 256) {
   const map = new Map<string, ResolvedAudio>();
   const key = (variant: AudioVariant, trackId: string) => `${variant}:${trackId}`;
   return {
     get(variant: AudioVariant, trackId: string): ResolvedAudio | undefined {
-      const hit = map.get(key(variant, trackId));
-      return hit && hit.expiresAt > now() ? hit : undefined;
+      const id = key(variant, trackId);
+      const hit = map.get(id);
+      if (!hit) return undefined;
+      map.delete(id);
+      if (hit.expiresAt <= now()) return undefined;
+      map.set(id, hit);
+      return hit;
     },
     set(variant: AudioVariant, trackId: string, audio: ResolvedAudio): void {
-      map.set(key(variant, trackId), audio);
+      const current = now();
+      for (const [id, entry] of map) if (entry.expiresAt <= current) map.delete(id);
+      if (audio.expiresAt <= current) return;
+      const id = key(variant, trackId);
+      map.delete(id);
+      map.set(id, audio);
+      if (map.size > max) map.delete(map.keys().next().value!);
     },
     /** La URL dejó de valer: se olvida en todas las variantes. */
     invalidate(trackId: string): void {

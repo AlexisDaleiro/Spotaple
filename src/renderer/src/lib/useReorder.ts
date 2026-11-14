@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useRef, useState, type DragEvent } from 'react';
 
 export interface ReorderItem {
   props: {
@@ -19,7 +19,16 @@ export interface ReorderItem {
  * La alternativa por teclado ("Mover arriba/abajo") vive en el menú contextual de cada lista.
  */
 export function useReorder(length: number, onMove: (from: number, to: number) => void) {
+  const source = useRef<number | null>(null);
   const [drag, setDrag] = useState<{ from: number; over: number } | null>(null);
+  const dropIndex = (event: DragEvent, index: number) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return event.clientY > bounds.top + bounds.height / 2 ? index + 1 : index;
+  };
+  const finish = () => {
+    source.current = null;
+    setDrag(null);
+  };
 
   return (index: number): ReorderItem => {
     // `over` es un hueco (0..length): arrastrar junto a su propia posición no cambia nada.
@@ -30,23 +39,26 @@ export function useReorder(length: number, onMove: (from: number, to: number) =>
         onDragStart: (e) => {
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', String(index));
+          source.current = index;
           setDrag({ from: index, over: index });
         },
         onDragOver: (e) => {
-          if (!drag) return;
+          const from = source.current;
+          if (from === null) return;
           e.preventDefault();
-          const r = e.currentTarget.getBoundingClientRect();
-          const over = e.clientY > r.top + r.height / 2 ? index + 1 : index;
-          if (over !== drag.over) setDrag({ ...drag, over });
+          const over = dropIndex(e, index);
+          setDrag((previous) => previous?.over === over ? previous : { from, over });
         },
         onDrop: (e) => {
           e.preventDefault();
-          if (!drag) return;
-          const to = drag.over > drag.from ? drag.over - 1 : drag.over;
-          setDrag(null);
-          if (to !== drag.from) onMove(drag.from, to);
+          const from = source.current;
+          if (from === null) return;
+          const over = dropIndex(e, index);
+          const to = over > from ? over - 1 : over;
+          finish();
+          if (to !== from) onMove(from, to);
         },
-        onDragEnd: () => setDrag(null),
+        onDragEnd: finish,
       },
       dragging: drag?.from === index,
       dropBefore: !!drag && !noop && drag.over === index,

@@ -1,11 +1,11 @@
 import '../src/renderer/src/main';
-import { api } from '../src/renderer/src/api';
 import { artistsText, thumbUrl } from '../src/renderer/src/lib/format';
-import { currentItem, player, playerStore } from '../src/renderer/src/player/instance';
-import { canAdvance, inRoom, isAdmin, useJam } from '../src/renderer/src/stores/jam';
+import { currentItem, dispatchPlayback, persistence, playerStore } from '../src/renderer/src/player/instance';
+import { inRoom, useJam } from '../src/renderer/src/stores/jam';
 import { useNav } from '../src/renderer/src/stores/nav';
+import { useOffline } from '../src/renderer/src/stores/offline';
 import { useUi } from '../src/renderer/src/stores/ui';
-import brand from './brand.png';
+import brand from '../src/shared/assets/brand.png';
 
 Object.assign(window, {
   spotapleBack() {
@@ -13,7 +13,7 @@ Object.assign(window, {
     if (ui.dialog) ui.closeDialog();
     else if (ui.menu) ui.closeMenu();
     else if (ui.queueOpen) ui.toggleQueue();
-    else if (ui.mobilePlayerOpen) useUi.setState({ mobilePlayerOpen: false });
+    else if (ui.playerOpen) ui.setPlayerOpen(false);
     else {
       const nav = useNav.getState();
       if (!nav.i) return false;
@@ -21,24 +21,7 @@ Object.assign(window, {
     }
     return true;
   },
-  spotapleMedia(action: 'play' | 'pause' | 'prev' | 'next' | 'seek', position?: number) {
-    const p = player();
-    const room = useJam.getState().view;
-    const active = p.status === 'playing' || p.status === 'buffering' || p.status === 'loading';
-    if (inRoom(room)) {
-      if (action === 'next' && canAdvance(room)) void api.jam.send({ t: 'transport', action: 'next' });
-      if (!isAdmin(room)) return;
-      if (action === 'play' && !active) void api.jam.send({ t: 'transport', action: 'play' });
-      if (action === 'pause' && active) void api.jam.send({ t: 'transport', action: 'pause' });
-      if (action === 'seek' && Number.isFinite(position)) void api.jam.send({ t: 'transport', action: 'seek', positionSec: position });
-      return;
-    }
-    if (action === 'pause' && p.status === 'loading') p.stop();
-    else if ((action === 'play' && !active) || (action === 'pause' && active)) p.togglePlay();
-    else if (action === 'prev') p.prev();
-    else if (action === 'next') p.next();
-    else if (action === 'seek' && Number.isFinite(position)) p.seek(position!);
-  },
+  spotapleMedia: dispatchPlayback,
 });
 
 document.addEventListener('click', (event) => {
@@ -50,8 +33,7 @@ document.addEventListener('click', (event) => {
 
 window.addEventListener('spotaple:open-local', () => {
   if (inRoom(useJam.getState().view)) return;
-  const p = player();
-  if (p.status === 'playing' || p.status === 'buffering') p.togglePlay();
+  dispatchPlayback('pause');
   window.SpotapleAndroid?.openLocal();
 });
 
@@ -60,13 +42,17 @@ const fallbackArtwork = new URL(brand, location.href).href;
 playerStore.subscribe((state) => {
   const item = currentItem(state);
   const artwork = item ? thumbUrl(item.track.thumbnail, 320) ?? fallbackArtwork : undefined;
-  const key = `${item?.uid ?? ''}:${state.status}:${state.duration}:${Math.floor(state.position / 5)}:${artwork ?? ''}`;
+  const streaming = Boolean(item && !useOffline.getState().ids.has(item.track.id));
+  const key = `${item?.uid ?? ''}:${state.status}:${state.duration}:${Math.floor(state.position / 5)}:${artwork ?? ''}:${streaming}`;
   if (key === lastMedia) return;
   lastMedia = key;
   window.SpotapleAndroid?.media(JSON.stringify({
+    trackId: item?.track.id ?? '',
+    recoverable: !persistence.suspended && !inRoom(useJam.getState().view),
     title: item?.track.title ?? '',
     artist: item ? artistsText(item.track.artists) : '',
     artwork,
+    streaming,
     status: state.status,
     positionMs: Math.round(state.position * 1000),
     durationMs: Math.round(state.duration * 1000),

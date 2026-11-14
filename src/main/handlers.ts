@@ -2,7 +2,7 @@ import { IPC } from '../shared/api';
 import type { AudioFormat } from '../shared/offline';
 import { parseSettings, type AppSettings } from '../shared/settings';
 import { trackLink } from '../shared/track';
-import type { IpcResult, PreparedAudio, Track } from '../shared/types';
+import { SEARCH_CATEGORIES, type IpcResult, type PreparedAudio, type Track } from '../shared/types';
 import type { Store } from './db/store';
 import { exportTrack } from './export';
 import type { Discover } from './music/discover';
@@ -50,7 +50,30 @@ export function createHandlers(deps: {
     });
   };
 
-  handle(IPC.search, (q: unknown) => provider.search(str(q, 200).trim() || str('', 1)));
+  const searches = new Map<string, AbortController>();
+  const searchController = (raw: unknown) => {
+    const key = str(raw, 80);
+    const existing = searches.get(key);
+    if (existing) return existing;
+    const controller = new AbortController();
+    searches.set(key, controller);
+    if (searches.size > 64) {
+      const oldest = searches.keys().next().value!;
+      searches.get(oldest)?.abort();
+      searches.delete(oldest);
+    }
+    return controller;
+  };
+  handle(IPC.search, (raw: unknown, section: unknown, requestId: unknown) => {
+    const query = str(raw, 200).trim() || str('', 1);
+    if (section === undefined) return provider.search(query);
+    const category = SEARCH_CATEGORIES.find((value) => value === section);
+    if (!category) throw new Error('Tipo de búsqueda inválido.');
+    const signal = requestId === undefined ? undefined : searchController(requestId).signal;
+    signal?.throwIfAborted();
+    return provider.search(query, category, signal);
+  });
+  handle(IPC.cancelSearch, (requestId: unknown) => searchController(requestId).abort());
   const { copyTrackLink } = deps;
   if (copyTrackLink) {
     handle(IPC.copyTrackLink, (x: unknown) => {
@@ -72,7 +95,7 @@ export function createHandlers(deps: {
     const local = offline.local(trackId);
     // Bajada antes de «Normalizar»: sin loudness guardado, se completa una vez (ver loudness.ts).
     if (local) return { trackId, mimeType: local.mimeType, durationSec: local.durationSec, loudnessLkfs: store.trackLoudness(trackId) ?? (await fillLoudness(trackId)) };
-    const a = await provider.resolveAudio(trackId, { newPlay: true });
+    const a = await offline.prioritize(() => provider.resolveAudio(trackId, { newPlay: true }));
     // Se guarda por si la canción se descarga después: del disco ya no hay a quién preguntarle.
     if (a.loudnessLkfs !== undefined) store.setLoudness(trackId, a.loudnessLkfs);
     return { trackId, mimeType: a.mimeType, durationSec: a.durationSec, loudnessLkfs: a.loudnessLkfs };
@@ -94,7 +117,7 @@ export function createHandlers(deps: {
   handle(IPC.discoverRefresh, () => discover.refresh());
   handle(IPC.tasteReset, () => discover.reset());
 
-  handle(IPC.favorites, () => store.favorites());
+  handle(IPC.favorites, (limit: unknown) => store.favorites(limit === undefined ? undefined : Math.min(100, int(limit))));
   handle(IPC.favoriteIds, () => store.favoriteIds());
   handle(IPC.toggleFavorite, (t: unknown) => {
     const track = sanitizeTrack(t);
@@ -132,7 +155,7 @@ export function createHandlers(deps: {
     const next = store.setAppSettings(patch);
     onSettings(next);
     // Encender o apagar la descarga automática: baja las favoritas que faltan o vacía la cola.
-    if (patch.autoDownload !== undefined) void offline.reconcile();
+    if (patch.autoDownload !== undefined || patch.offlineLimitMiB !== undefined) void offline.reconcile().catch(() => undefined);
     return next;
   });
 

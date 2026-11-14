@@ -1,5 +1,6 @@
-import { ChevronLeft, ChevronRight, Disc3, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import brand from '@shared/assets/brand.png';
 import { canGoBack, canGoForward, navigate, useNav } from '../stores/nav';
 import { useUi } from '../stores/ui';
 import { IconButton } from './IconButton';
@@ -24,6 +25,7 @@ export function TopBar({ inert }: { inert?: boolean }) {
   useEffect(() => {
     clearTimeout(timer.current);
     setText(route.page === 'search' ? route.q : '');
+    return () => clearTimeout(timer.current);
   }, [route]);
 
   useEffect(() => {
@@ -46,12 +48,17 @@ export function TopBar({ inert }: { inert?: boolean }) {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => submit(v), DEBOUNCE_MS);
   };
+  const clear = () => {
+    setText('');
+    submit('');
+    input.current?.focus();
+  };
 
   return (
     <header className="titlebar" inert={inert}>
       <div className="brand">
         <span className="brand__mark" aria-hidden="true">
-          <Disc3 size={18} />
+          <img className="brand__logo" src={brand} alt="" draggable={false} />
         </span>
         <span className="brand__name">Spotaple</span>
       </div>
@@ -85,10 +92,8 @@ export function TopBar({ inert }: { inert?: boolean }) {
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
-              if (text) {
-                setText('');
-                clearTimeout(timer.current);
-              } else input.current?.blur();
+              if (text) clear();
+              else input.current?.blur();
             }
           }}
         />
@@ -97,11 +102,7 @@ export function TopBar({ inert }: { inert?: boolean }) {
             type="button"
             className="search__clear"
             aria-label="Borrar búsqueda"
-            onClick={() => {
-              setText('');
-              clearTimeout(timer.current);
-              input.current?.focus();
-            }}
+            onClick={clear}
           >
             <X size={15} aria-hidden="true" />
           </button>

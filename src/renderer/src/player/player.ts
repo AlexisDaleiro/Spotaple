@@ -1,7 +1,7 @@
 import { createStore } from 'zustand/vanilla';
 import { audioUrl } from '@shared/api';
 import { songKey } from '@shared/track';
-import type { PersistedPlayerState, PreparedAudio, RepeatMode, Track } from '@shared/types';
+import { MAX_QUEUE_ITEMS, type PersistedPlayerState, type PreparedAudio, type RepeatMode, type Track } from '@shared/types';
 import {
   append,
   clearUpcoming,
@@ -73,7 +73,10 @@ export interface PlayerDeps {
   radio?: RadioHook;
   notify?: (message: string, kind?: 'info' | 'error') => void;
   urlFor?: (trackId: string) => string;
-  randomCollectionStart?: boolean;
+  /** Recupera un stream que queda esperando datos sin emitir un error de audio. */
+  stallTimeoutMs?: number;
+  /** Esperas entre intentos si falla la conexión. Vacío si no se reintenta automáticamente. */
+  reconnectDelaysMs?: readonly number[];
   /**
    * ¿Se puede reproducir esta canción ahora? Sin red solo suenan las descargadas: lo demás se salta (con el mismo tope
    * que las no disponibles) sin pedirle nada a main.
@@ -106,6 +109,7 @@ export interface PlayerDeps {
 
 export interface PlayerState extends QueueState {
   status: PlayerStatus;
+  reconnecting: boolean;
   repeat: RepeatMode;
   shuffle: boolean;
   volume: number;
@@ -116,6 +120,8 @@ export interface PlayerState extends QueueState {
 }
 
 export interface PlayerActions {
+  /** Reserva una elección manual mientras se carga un álbum o lista. */
+  claimPlayback(): () => boolean;
   /** Reemplaza la cola. Un índice explícito conserva la canción elegida incluso con aleatorio. */
   playTracks(tracks: Track[], start?: number): void;
   /** Reemplaza la cola por esta canción y arranca en `startSec`. Lo usa el conductor de la sala; no pasa por el gancho jam. */
@@ -125,15 +131,17 @@ export interface PlayerActions {
   /** Salta a un ítem de la cola actual. */
   playIndex(index: number): void;
   playNext(tracks: Track[]): void;
-  addToQueue(tracks: Track[]): void;
+  addToQueue(tracks: Track[]): number;
   removeFromQueue(uid: string): void;
   moveInQueue(from: number, to: number): void;
   clearUpcoming(): void;
+  play(): void;
+  pause(): void;
   togglePlay(): void;
+  networkRestored(): void;
   next(): void;
   prev(): void;
   seek(sec: number): void;
-  seekBy(delta: number): void;
   setVolume(v: number): void;
   toggleMute(): void;
   cycleRepeat(): void;
@@ -169,13 +177,21 @@ export function createPlayer(deps: PlayerDeps) {
   const store = createStore<PlayerState & PlayerActions>((set, get) => {
     // --- estado interno de la "única instancia responsable de la reproducción"
     let token = 0; // cada elección nueva invalida las cargas anteriores: gana la última
+    let intent = 0;
     let pendingStart: number | null = null;
     let loadedUid: string | null = null; // ítem cuyo audio está cargado en el elemento
     let recordedFor: string | null = null; // ítem ya registrado en "sonó"
     let retriedUid: string | null = null;
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    let sourceDuration: number | undefined;
+    let uninterruptedSince: number | undefined;
+    let reconnect: { timer: ReturnType<typeof setTimeout>; run: () => void } | undefined;
+    let reconnectAttempts = 0;
     let autoSkips = 0;
     let radioBusy = false; // hay un pedido de radio en curso
     let radioBlockedUid: string | null = null; // canción para la que la radio falló o no dio nada: no se reintenta
+    let radioNetworkUid: string | null = null;
+    let radioOnlineEpoch = 0;
     let playedAuto = false; // la reproducción en curso la puso la radio y avanzó sola
     let radioEpoch = 0; // sube con «Limpiar»: una respuesta de radio anterior ya no vale
     let fading: { out: AudioLike; timer: ReturnType<typeof setTimeout> } | null = null; // el elemento que se está apagando
@@ -191,6 +207,51 @@ export function createPlayer(deps: PlayerDeps) {
         el.muted = muted;
       }
     };
+
+    function clearStall() {
+      clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+
+    function clearReconnect() {
+      if (reconnect) clearTimeout(reconnect.timer);
+      reconnect = undefined;
+    }
+
+    function scheduleReconnect(item: QueueItem): boolean {
+      const delay = deps.reconnectDelaysMs?.[reconnectAttempts];
+      if (delay === undefined || jam?.active() || deps.isDownloaded?.(item.track.id)) return false;
+      const mine = ++token;
+      reconnectAttempts++;
+      retriedUid = item.uid;
+      loadedUid = null;
+      clearStall();
+      clearReconnect();
+      const run = () => {
+        clearReconnect();
+        if (mine !== token || cur()?.uid !== item.uid) return;
+        void go(get().index, { user: false, startAt: get().position, retry: true });
+      };
+      reconnect = { timer: setTimeout(run, delay), run };
+      set({ status: 'loading', reconnecting: true, error: null });
+      endFade();
+      audio.pause();
+      return true;
+    }
+
+    function watchStall() {
+      const item = cur();
+      if (!deps.stallTimeoutMs || stallTimer !== undefined || !item || loadedUid !== item.uid ||
+        deps.isDownloaded?.(item.track.id)) return;
+      const mine = token;
+      stallTimer = setTimeout(() => {
+        stallTimer = undefined;
+        const status = get().status;
+        if (mine !== token || cur()?.uid !== item.uid || audio.paused ||
+          (status !== 'buffering' && status !== 'loading' && status !== 'playing')) return;
+        recoverAudio(item, true);
+      }, deps.stallTimeoutMs);
+    }
 
     /** Corta ya el elemento que se estaba apagando (si lo hay) y lo deja listo para volver a usarse. */
     function endFade() {
@@ -237,6 +298,7 @@ export function createPlayer(deps: PlayerDeps) {
       if (s.items.length - s.index - 1 >= RADIO_REFILL_BELOW || radioBusy || radioBlockedUid === item.uid) return;
       radioBusy = true;
       const epoch = radioEpoch;
+      const onlineEpoch = radioOnlineEpoch;
       // La canción para la que se pidió ya no está en la cola (la reemplazaron): esa respuesta no sirve.
       const gone = () => !get().items.some((i) => i.uid === item.uid);
       radio.fetch(item.track, s.items.map((i) => i.track.id)).then(
@@ -254,8 +316,17 @@ export function createPlayer(deps: PlayerDeps) {
             radioBlockedUid = item.uid;
             return;
           }
-          const first = queue.length;
-          commit(append(qs(), makeItems(fresh, true)));
+          const state = qs();
+          const added = fresh.slice(0, MAX_QUEUE_ITEMS - (queue.length - state.index));
+          const drop = Math.max(0, queue.length + added.length - MAX_QUEUE_ITEMS);
+          const discarded = new Set(queue.slice(0, drop).map((item) => item.uid));
+          const kept = queue.slice(drop);
+          const first = kept.length;
+          commit(append({
+            items: kept,
+            index: state.index - drop,
+            original: state.original?.filter((item) => !discarded.has(item.uid)) ?? null,
+          }, makeItems(added, true)));
           // La cola ya había terminado mientras llegaba la respuesta: sigue sola.
           if (get().status === 'ended' && cur()?.uid === item.uid) void go(first, { user: false });
         },
@@ -264,8 +335,10 @@ export function createPlayer(deps: PlayerDeps) {
           if (epoch !== radioEpoch) return;
           if (gone()) return maybeRefill();
           radioBlockedUid = item.uid;
-          // Sin internet no hay nada que avisar: la cola simplemente termina.
-          if ((e as { code?: string } | null)?.code !== 'network') notify('No pudimos sumar canciones sugeridas.');
+          if ((e as { code?: string } | null)?.code === 'network') {
+            radioNetworkUid = item.uid;
+            if (radioOnlineEpoch !== onlineEpoch) retryRadioAfterNetwork();
+          } else notify('No pudimos sumar canciones sugeridas.');
         },
       );
     }
@@ -276,22 +349,37 @@ export function createPlayer(deps: PlayerDeps) {
       set({ items: patch(get().items), original: original ? patch(original) : null, duration: durationSec });
     }
 
-    /**
-     * Sin salida a internet aunque el sistema diga que hay red: un error de red en una canción no descargada, con otras
-     * descargadas más adelante en la cola, se trata como «no disponible» (se salta, con el tope de siempre).
-     */
-    function skippableOffline(e: unknown, item: QueueItem): PlayerError | null {
-      const downloaded = deps.isDownloaded;
-      if (!downloaded || (e as { code?: string } | null)?.code !== 'network' || downloaded(item.track.id)) return null;
-      const s = get();
-      if (!s.items.slice(s.index + 1).some((i) => downloaded(i.track.id))) return null;
-      return { code: 'unavailable', message: 'Sin conexión: esta canción no está descargada.' };
+    function retryRadioAfterNetwork() {
+      if (radioNetworkUid === null || cur()?.uid !== radioNetworkUid || radioBlockedUid !== radioNetworkUid) return;
+      radioNetworkUid = null;
+      radioBlockedUid = null;
+      if (get().status !== 'paused') maybeRefill();
     }
 
-    function fail(e: unknown, item: QueueItem) {
+    function skipToDownload(item: QueueItem): boolean {
+      const downloaded = deps.isDownloaded;
+      if (!downloaded || downloaded(item.track.id) || jam?.active()) return false;
+      const s = get();
+      let next = s.items.findIndex((entry, index) => index > s.index && downloaded(entry.track.id));
+      if (next < 0 && s.repeat === 'all') {
+        next = s.items.findIndex((entry, index) => index < s.index && downloaded(entry.track.id));
+      }
+      if (next < 0) return false;
+      notify(`«${item.track.title}» no está disponible. Pasando a la siguiente.`, 'error');
+      void go(next, { user: false });
+      return true;
+    }
+
+    function fail(e: unknown, item: QueueItem, duringPlayback = false) {
+      if (cur()?.uid !== item.uid) return;
       const code = (e as { code?: string })?.code ?? 'unknown';
+      if (code === 'network' && get().position === 0 && skipToDownload(item)) return;
+      if (code === 'network') {
+        if (scheduleReconnect(item)) return;
+        if (duringPlayback && skipToDownload(item)) return;
+      }
       const message = (e as Error)?.message || 'No se pudo reproducir esta canción.';
-      set({ status: 'error', error: { code, message } });
+      set({ status: 'error', reconnecting: false, error: { code, message } });
       const trackSpecific = code === 'unavailable' || code === 'region';
       const s = get();
       if (trackSpecific && autoSkips < MAX_AUTO_SKIPS && nextIndex(s.items.length, s.index, s.repeat, false) !== null) {
@@ -306,7 +394,7 @@ export function createPlayer(deps: PlayerDeps) {
     async function go(index: number, opts: { user: boolean; startAt?: number; retry?: boolean; fade?: number }) {
       const item = get().items[index];
       if (!item) return;
-      const mine = ++token;
+      const current = token;
       // Fundido: la fuente se pide ANTES de tocar el estado. Si no se puede (sin red o falla), la canción actual sigue
       // sonando sin avisos y termina por el camino de siempre; `fadeTriedUid` evita reintentarlo.
       let early: PreparedAudio | undefined;
@@ -319,7 +407,7 @@ export function createPlayer(deps: PlayerDeps) {
         } catch {
           return;
         }
-        if (mine !== token) return;
+        if (current !== token) return;
         // En la espera la persona pudo pausar, volver atrás o cambiar la cola: se vuelve a decidir con lo de ahora.
         const s = get();
         const ni = nextIndex(s.items.length, s.index, s.repeat, true);
@@ -331,14 +419,22 @@ export function createPlayer(deps: PlayerDeps) {
         }
         index = ni;
       }
+      const mine = ++token;
       if (opts.user) {
         retriedUid = null;
         autoSkips = 0;
       }
+      clearStall();
+      clearReconnect();
+      if (opts.user || !opts.retry) reconnectAttempts = 0;
       if (!opts.retry) recordedFor = null;
-      pendingStart = opts.startAt && opts.startAt > 0 ? opts.startAt : null;
+      uninterruptedSince = undefined;
+      pendingStart = null;
       loadedUid = null;
-      set({ index, status: 'loading', error: null, position: opts.startAt ?? 0, duration: item.track.durationSec ?? 0 });
+      set({
+        index, status: 'loading', reconnecting: Boolean(opts.retry && deps.reconnectDelaysMs),
+        error: null, position: opts.startAt ?? 0, duration: item.track.durationSec ?? 0,
+      });
       if (fade && early && spare) {
         // La actual no se corta: pasa a ser la que se apaga y el elemento libre toma la nueva.
         endFade();
@@ -357,30 +453,65 @@ export function createPlayer(deps: PlayerDeps) {
       }
       playedAuto = item.auto === true && !opts.user;
       maybeRefill();
-      if (opts.user) quiet(api.recordSelection(item.track));
+      if (opts.user && !opts.retry) quiet(api.recordSelection(item.track));
 
-      if (deps.reachable && !deps.reachable(item.track.id)) {
+      if (!opts.retry && deps.reachable && !deps.reachable(item.track.id)) {
+        if (skipToDownload(item)) return;
+        if (deps.reconnectDelaysMs && !jam?.active()) {
+          return fail({ code: 'network', message: 'Sin conexión para reproducir esta canción.' }, item);
+        }
         return fail({ code: 'unavailable', message: 'Sin conexión: esta canción no está descargada.' }, item);
       }
 
       let prepared: PreparedAudio;
       try {
+        if (opts.retry) {
+          await api.invalidate(item.track.id).catch(() => undefined);
+          if (mine !== token) return;
+        }
         prepared = early ?? (await api.prepare(item.track.id));
       } catch (e) {
         if (mine !== token) return;
-        return fail(skippableOffline(e, item) ?? e, item);
+        return fail(e, item);
       }
       if (mine !== token) return; // el usuario eligió otra mientras tanto
       // YouTube no siempre informa la duración en las listas; la fuente de audio sí la trae.
       if (!item.track.durationSec && prepared.durationSec) patchDuration(item.uid, Math.round(prepared.durationSec));
+      pendingStart = get().position || null;
+      sourceDuration = prepared.durationSec || item.track.durationSec;
       loadedUid = item.uid;
       deps.onPrepared?.(prepared, audio);
       audio.src = urlFor(item.track.id);
+      watchStall();
       try {
         await audio.play();
       } catch (e) {
         if (mine !== token || isAbort(e)) return;
-        fail(e, item);
+        if (deps.stallTimeoutMs && !deps.isDownloaded?.(item.track.id) &&
+          (e as { name?: string })?.name === 'NotSupportedError') recoverAudio(item, false);
+        else fail(e, item);
+      }
+    }
+
+    function recoverAudio(item: QueueItem, stalled: boolean) {
+      if (retriedUid !== item.uid) {
+        retriedUid = item.uid;
+        void go(get().index, { user: false, startAt: get().position, retry: true });
+        return;
+      }
+      const network = stalled || audio.error?.code === 2 ||
+        Boolean(deps.reconnectDelaysMs && !deps.isDownloaded?.(item.track.id) &&
+          (audio.error == null || audio.error.code === 4));
+      fail({
+        code: network ? 'network' : 'unavailable',
+        message: network
+          ? 'Se cortó la conexión mientras sonaba. Revisá tu internet y tocá reproducir.'
+          : 'No se pudo reproducir esta canción. Probá con otra.',
+      }, item, true);
+      if (stalled && get().status === 'error') {
+        token++;
+        loadedUid = null;
+        audio.pause();
       }
     }
 
@@ -400,7 +531,11 @@ export function createPlayer(deps: PlayerDeps) {
         recordedFor = null;
         audio.currentTime = 0;
         set({ position: 0 });
-        audio.play().catch(() => undefined);
+        const item = cur();
+        const mine = token;
+        audio.play().catch((e) => {
+          if (item && mine === token && !isAbort(e)) fail(e, item);
+        });
         return;
       }
       void go(ni, { user: false });
@@ -414,7 +549,10 @@ export function createPlayer(deps: PlayerDeps) {
     on('playing', () => {
       const item = cur();
       if (!item || loadedUid !== item.uid) return;
-      set({ status: 'playing', error: null });
+      clearStall();
+      uninterruptedSince = undefined;
+      set({ status: 'playing', reconnecting: false, error: null });
+      watchStall();
       autoSkips = 0;
       if (recordedFor !== item.uid) {
         recordedFor = item.uid; // empezó a sonar de verdad
@@ -422,19 +560,37 @@ export function createPlayer(deps: PlayerDeps) {
       }
     });
     on('pause', () => {
+      if (!audio.paused) return;
+      clearStall();
+      uninterruptedSince = undefined;
       const { status } = get();
       if (!audio.ended && (status === 'playing' || status === 'buffering')) set({ status: 'paused' });
     });
     on('waiting', () => {
+      uninterruptedSince = undefined;
       if (get().status === 'playing') set({ status: 'buffering' });
+      watchStall();
     });
     on('timeupdate', () => {
-      const { status } = get();
+      const { status, position } = get();
       if (status === 'loading' || status === 'idle' || status === 'error') return;
       set({ position: audio.currentTime });
+      if (audio.currentTime > position && (status === 'buffering' || status === 'playing')) {
+        clearStall();
+        watchStall();
+        if (deps.reconnectDelaysMs && retriedUid && status === 'playing') {
+          uninterruptedSince ??= position;
+          if (audio.currentTime - uninterruptedSince >= 30) {
+            retriedUid = null;
+            reconnectAttempts = 0;
+            uninterruptedSince = undefined;
+          }
+        }
+      }
       maybeCrossfade();
     });
     const onMeta = () => {
+      if (loadedUid === null || loadedUid !== cur()?.uid) return;
       if (Number.isFinite(audio.duration) && audio.duration > 0 && get().status !== 'idle') set({ duration: audio.duration });
       if (pendingStart !== null && Number.isFinite(audio.duration)) {
         audio.currentTime = Math.min(pendingStart, audio.duration);
@@ -444,35 +600,38 @@ export function createPlayer(deps: PlayerDeps) {
     on('loadedmetadata', onMeta);
     on('durationchange', onMeta);
     on('ended', () => {
-      if (get().status === 'loading') return;
+      const s = get();
+      const item = cur();
+      if (s.status === 'loading' || s.status === 'idle' || s.status === 'error' || !item || loadedUid !== item.uid) return;
+      clearStall();
+      // Un archivo truncado puede disparar "ended" en vez de "error". No saltar de pista si le falta audio.
+      const expected = sourceDuration;
+      if (deps.stallTimeoutMs && !deps.isDownloaded?.(item.track.id) && expected &&
+        audio.currentTime > 0 && expected - audio.currentTime > Math.max(8, expected * 0.08)) {
+        const position = audio.currentTime;
+        set({ position });
+        recoverAudio(item, true);
+        return;
+      }
       set({ position: get().duration });
       advance(true);
     });
     on('error', () => {
       const item = cur();
       if (!item || loadedUid !== item.uid) return;
-      if (retriedUid !== item.uid) {
-        // La fuente pudo caducar: se descarta, se resuelve de nuevo y se retoma donde estaba.
-        retriedUid = item.uid;
-        const at = get().position;
-        quiet(api.invalidate(item.track.id));
-        void go(get().index, { user: false, startAt: at, retry: true });
-        return;
-      }
-      const network = audio.error?.code === 2;
-      fail(
-        {
-          code: network ? 'network' : 'unavailable',
-          message: network
-            ? 'Se cortó la conexión mientras sonaba. Revisá tu internet y tocá reproducir.'
-            : 'No se pudo reproducir esta canción. Probá con otra.',
-        },
-        item,
-      );
+      clearStall();
+      recoverAudio(item, false);
     });
 
     const commit = (q: QueueState) => set({ items: q.items, index: q.index, original: q.original });
     const qs = (): QueueState => ({ items: get().items, index: get().index, original: get().original });
+    const queueLimitMessage = `La cola admite hasta ${MAX_QUEUE_ITEMS.toLocaleString('es-UY')} canciones.`;
+    const fittingTracks = (tracks: Track[]) => {
+      const remaining = Math.max(0, MAX_QUEUE_ITEMS - get().items.length);
+      if (tracks.length <= remaining) return tracks;
+      notify(queueLimitMessage);
+      return tracks.slice(0, remaining);
+    };
 
     /** Si no había canción actual, la cola nueva deja la primera lista (sin reproducir). */
     const settleEmpty = () => {
@@ -482,6 +641,7 @@ export function createPlayer(deps: PlayerDeps) {
 
     return {
       status: 'idle',
+      reconnecting: false,
       items: [],
       index: -1,
       original: null,
@@ -493,14 +653,25 @@ export function createPlayer(deps: PlayerDeps) {
       duration: 0,
       error: null,
 
+      claimPlayback() {
+        const mine = ++intent;
+        return () => mine === intent;
+      },
       playTracks(tracks, start) {
         if (!tracks.length) return;
+        intent++;
         const shuffle = get().shuffle;
         const selected = Math.min(Math.max(start ?? 0, 0), tracks.length - 1);
         // En una sala, "reproducir" una lista es pedir solo la canción elegida: no se inunda la cola de todos.
         if (jam?.active()) return jam.request([tracks[selected]!], 'end');
-        const index = start === undefined && deps.randomCollectionStart && shuffle ? Math.floor(Math.random() * tracks.length) : selected;
-        let q: QueueState = { items: makeItems(tracks), index, original: null };
+        const index = start === undefined && shuffle ? Math.floor(Math.random() * tracks.length) : selected;
+        const offset = Math.min(index, Math.max(0, tracks.length - MAX_QUEUE_ITEMS));
+        if (tracks.length > MAX_QUEUE_ITEMS) notify(queueLimitMessage);
+        let q: QueueState = {
+          items: makeItems(tracks.slice(offset, offset + MAX_QUEUE_ITEMS)),
+          index: index - offset,
+          original: null,
+        };
         if (shuffle) q = enableShuffle(q);
         commit(q);
         void go(q.index, { user: true });
@@ -510,38 +681,49 @@ export function createPlayer(deps: PlayerDeps) {
         void go(0, { user: false, startAt: startSec });
       },
       stop() {
+        intent++;
+        clearStall();
+        clearReconnect();
         token++; // una carga que todavía resuelve la fuente ya no es la vigente: no pondrá el audio
         pendingStart = null;
         loadedUid = null;
         endFade();
         audio.pause();
-        set({ status: get().index >= 0 ? 'paused' : 'idle', error: null });
+        set({ status: get().index >= 0 ? 'paused' : 'idle', reconnecting: false, error: null });
       },
       playIndex(index) {
-        if (index >= 0 && index < get().items.length) void go(index, { user: true });
+        if (index >= 0 && index < get().items.length) {
+          intent++;
+          void go(index, { user: true });
+        }
       },
       playNext(tracks) {
         if (!tracks.length) return;
         if (jam?.active()) return jam.request(tracks, 'next');
-        commit(insertNext(qs(), makeItems(tracks)));
+        const add = fittingTracks(tracks);
+        if (!add.length) return;
+        commit(insertNext(qs(), makeItems(add)));
         settleEmpty();
       },
       addToQueue(tracks) {
-        if (!tracks.length) return;
-        if (jam?.active()) return jam.request(tracks, 'end');
-        commit(insertBeforeAuto(qs(), makeItems(tracks))); // lo que pide el usuario va antes de lo que puso la radio
+        if (!tracks.length) return 0;
+        if (jam?.active()) {
+          jam.request(tracks, 'end');
+          return 0;
+        }
+        const add = fittingTracks(tracks);
+        if (!add.length) return 0;
+        commit(insertBeforeAuto(qs(), makeItems(add))); // lo que pide el usuario va antes de lo que puso la radio
         settleEmpty();
+        return add.length;
       },
       removeFromQueue(uid) {
         const { state, wasCurrent } = removeItem(qs(), uid);
         commit(state);
         if (!wasCurrent) return;
         if (state.items.length === 0) {
-          token++;
-          endFade();
-          audio.pause();
-          loadedUid = null;
-          set({ index: -1, status: 'idle', position: 0, duration: 0, error: null });
+          get().stop();
+          set({ position: 0, duration: 0 });
         } else {
           void go(state.index, { user: false });
         }
@@ -554,27 +736,52 @@ export function createPlayer(deps: PlayerDeps) {
         commit(clearUpcoming(qs()));
       },
 
-      togglePlay() {
+      play() {
+        intent++;
         const s = get();
         const item = cur();
         if (!item || s.status === 'loading') return;
         // Sesión restaurada, error o cola terminada: no hay audio cargado que reanudar.
         if (loadedUid !== item.uid || s.status === 'error' || s.status === 'ended') {
-          void go(s.index, { user: true, startAt: s.status === 'ended' || s.status === 'error' ? 0 : s.position });
+          const retry = s.status === 'error' && s.error?.code === 'network';
+          const restart = s.status === 'ended' || (s.status === 'error' && !retry);
+          void go(s.index, { user: true, startAt: restart ? 0 : s.position, retry });
           return;
         }
-        if (audio.paused) audio.play().catch((e) => !isAbort(e) && fail(e, item));
-        else {
+        const mine = token;
+        if (audio.paused) audio.play().catch((e) => {
+          if (mine === token && !isAbort(e)) fail(e, item);
+        });
+      },
+      pause() {
+        intent++;
+        clearStall();
+        if (get().status === 'loading') {
+          get().stop();
+        } else if (!audio.paused) {
           endFade(); // pausar corta también la canción que se estaba apagando
           audio.pause();
         }
       },
+      togglePlay() {
+        const s = get();
+        if (s.status === 'loading') return;
+        if (loadedUid === cur()?.uid && !audio.paused && s.status !== 'error' && s.status !== 'ended') s.pause();
+        else s.play();
+      },
+      networkRestored() {
+        radioOnlineEpoch++;
+        reconnect?.run();
+        retryRadioAfterNetwork();
+      },
       next() {
+        intent++;
         const s = get();
         const ni = nextIndex(s.items.length, s.index, s.repeat, false);
         if (ni !== null) void go(ni, { user: true });
       },
       prev() {
+        intent++;
         const s = get();
         if (s.index < 0) return;
         if (s.position > RESTART_THRESHOLD_S) return get().seek(0);
@@ -588,11 +795,9 @@ export function createPlayer(deps: PlayerDeps) {
         if (!item) return;
         const max = s.duration > 0 ? s.duration : Infinity;
         const t = Math.min(Math.max(sec, 0), max);
+        uninterruptedSince = undefined;
         set({ position: t });
         if (loadedUid === item.uid) audio.currentTime = t; // si no hay audio cargado, se aplica al reproducir
-      },
-      seekBy(delta) {
-        get().seek(get().position + delta);
       },
       setVolume(v) {
         const volume = Math.min(1, Math.max(0, v));
@@ -618,18 +823,21 @@ export function createPlayer(deps: PlayerDeps) {
 
       hydrate(saved) {
         if (!saved) return;
+        clearStall();
+        clearReconnect();
         const items = makeItems(saved.queue);
         const index = items.length ? Math.min(Math.max(saved.index, 0), items.length - 1) : -1;
         set({
           items,
           index,
-          original: null,
+          original: saved.shuffle && saved.originalOrder ? saved.originalOrder.map((i) => items[i]!) : null,
           repeat: saved.repeat,
           shuffle: saved.shuffle,
           volume: saved.volume,
           muted: saved.muted,
           // La reproducción nunca arranca sola: queda lista en pausa, en la posición guardada.
           status: index >= 0 ? 'paused' : 'idle',
+          reconnecting: false,
           position: index >= 0 ? saved.positionSec : 0,
           duration: items[index]?.track.durationSec ?? 0,
         });
@@ -637,6 +845,7 @@ export function createPlayer(deps: PlayerDeps) {
       },
       snapshot() {
         const s = get();
+        const positions = s.original ? new Map(s.items.map((item, i) => [item.uid, i])) : null;
         return {
           queue: s.items.map((i) => i.track),
           index: Math.max(s.index, 0),
@@ -645,6 +854,7 @@ export function createPlayer(deps: PlayerDeps) {
           muted: s.muted,
           repeat: s.repeat,
           shuffle: s.shuffle,
+          ...(positions && s.original && { originalOrder: s.original.map((item) => positions.get(item.uid)!) }),
         };
       },
     };

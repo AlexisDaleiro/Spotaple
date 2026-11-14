@@ -63,6 +63,8 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
   }
   private var browser: WebView? = null
   private var lastRecovery = -60_000L
+  private val recoveryPoint = java.util.concurrent.atomic.AtomicReference<String?>()
+  private val recoveryTimeout = Runnable { if (recoveryPoint.getAndSet(null) != null) PlaybackService.clear() }
   private var pendingSave: Pair<Int, String>? = null
   private val onOpenLocal by EventDispatcher()
   private val awaitRuntime = object : Runnable {
@@ -85,7 +87,10 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
     super.onAttachedToWindow()
     active = WeakReference(this)
     PlaybackService.command = { action, milliseconds ->
-      post { browser?.evaluateJavascript("window.spotapleMedia?.('$action', ${milliseconds?.div(1000.0) ?: "undefined"})", null) }
+      post {
+        if (action == "pause" && recoveryPoint.getAndSet(null) != null) PlaybackService.clear()
+        else browser?.evaluateJavascript("window.spotapleMedia?.('$action', ${milliseconds?.div(1000.0) ?: "undefined"})", null)
+      }
     }
     if (browser == null) {
       NodeRuntime.start(context)
@@ -95,6 +100,8 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
 
   override fun onDetachedFromWindow() {
     removeCallbacks(awaitRuntime)
+    removeCallbacks(recoveryTimeout)
+    recoveryPoint.set(null)
     browser?.let {
       removeView(it)
       it.destroy()
@@ -158,14 +165,20 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
         view.destroy()
         browser = null
         pendingSave = null
-        PlaybackService.clear()
         val now = SystemClock.elapsedRealtime()
         if (isAttachedToWindow && now - lastRecovery >= 60_000L) {
+          recoveryPoint.set(PlaybackService.recoveryPoint())
+          if (recoveryPoint.get() == null) PlaybackService.clear()
+          else postDelayed(recoveryTimeout, 15_000L)
           lastRecovery = now
           label.text = "Recuperando Spotaple…"
           label.visibility = VISIBLE
           post(awaitRuntime)
-        } else showError()
+        } else {
+          recoveryPoint.set(null)
+          PlaybackService.clear()
+          showError()
+        }
         return true
       }
     }
@@ -175,6 +188,13 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
   }
 
   private inner class NativeActions(private val url: String) {
+    @JavascriptInterface
+    fun takeRecovery(trackId: String): String? {
+      val point = recoveryPoint.getAndSet(null) ?: return null
+      if (trackId.isNotEmpty() && point.substringBefore(':') == trackId) return point
+      return null
+    }
+
     @JavascriptInterface
     fun shareTrack(link: String) {
       if (!link.matches(Regex("https://music[.]youtube[.]com/watch[?]v=[A-Za-z0-9_-]{11}"))) return
@@ -241,9 +261,12 @@ class SpotapleView(context: Context, appContext: AppContext) : ExpoView(context,
         val data = JSONObject(raw)
         PlaybackService.MediaInfo(data.getString("title"), data.getString("artist"),
           data.getString("status"), data.getLong("positionMs"), data.getLong("durationMs"),
-          data.optString("artwork").takeIf { it.isNotEmpty() })
+          data.optString("artwork").takeIf { it.isNotEmpty() }, data.optBoolean("streaming"),
+          data.optString("trackId").takeIf { it.matches(Regex("[A-Za-z0-9_-]{6,24}")) }.orEmpty(),
+          data.optBoolean("recoverable"))
       }.getOrNull() ?: return
       post {
+        if (info.status == "paused" && recoveryPoint.get()?.substringBefore(':') == info.trackId) return@post
         runCatching { PlaybackService.update(context, info) }.onFailure {
           Log.w("SpotaplePlayback", "No se pudo actualizar el servicio de reproducción", it)
         }

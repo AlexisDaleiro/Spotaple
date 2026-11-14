@@ -20,6 +20,7 @@ export interface OfflineState {
   pending: number;
   failed: number;
   bytes: number;
+  limited?: boolean;
 }
 
 export type ExportResult = { saved: false } | { saved: true; name: string; transfer?: string };

@@ -12,6 +12,10 @@ import { Cover } from './Cover';
 import { IconButton } from './IconButton';
 import { onTrackContextMenu, openTrackMenu } from './ContextMenu';
 import { Empty } from './States';
+import { WindowedList, type ListRowPosition } from './WindowedList';
+
+const QUEUE_ROW_HEIGHT = 48;
+const QUEUE_DIVIDER_HEIGHT = 34;
 
 /** Foco al hermano anterior o siguiente que se pueda enfocar: salta los separadores (p. ej. «Radio automática»). */
 function focusSibling(el: HTMLElement, dir: 'next' | 'prev') {
@@ -27,12 +31,14 @@ function QueueRow({
   current,
   upcomingCount,
   reorder,
+  position,
 }: {
   item: QueueItem;
   absIndex: number;
   current?: boolean;
   upcomingCount?: number;
   reorder?: ReturnType<ReturnType<typeof useReorder>>;
+  position?: ListRowPosition;
 }) {
   const sounding = usePlayer((s) => current && (s.status === 'playing' || s.status === 'buffering'));
   const t = item.track;
@@ -45,6 +51,7 @@ function QueueRow({
       ];
   const onKeyDown = (e: KeyboardEvent<HTMLLIElement>) => {
     if (e.target !== e.currentTarget) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Enter') player().playIndex(absIndex);
     else if (e.key === 'Delete' && !current) player().removeFromQueue(item.uid);
     else if (e.key === 'ArrowDown') focusSibling(e.currentTarget, 'next');
@@ -63,6 +70,7 @@ function QueueRow({
       onDoubleClick={() => player().playIndex(absIndex)}
       onKeyDown={onKeyDown}
       onContextMenu={onTrackContextMenu(t, { extra })}
+      {...position}
       {...reorder?.props}
     >
       {!current && <GripVertical size={14} className="qrow__grip" aria-hidden="true" />}
@@ -78,7 +86,7 @@ function QueueRow({
   );
 }
 
-function PersonalQueue() {
+function PersonalQueue({ inert }: { inert?: boolean }) {
   const items = usePlayer((s) => s.items);
   const index = usePlayer((s) => s.index);
   const toggle = useUi((s) => s.toggleQueue);
@@ -86,9 +94,23 @@ function PersonalQueue() {
   const current = items[index];
   const upcoming = items.slice(index + 1);
   const reorder = useReorder(upcoming.length, (from, to) => player().moveInQueue(index + 1 + from, index + 1 + to));
+  const hasDivider = (i: number) => upcoming[i]?.auto && !upcoming[i - 1]?.auto;
+  const renderUpcoming = (i: number, position?: ListRowPosition) => {
+    const item = upcoming[i]!;
+    return (
+      <Fragment key={item.uid}>
+        {hasDivider(i) && (
+          <li className="queue__divider" aria-hidden="true" style={position ? { height: QUEUE_DIVIDER_HEIGHT, margin: 0 } : undefined}>
+            Radio automática
+          </li>
+        )}
+        <QueueRow item={item} absIndex={index + 1 + i} upcomingCount={upcoming.length} reorder={reorder(i)} position={position} />
+      </Fragment>
+    );
+  };
 
   return (
-    <aside className="queue" aria-label="Cola de reproducción">
+    <aside className="queue" aria-label="Cola de reproducción" inert={inert}>
       <header className="queue__head">
         <h2 className="h2">Cola</h2>
         <IconButton size="sm" icon={<X size={16} />} label="Cerrar la cola" onClick={toggle} />
@@ -112,18 +134,20 @@ function PersonalQueue() {
             </div>
             {upcoming.length === 0 ? (
               <p className="queue__hint">No hay nada más en la cola. Cuando termine esta canción, la reproducción se detiene.</p>
+            ) : api.platform !== 'android' && upcoming.length > 100 ? (
+              <WindowedList
+                className="queue__list queue__list--windowed"
+                label="Próximas canciones"
+                count={upcoming.length}
+                scrollSelector=".queue__scroll"
+                rowHeight={QUEUE_ROW_HEIGHT}
+                extraHeight={(i) => hasDivider(i) ? QUEUE_DIVIDER_HEIGHT : 0}
+                rowKey={(i) => upcoming[i]!.uid}
+                renderRow={renderUpcoming}
+              />
             ) : (
               <ul className="queue__list" aria-label="Próximas canciones">
-                {upcoming.map((it, i) => (
-                  <Fragment key={it.uid}>
-                    {it.auto && !upcoming[i - 1]?.auto && (
-                      <li className="queue__divider" aria-hidden="true">
-                        Radio automática
-                      </li>
-                    )}
-                    <QueueRow item={it} absIndex={index + 1 + i} upcomingCount={upcoming.length} reorder={reorder(i)} />
-                  </Fragment>
-                ))}
+                {upcoming.map((_, i) => renderUpcoming(i))}
               </ul>
             )}
           </>
@@ -159,6 +183,7 @@ function JamQueueRow({ item, view, reorder, current }: { item: JamItem; view: Ja
       ];
   const onKeyDown = (e: KeyboardEvent<HTMLLIElement>) => {
     if (e.target !== e.currentTarget) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Delete' && canRemove) remove();
     else if (e.key === 'ArrowDown') (e.currentTarget.nextElementSibling as HTMLElement | null)?.focus();
     else if (e.key === 'ArrowUp') (e.currentTarget.previousElementSibling as HTMLElement | null)?.focus();
@@ -193,7 +218,7 @@ function JamQueueRow({ item, view, reorder, current }: { item: JamItem; view: Ja
 }
 
 /** Cola compartida de la sala: el admin reordena y quita; cada miembro quita solo lo que pidió. */
-function JamQueue({ view }: { view: JamView }) {
+function JamQueue({ view, inert }: { view: JamView; inert?: boolean }) {
   const toggle = useUi((s) => s.toggleQueue);
   const state = view.state!;
   const admin = isAdmin(view);
@@ -203,7 +228,7 @@ function JamQueue({ view }: { view: JamView }) {
   });
 
   return (
-    <aside className="queue" aria-label="Cola de la sala">
+    <aside className="queue" aria-label="Cola de la sala" inert={inert}>
       <header className="queue__head">
         <h2 className="h2">Cola de la sala</h2>
         <IconButton size="sm" icon={<X size={16} />} label="Cerrar la cola" onClick={toggle} />
@@ -242,7 +267,7 @@ function JamQueue({ view }: { view: JamView }) {
 }
 
 /** Dentro de una sala la cola es la de la sala; fuera, la personal. */
-export function QueuePanel() {
+export function QueuePanel({ inert }: { inert?: boolean }) {
   const view = useJam((s) => s.view);
-  return inRoom(view) && view ? <JamQueue view={view} /> : <PersonalQueue />;
+  return inRoom(view) && view ? <JamQueue view={view} inert={inert} /> : <PersonalQueue inert={inert} />;
 }

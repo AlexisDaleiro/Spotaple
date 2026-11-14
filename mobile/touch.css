@@ -17,14 +17,12 @@
 [data-platform="android"] .brand { width: auto; }
 [data-platform="android"] .brand__mark,
 [data-platform="android"] .page--home .empty__icon {
-  background: var(--bg-2) url('./brand.png') center / contain no-repeat;
+  background: var(--bg-2);
   border: 0;
   box-shadow: none;
 }
 [data-platform="android"] .brand__mark { width: 38px; height: 38px; border-radius: 12px; }
 [data-platform="android"] .page--home .empty__icon { width: 76px; height: 76px; border-radius: 22px; }
-[data-platform="android"] .brand__mark svg,
-[data-platform="android"] .page--home .empty__icon svg,
 [data-platform="android"] .brand__name,
 [data-platform="android"] .search__kbd,
 [data-platform="android"] .sidebar__lists,
@@ -160,6 +158,11 @@
 [data-platform="android"] .player--empty { display: none; }
 [data-platform="android"] .player__now { grid-area: now; gap: 8px; position: relative; }
 [data-platform="android"] .player__open { position: absolute; z-index: 1; inset: 0 42px 0 0; border-radius: 8px; }
+[data-platform="android"] .player--compact .player__error button {
+  position: relative;
+  z-index: 2;
+  flex: none;
+}
 [data-platform="android"] .player__center { grid-area: center; }
 [data-platform="android"] .player__right { grid-area: right; }
 [data-platform="android"] .player--compact .player__cover,
@@ -190,7 +193,7 @@
   border: 0;
   background: linear-gradient(155deg, var(--bg-3), var(--bg-0) 65%);
 }
-[data-platform="android"] .player__mobile-head {
+[data-platform="android"] .player__expanded-head {
   grid-area: head;
   display: grid;
   grid-template-columns: 44px 1fr 44px;
@@ -203,6 +206,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px 8px;
 }
+[data-platform="android"] .player--expanded .player__details { grid-column: 1 / -1; }
 [data-platform="android"] .player--expanded .player__cover {
   grid-column: 1 / -1;
   justify-self: center;

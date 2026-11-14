@@ -8,6 +8,7 @@ import { useLibrary } from '../stores/library';
 import { inRoom, useJam } from '../stores/jam';
 import { navigate } from '../stores/nav';
 import { useOffline } from '../stores/offline';
+import { useSettings } from '../stores/settings';
 import { toast, useUi } from '../stores/ui';
 import { Empty, ErrorState, RowsSkeleton } from '../components/States';
 import { TrackList, TrackRow } from '../components/TrackRow';
@@ -15,14 +16,16 @@ import { TrackList, TrackRow } from '../components/TrackRow';
 export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'history' }) {
   const version = useLibrary((s) => s.version);
   const inJam = useJam((s) => inRoom(s.view));
-  const favs = useResource(() => api.library.favorites(), [version]);
-  const history = useResource(() => api.library.recentPlays(100), [tab === 'history' ? 'h' : 'f']);
-  const res = tab === 'favorites' ? favs : history;
+  const res = useResource(() => tab === 'favorites' ? api.library.favorites() : api.library.recentPlays(100), [tab, version]);
   const tracks = res.data ?? [];
   const offlineIds = useOffline((s) => s.ids);
   const pending = useOffline((s) => s.pending);
   const failed = useOffline((s) => s.failed);
+  const limited = useOffline((s) => s.limited);
+  const density = useSettings((s) => s.settings.density);
   const downloaded = tab === 'favorites' ? tracks.filter((t) => offlineIds.has(t.id)).length : 0;
+  const duration = totalDuration(tracks);
+  const windowed = api.platform !== 'android' && tracks.length > 100;
 
   // Sin red solo suenan las descargadas: «Reproducir» y «Aleatorio» arman la cola con esas.
   const play = (shuffle: boolean) => {
@@ -84,14 +87,23 @@ export function LibraryPage({ tab = 'favorites' }: { tab?: 'favorites' | 'histor
             </button>
             <span className="toolbar__meta">
               {plural(tracks.length, 'canción', 'canciones')}
-              {totalDuration(tracks) !== undefined && ` · ${formatTotal(totalDuration(tracks)!)}`}
+              {duration !== undefined && ` · ${formatTotal(duration)}`}
               {downloaded > 0 && ` · ${downloaded} sin conexión`}
               {tab === 'favorites' && pending > 0 && ` · bajando ${pending}`}
               {tab === 'favorites' && failed > 0 && ` · ${failed} sin poder descargar`}
+              {tab === 'favorites' && limited && ' · límite de descargas alcanzado'}
             </span>
           </div>
-          <TrackList label={tab === 'favorites' ? 'Favoritos' : 'Historial'}>
-            {tracks.map((t, i) => (
+          <TrackList
+            label={tab === 'favorites' ? 'Favoritos' : 'Historial'}
+            windowed={windowed ? {
+              count: tracks.length,
+              rowHeight: density === 'compact' ? 44 : 52,
+              rowKey: (index) => tracks[index]!.id,
+              renderRow: (index, position) => <TrackRow track={tracks[index]!} index={index} position={position} onPlay={() => playFrom(index)} />,
+            } : undefined}
+          >
+            {!windowed && tracks.map((t, i) => (
               <TrackRow key={t.id} track={t} index={i} onPlay={() => playFrom(i)} />
             ))}
           </TrackList>

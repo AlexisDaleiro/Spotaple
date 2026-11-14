@@ -31,7 +31,7 @@ internal object NodeRuntime {
           ?: "127.0.0.1"
         startNode(arrayOf("spotaple", File(work, "start.cjs").path, app.filesDir.path,
           File(work, "renderer").path, ready.path, address,
-          app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty()))
+          app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty(), app.packageName))
       } catch (error: Throwable) {
         Log.e("SpotapleRuntime", "Could not start local runtime", error)
       } finally {

@@ -2,13 +2,13 @@ import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { AUDIO_FORMATS, type AudioFormat, type OfflineState } from '../shared/offline';
 import type { Store } from './db/store';
-import { downloadTo } from './download';
+import { DownloadLimitError, downloadTo } from './download';
 import type { MusicProvider } from './music/provider';
 
 export interface OfflineDeps {
   /** `userData/offline`. */
   dir: string;
-  store: Pick<Store, 'favoriteIds' | 'downloads' | 'addDownload' | 'removeDownload' | 'clearDownloads' | 'trackDuration' | 'setLoudness'>;
+  store: Pick<Store, 'favoriteIds' | 'isFavorite' | 'downloads' | 'addDownload' | 'removeDownload' | 'clearDownloads' | 'trackDuration' | 'setLoudness'>;
   provider: MusicProvider;
   fetchImpl: typeof fetch;
   /** Ajuste «descargar las favoritas automáticamente»; se lee en cada decisión. */
@@ -16,6 +16,7 @@ export interface OfflineDeps {
   /** Se llama con el estado completo tras cada cambio (no por byte). */
   emit: (state: OfflineState) => void;
   concurrency?: number;
+  maxBytes?: () => number;
 }
 
 export type Offline = ReturnType<typeof createOffline>;
@@ -31,19 +32,25 @@ export function createOffline(d: OfflineDeps) {
   const concurrency = d.concurrency ?? 2;
   const index = new Map<string, { format: AudioFormat; bytes: number }>();
   for (const r of d.store.downloads()) index.set(r.trackId, { format: r.format, bytes: r.bytes });
-  const pending: string[] = [];
-  const active = new Set<string>();
+  let bytes = [...index.values()].reduce((total, entry) => total + entry.bytes, 0);
+  let limited = false;
+  let priority = 0;
+  const available = () => (d.maxBytes?.() ?? Infinity) - bytes;
+  const pending = new Set<string>();
+  const active = new Map<string, AbortController>();
   const failed = new Set<string>();
   const idleWaiters: (() => void)[] = [];
   /** Sube con `clear()`: una descarga que empezó antes ya no vale y se descarta al terminar. */
   let epoch = 0;
+  let clearing: Promise<void> | undefined;
 
   const fileOf = (id: string, format: AudioFormat) => join(d.dir, `${id}.${AUDIO_FORMATS[format].ext}`);
 
   function state(): OfflineState {
-    let bytes = 0;
-    for (const e of index.values()) bytes += e.bytes;
-    return { ids: [...index.keys()], pending: pending.length + active.size, failed: failed.size, bytes };
+    return {
+      ids: [...index.keys()], pending: pending.size + active.size, failed: failed.size, bytes,
+      ...(limited && { limited: true }),
+    };
   }
   const notify = () => d.emit(state());
 
@@ -55,41 +62,61 @@ export function createOffline(d: OfflineDeps) {
   }
 
   function pump() {
-    while (active.size < concurrency && pending.length) {
-      const id = pending.shift()!;
-      active.add(id);
-      void run(id);
+    if (pending.size && available() <= 0) {
+      limited = true;
+      pending.clear();
     }
-    if (!active.size && !pending.length) idleWaiters.splice(0).forEach((resolve) => resolve());
+    while (!clearing && priority === 0 && d.enabled() && active.size < concurrency && pending.size) {
+      const id = [...pending].find((entry) => !active.has(entry));
+      if (id === undefined) break;
+      pending.delete(id);
+      if (!d.store.isFavorite(id)) continue;
+      const controller = new AbortController();
+      active.set(id, controller);
+      void run(id, controller.signal);
+    }
+    if (!active.size && !pending.size) idleWaiters.splice(0).forEach((resolve) => resolve());
   }
 
-  async function run(id: string) {
+  async function run(id: string, signal: AbortSignal) {
     const startedIn = epoch;
     try {
-      const out = await downloadTo({ provider: d.provider, fetchImpl: d.fetchImpl, id, variant: 'high', destFor: (f) => fileOf(id, f) });
+      const out = await downloadTo({
+        provider: d.provider, fetchImpl: d.fetchImpl, id, variant: 'high',
+        destFor: (f) => fileOf(id, f), maxBytes: available(), signal,
+      });
       // Pudo dejar de ser favorita (o la persona borró todo) mientras bajaba: el archivo ya no se quiere.
-      if (startedIn === epoch && d.store.favoriteIds().includes(id)) {
-        d.store.addDownload(id, out.format, out.bytes);
-        if (out.loudnessLkfs !== undefined) d.store.setLoudness(id, out.loudnessLkfs);
-        index.set(id, { format: out.format, bytes: out.bytes });
-      } else {
+      if (startedIn !== epoch || signal.aborted || !d.enabled() || !d.store.isFavorite(id)) {
         await removeFile(out.dest);
+        return;
       }
-    } catch {
-      if (startedIn === epoch) failed.add(id);
+      if (out.bytes > available()) {
+        limited = true;
+        await removeFile(out.dest);
+        return;
+      }
+      d.store.addDownload(id, out.format, out.bytes);
+      if (out.loudnessLkfs !== undefined) d.store.setLoudness(id, out.loudnessLkfs);
+      index.set(id, { format: out.format, bytes: out.bytes });
+      bytes += out.bytes;
+    } catch (error) {
+      if (startedIn === epoch && !signal.aborted) {
+        if (error instanceof DownloadLimitError) limited = true;
+        else failed.add(id);
+      }
     } finally {
       active.delete(id);
+      if (signal.aborted && startedIn === epoch && d.enabled() && d.store.isFavorite(id)) enqueue(id);
       pump();
       notify();
     }
   }
 
   function enqueue(id: string) {
-    if (index.has(id) || active.has(id) || pending.includes(id)) return;
+    const download = active.get(id);
+    if (index.has(id) || (download && !download.signal.aborted)) return;
     failed.delete(id);
-    pending.push(id);
-    pump();
-    notify();
+    pending.add(id);
   }
 
   /** Olvida la descarga: primero el índice (el protocolo deja de servirla) y después el archivo, sin fallar si está en uso. */
@@ -97,7 +124,10 @@ export function createOffline(d: OfflineDeps) {
     const e = index.get(id);
     index.delete(id);
     d.store.removeDownload(id);
-    if (e) await removeFile(fileOf(id, e.format));
+    if (e) {
+      bytes -= e.bytes;
+      await removeFile(fileOf(id, e.format));
+    }
   }
 
   /** Avisa que la canción pasó a ser (o dejó de ser) favorita; `toggleFavorite` ya la guardó o quitó en la base. */
@@ -105,12 +135,16 @@ export function createOffline(d: OfflineDeps) {
     if (isFavorite) {
       failed.delete(id);
       if (d.enabled()) enqueue(id);
+      pump();
+      notify();
       return;
     }
-    const at = pending.indexOf(id);
-    if (at >= 0) pending.splice(at, 1);
+    pending.delete(id);
+    active.get(id)?.abort();
     failed.delete(id);
     await forget(id);
+    if (limited && d.enabled() && available() > 0) return reconcile();
+    pump();
     notify();
   }
 
@@ -120,43 +154,78 @@ export function createOffline(d: OfflineDeps) {
    * archivo falta; y baja las favoritas que no tienen archivo (si el ajuste está activo).
    */
   async function reconcile() {
+    const startedIn = epoch;
+    await clearing;
     await mkdir(d.dir, { recursive: true });
     const favorites = new Set(d.store.favoriteIds());
+    const previouslyIndexed = [...index];
     const names = await readdir(d.dir);
+    if (startedIn !== epoch) return;
     const present = new Set(names);
     const keep = new Set<string>();
     for (const [id, e] of index) if (favorites.has(id)) keep.add(basename(fileOf(id, e.format)));
-    const busy = [...active];
+    const busy = [...active.keys()];
     for (const name of names) {
       if (keep.has(name) || busy.some((id) => name.startsWith(`${id}.`))) continue;
       await removeFile(join(d.dir, name));
+      if (startedIn !== epoch) return;
     }
-    for (const [id, e] of [...index]) {
-      if (!favorites.has(id) || !present.has(basename(fileOf(id, e.format)))) {
+    for (const [id, e] of previouslyIndexed) {
+      if (index.get(id) !== e || active.has(id)) continue;
+      if ((!favorites.has(id) && !d.store.isFavorite(id)) || !present.has(basename(fileOf(id, e.format)))) {
         index.delete(id);
+        bytes -= e.bytes;
         d.store.removeDownload(id);
       }
     }
     failed.clear();
+    limited = false;
     if (d.enabled()) for (const id of favorites) enqueue(id);
-    else pending.length = 0;
+    else {
+      pending.clear();
+      for (const controller of active.values()) controller.abort();
+    }
+    pump();
     notify();
   }
 
   /** «Borrar todas las descargas»: vacía la cola, borra todo y descarta lo que esté bajando. */
   async function clear() {
     epoch++;
-    pending.length = 0;
+    const clearingEpoch = epoch;
+    pending.clear();
+    for (const controller of active.values()) controller.abort();
     const entries = [...index];
     index.clear();
+    bytes = 0;
+    limited = false;
     d.store.clearDownloads();
-    await Promise.all(entries.map(([id, e]) => removeFile(fileOf(id, e.format))));
+    const previous = clearing;
+    clearing = (async () => {
+      await previous;
+      await Promise.all(entries.map(([id, e]) => removeFile(fileOf(id, e.format))));
+    })();
+    await clearing;
+    if (clearingEpoch !== epoch) return;
+    clearing = undefined;
     failed.clear();
+    pump();
     notify();
   }
 
   /** Se resuelve cuando no queda cola ni descargas en curso. */
-  const idle = (): Promise<void> => (pending.length || active.size ? new Promise<void>((resolve) => idleWaiters.push(resolve)) : Promise.resolve());
+  const idle = (): Promise<void> => (pending.size || active.size ? new Promise<void>((resolve) => idleWaiters.push(resolve)) : Promise.resolve());
 
-  return { local, state, onFavorite, reconcile, clear, idle };
+  async function prioritize<T>(operation: () => Promise<T>): Promise<T> {
+    priority++;
+    try {
+      return await operation();
+    } finally {
+      priority--;
+      pump();
+      notify();
+    }
+  }
+
+  return { local, state, onFavorite, reconcile, clear, idle, prioritize };
 }

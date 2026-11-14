@@ -183,15 +183,18 @@ export function createStore(path: string) {
   }
 
   // ---- favoritos
-  function favorites(): Track[] {
+  function favorites(limit = -1): Track[] {
     return (
       db
-        .prepare('SELECT t.* FROM favorites f JOIN tracks t ON t.id = f.track_id ORDER BY f.added_at DESC, f.rowid DESC')
-        .all() as Row[]
+        .prepare('SELECT t.* FROM favorites f JOIN tracks t ON t.id = f.track_id ORDER BY f.added_at DESC, f.rowid DESC LIMIT ?')
+        .all(limit) as Row[]
     ).map(rowToTrack);
   }
   function favoriteIds(): string[] {
     return (db.prepare('SELECT track_id FROM favorites').all() as Row[]).map((r) => String(r.track_id));
+  }
+  function isFavorite(trackId: string): boolean {
+    return db.prepare('SELECT 1 FROM favorites WHERE track_id = ?').get(trackId) !== undefined;
   }
   /** Devuelve el estado final: true = ahora es favorita. */
   function toggleFavorite(track: Track): boolean {
@@ -532,6 +535,7 @@ export function createStore(path: string) {
     upsertTrack,
     favorites,
     favoriteIds,
+    isFavorite,
     toggleFavorite,
     playlists,
     playlist,

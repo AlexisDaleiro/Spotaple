@@ -1,10 +1,12 @@
 import { Disc3, ListMusic, Mic2, Music2, Search, SearchX } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import type { Track } from '@shared/types';
 import { api } from '../api';
 import { cx } from '../lib/format';
 import { playAlbum, playArtist, playRemotePlaylist } from '../lib/actions';
 import { player, usePlayer } from '../player/instance';
 import { navigate } from '../stores/nav';
+import { useOffline } from '../stores/offline';
 import { useSearch } from '../stores/search';
 import { useSettings } from '../stores/settings';
 import { AlbumCard, ArtistCard, RemotePlaylistCard, Shelf } from '../components/Shelf';
@@ -28,22 +30,28 @@ export function Suggestions() {
 
 export function SearchPage({ q }: { q: string }) {
   const mobile = api.platform === 'android';
-  const status = useSearch((s) => s.status);
-  const results = useSearch((s) => s.results);
+  const query = q.trim();
+  const status = useSearch((s) => s.query === query ? s.status : 'loading');
+  const results = useSearch((s) => s.query === query ? s.results : null);
+  const discovery = useSearch((s) => s.query === query ? s.discovery : null);
   const error = useSearch((s) => s.error);
   const run = useSearch((s) => s.run);
+  const cancel = useSearch((s) => s.cancel);
   const retry = useSearch((s) => s.retry);
-  // Con la radio activada una canción suelta suena sola y sigue la radio; apagada, o con la repetición activa (la
-  // radio no corre y la canción quedaría en bucle sola), se encolan los resultados como siempre.
+  // La radio puede arrancar desde una canción suelta. Aleatorio y repetir usan la lista de resultados.
   const radio = useSettings((s) => s.settings.radio);
   const repeat = usePlayer((s) => s.repeat);
-  const soloWithRadio = !mobile && radio && repeat === 'off';
+  const shuffle = usePlayer((s) => s.shuffle);
+  const soloWithRadio = !mobile && radio && repeat === 'off' && !shuffle;
   const [tab, setTab] = useState<Tab>('all');
 
-  useEffect(() => run(q), [q, run]);
+  useEffect(() => {
+    run(q);
+    return () => cancel(q);
+  }, [q, run, cancel]);
   useEffect(() => setTab('all'), [q]);
 
-  if (!q.trim()) {
+  if (!query) {
     return (
       <div className="page">
         <Empty
@@ -68,26 +76,37 @@ export function SearchPage({ q }: { q: string }) {
   }
 
   const { songs, albums, artists, playlists } = results;
+  const relatedSongs = discovery?.songs ?? [];
+  const relatedArtists = discovery?.artists ?? [];
   const total = songs.length + albums.length + artists.length + playlists.length;
   const tabs: { id: Tab; label: string; n: number; icon: React.ReactNode }[] = [
-    { id: 'all', label: 'Todo', n: total, icon: <Search size={14} /> },
-    { id: 'songs', label: 'Canciones', n: songs.length, icon: <Music2 size={14} /> },
-    { id: 'artists', label: 'Artistas', n: artists.length, icon: <Mic2 size={14} /> },
+    { id: 'all', label: 'Todo', n: total + relatedSongs.length + relatedArtists.length, icon: <Search size={14} /> },
+    { id: 'songs', label: 'Canciones', n: songs.length + relatedSongs.length, icon: <Music2 size={14} /> },
+    { id: 'artists', label: 'Artistas', n: artists.length + relatedArtists.length, icon: <Mic2 size={14} /> },
     { id: 'albums', label: 'Álbumes', n: albums.length, icon: <Disc3 size={14} /> },
     { id: 'playlists', label: 'Playlists', n: playlists.length, icon: <ListMusic size={14} /> },
   ];
   const selected = tabs.find((filter) => filter.id === tab);
 
-  const songsBlock = (list: typeof songs) => (
-    <TrackList label="Canciones">
+  const playResult = (track: Track, queue: Track[]) => {
+    if (soloWithRadio) {
+      player().playTracks([track], 0);
+    } else {
+      const { tracks, start } = useOffline.getState().queueFrom(queue, queue.indexOf(track));
+      player().playTracks(tracks, start);
+    }
+  };
+
+  const songsBlock = (list: Track[], queue = songs, label = 'Canciones') => (
+    <TrackList label={label}>
       {list.map((t, i) => (
-        <TrackRow key={t.id} track={t} index={i} onPlay={() => (soloWithRadio ? player().playTracks([t], 0) : player().playTracks(songs, songs.indexOf(t)))} />
+        <TrackRow key={t.id} track={t} index={i} onPlay={() => playResult(t, queue)} />
       ))}
     </TrackList>
   );
 
   return (
-    <div className={cx('page', status === 'loading' && 'is-stale')} aria-busy={status === 'loading'}>
+    <div className="page">
       <h1 className="h1">Resultados para «{results.query}»</h1>
 
       {status === 'error' && (
@@ -114,9 +133,11 @@ export function SearchPage({ q }: { q: string }) {
         ))}
       </div>
 
-      {total === 0 ? (
+      {status === 'loading' && (total === 0 || selected?.n === 0) ? (
+        <div aria-busy="true"><RowsSkeleton n={5} /></div>
+      ) : total === 0 ? (
         <Empty icon={<SearchX size={26} />} title={`No encontramos nada para «${results.query}»`} text="Revisá la ortografía o probá con el nombre del artista." />
-      ) : mobile && selected?.n === 0 ? (
+      ) : selected?.n === 0 ? (
         <Empty icon={<SearchX size={26} />} title={`Sin resultados en ${selected.label.toLowerCase()}`} />
       ) : (
         <>
@@ -139,6 +160,19 @@ export function SearchPage({ q }: { q: string }) {
                 <ArtistCard key={a.id} artist={a} onPlay={() => void playArtist(a.id)} />
               ))}
             </Shelf>
+          )}
+          {(tab === 'all' || tab === 'artists') && relatedArtists.length > 0 && (
+            <Shelf title="Artistas relacionados" id="sec-related-artists">
+              {relatedArtists.map((artist) => (
+                <ArtistCard key={artist.id} artist={artist} onPlay={() => void playArtist(artist.id)} />
+              ))}
+            </Shelf>
+          )}
+          {(tab === 'all' || tab === 'songs') && relatedSongs.length > 0 && (
+            <section aria-labelledby="sec-related-songs" className="section">
+              <h2 id="sec-related-songs" className="h2">Canciones relacionadas</h2>
+              {songsBlock(relatedSongs, relatedSongs, 'Canciones relacionadas')}
+            </section>
           )}
           {(tab === 'all' || tab === 'albums') && albums.length > 0 && (
             <Shelf title="Álbumes" id="sec-albums">

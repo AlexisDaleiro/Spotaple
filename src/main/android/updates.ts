@@ -22,6 +22,7 @@ export function createAndroidUpdates(
   emit: (state: UpdateState) => void,
   requestInstall: () => void,
   fetchImpl: typeof fetch = fetch,
+  production = false,
 ) {
   let state: UpdateState = { status: SEMVER.test(current) ? 'idle' : 'unsupported' };
   const dir = join(dataDir, 'updates');
@@ -46,11 +47,13 @@ export function createAndroidUpdates(
           prerelease: boolean;
           assets: { name: string; size: number; digest: string | null; browser_download_url: string }[];
         }[];
+        const tagPrefix = production ? 'android-stable-v' : 'android-v';
         const available = releases.flatMap((release) => {
-          const version = release.tag_name.replace(/^android-v/, '');
-          if (release.prerelease || release.tag_name !== `android-v${version}` || !SEMVER.test(version)) return [];
+          if (release.prerelease || !release.tag_name.startsWith(tagPrefix)) return [];
+          const version = release.tag_name.slice(tagPrefix.length);
+          if (!SEMVER.test(version)) return [];
           const asset = release.assets.find((item) => item.name === 'Spotaple-Android.apk' &&
-            item.browser_download_url === `https://github.com/${REPO}/releases/download/android-v${version}/Spotaple-Android.apk` &&
+            item.browser_download_url === `https://github.com/${REPO}/releases/download/${release.tag_name}/Spotaple-Android.apk` &&
             item.size > 0 && item.size <= MAX_APK && /^sha256:[a-f0-9]{64}$/.test(item.digest ?? ''));
           return asset ? [{ version, asset }] : [];
         }).sort((a, b) => compareVersion(b.version, a.version))[0];

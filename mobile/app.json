@@ -3,12 +3,12 @@
     "name": "Spotaple",
     "slug": "spotaple",
     "version": "0.2.2",
-    "icon": "./brand.png",
+    "icon": "../src/shared/assets/brand.png",
     "platforms": ["android"],
     "android": {
       "package": "com.alexis.spotaple.preview",
       "adaptiveIcon": {
-        "foregroundImage": "./brand.png",
+        "foregroundImage": "../src/shared/assets/brand.png",
         "backgroundColor": "#0c0d0f"
       },
       "versionCode": 4,

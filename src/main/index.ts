@@ -68,6 +68,30 @@ function createWindow(settings: AppSettings) {
   win.webContents.on('will-navigate', (e, url) => {
     if (!(rendererUrl && url.startsWith(rendererUrl))) e.preventDefault();
   });
+  let lastRecovery = 0;
+  win.webContents.on('render-process-gone', (_event, { reason }) => {
+    if (reason === 'clean-exit') return;
+    // Deja que Electron termine de cerrar el proceso antes de recargar la ventana.
+    setImmediate(async () => {
+      if (win.isDestroyed()) return;
+      if (Date.now() - lastRecovery < 60_000) {
+        const { response } = await dialog.showMessageBox(win, {
+          type: 'error',
+          title: 'Spotaple',
+          message: 'Spotaple se cerró inesperadamente.',
+          buttons: ['Volver a abrir', 'Cerrar'],
+          cancelId: 1,
+        });
+        if (win.isDestroyed()) return;
+        if (response === 1) {
+          win.close();
+          return;
+        }
+      }
+      lastRecovery = Date.now();
+      win.webContents.reload();
+    });
+  });
   if (rendererUrl) void win.loadURL(rendererUrl);
   else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
   return win;
@@ -116,6 +140,7 @@ app.whenReady().then(() => {
     provider,
     fetchImpl: netFetch,
     enabled: () => store.getAppSettings().autoDownload,
+    maxBytes: () => store.getAppSettings().offlineLimitMiB * 1024 * 1024,
     emit: (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.offlineState, state)),
   });
   protocol.handle(AUDIO_SCHEME, createAudioHandler(provider, netFetch, offline.local));
@@ -138,12 +163,13 @@ app.whenReady().then(() => {
   });
   const leaveJamOnQuit = () => jam.leave({ quit: true }).catch(() => undefined);
   // El instalador NSIS lleva un feed. El portable y los builds --dir se actualizan manualmente.
-  const canUpdate = process.platform === 'win32' && app.isPackaged && !process.env['PORTABLE_EXECUTABLE_FILE'] &&
+  const canUpdate = process.platform === 'win32' && app.isPackaged && !process.windowsStore && !process.env['PORTABLE_EXECUTABLE_FILE'] &&
     existsSync(join(process.resourcesPath, 'app-update.yml'));
   const updates = createUpdates(
     canUpdate ? updater.autoUpdater : null,
     (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(IPC.updatesState, state)),
     leaveJamOnQuit,
+    process.windowsStore === true,
   );
   registerIpc({
     store,

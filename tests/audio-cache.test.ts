@@ -26,6 +26,21 @@ describe('calidad fijada por canción', () => {
 });
 
 describe('caché de audio resuelto', () => {
+  it('al llegar al tope descarta la entrada menos reciente y recupera lugares vencidos', () => {
+    let now = 0;
+    const cache = createAudioCache(() => now, 2);
+    cache.set('high', 'a', audio(200));
+    cache.set('high', 'b', audio(200));
+    expect(cache.get('high', 'a')).toBeDefined();
+    cache.set('high', 'c', audio(100));
+    expect(cache.get('high', 'b')).toBeUndefined();
+    now = 101;
+    cache.set('high', 'd', audio(200));
+    expect(cache.get('high', 'c')).toBeUndefined();
+    expect(cache.get('high', 'a')).toBeDefined();
+    expect(cache.get('high', 'd')).toBeDefined();
+  });
+
   it('la clave incluye la calidad: lo resuelto en Alta no sirve en Ahorro', () => {
     const cache = createAudioCache(() => 1000);
     const high = audio(5000);

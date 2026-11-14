@@ -11,6 +11,7 @@ interface OfflineStore {
   /** Fallidas desde la última sincronización. */
   failed: number;
   bytes: number;
+  limited: boolean;
   /** Lo que informa el navegador; sin red solo suena lo descargado. */
   online: boolean;
   set(state: OfflineState): void;
@@ -31,8 +32,12 @@ export const useOffline = create<OfflineStore>((set, get) => ({
   pending: 0,
   failed: 0,
   bytes: 0,
+  limited: false,
   online: typeof navigator === 'undefined' || navigator.onLine !== false,
-  set: (s) => set({ ids: new Set(s.ids), pending: s.pending, failed: s.failed, bytes: s.bytes }),
+  set: (s) => set((previous) => ({
+    ids: s.ids.length === previous.ids.size && s.ids.every((id) => previous.ids.has(id)) ? previous.ids : new Set(s.ids),
+    pending: s.pending, failed: s.failed, bytes: s.bytes, limited: s.limited === true,
+  })),
   setOnline: (online) => set({ online }),
   reachable: (trackId) => get().online || get().ids.has(trackId),
   playable: (tracks) => (get().online ? tracks : tracks.filter((t) => get().ids.has(t.id))),

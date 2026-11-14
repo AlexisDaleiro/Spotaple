@@ -1,5 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js';
-import type { AlbumDetail, ArtistDetail, ArtistRef, RemotePlaylistDetail, SearchResults, Track } from '../../../shared/types';
+import { SEARCH_CATEGORIES, type AlbumDetail, type ArtistDetail, type ArtistRef, type RemotePlaylistDetail, type SearchCategory, type SearchResults, type Track } from '../../../shared/types';
 import type { StreamQuality } from '../../../shared/settings';
 import type { AudioVariant, MusicProvider, ResolvedAudio } from '../provider';
 import { createAudioCache, createQualityLock } from './audio-cache';
@@ -39,6 +40,13 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
   const now = opts.now ?? Date.now;
   const getQuality = opts.getQuality ?? ((): StreamQuality => 'high');
   const fetchImpl = opts.fetch ?? fetch;
+  const searchSignals = new AsyncLocalStorage<AbortSignal>();
+  const scopedFetch: typeof fetch = (input, init) => {
+    const search = searchSignals.getStore();
+    if (!search) return fetchImpl(input, init);
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+    return fetchImpl(input, { ...init, signal: signal ? AbortSignal.any([signal, search]) : search });
+  };
   // YouTube.js escribe en consola cada nodo desconocido de la API interna; no es información útil aquí.
   Log.setLevel(Log.Level.NONE);
   // Requisito documentado por YouTube.js: hay que aportar el evaluador de JS (ver eval.ts).
@@ -50,7 +58,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
       Innertube.create({
         retrieve_player: true,
         // Red de Chromium en la app (proxy y certificados del sistema); sin esto, el fetch de Node.
-        fetch: opts.fetch,
+        fetch: scopedFetch,
         cache: opts.cacheDir ? new UniversalCache(true, opts.cacheDir) : undefined,
       }),
       REQUEST_TIMEOUT_MS * 2,
@@ -105,6 +113,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     return {
       url,
       mimeType: (format.mime_type ?? 'audio/mp4').split(';')[0]!.trim(),
+      formatId: format.itag,
       contentLength: length,
       expiresAt: expire > 0 ? expire * 1000 - EXPIRY_MARGIN_MS : now() + DEFAULT_TTL_MS,
       durationSec: info.basic_info.duration || undefined,
@@ -169,16 +178,23 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
     }
   }
 
-  async function search(query: string): Promise<SearchResults> {
+  async function search(query: string, category?: SearchCategory, signal?: AbortSignal): Promise<SearchResults> {
     const yt = await getClient().catch((e) => {
       throw classify(e);
     });
-    const run = (type: 'song' | 'album' | 'artist' | 'playlist') => withTimeout(yt.music.search(query, { type }), REQUEST_TIMEOUT_MS);
-    const [songsR, albumsR, artistsR, playlistsR] = await Promise.allSettled([run('song'), run('album'), run('artist'), run('playlist')]);
-    if (songsR.status === 'rejected' && albumsR.status === 'rejected' && artistsR.status === 'rejected' && playlistsR.status === 'rejected') {
-      throw classify(songsR.reason);
-    }
-    const items = (r: PromiseSettledResult<Node>) => (r.status === 'fulfilled' ? searchItems(r.value) : []);
+    signal?.throwIfAborted();
+    const run = (type: SearchCategory) => {
+      if (category && category !== type) return Promise.resolve(null);
+      const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      return searchSignals.run(signal ? AbortSignal.any([signal, deadline]) : deadline,
+        () => withTimeout(yt.music.search(query, { type }), REQUEST_TIMEOUT_MS));
+    };
+    const responses = await Promise.allSettled(SEARCH_CATEGORIES.map(run));
+    const [songsR, albumsR, artistsR, playlistsR] = responses;
+    const requested = category ? [responses[SEARCH_CATEGORIES.indexOf(category)]!] : responses;
+    const errors = requested.filter((result) => result.status === 'rejected');
+    if (errors.length === requested.length) throw classify(errors[0]!.reason);
+    const items = (r: PromiseSettledResult<Node> | undefined) => (r?.status === 'fulfilled' && r.value ? searchItems(r.value) : []);
     return {
       query,
       songs: items(songsR)
@@ -197,7 +213,7 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
         .filter((i) => i.item_type === 'playlist')
         .map((i) => mapRemotePlaylist(i))
         .filter((p) => p !== null),
-      partial: [songsR, albumsR, artistsR, playlistsR].some((r) => r.status === 'rejected'),
+      partial: errors.length > 0,
     };
   }
 

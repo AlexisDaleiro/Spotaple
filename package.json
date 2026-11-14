@@ -27,6 +27,7 @@
     "pack": "npm run prepare:relay && electron-vite build && electron-builder --dir",
     "dist": "npm run prepare:relay && electron-vite build && electron-builder --win",
     "dist:installer": "npm run prepare:relay && electron-vite build && electron-builder --win nsis --x64 --publish never",
+    "dist:store": "node scripts/build-windows-store.mjs",
     "dist:mac:preview": "npm run prepare:relay && electron-vite build && electron-builder --mac dmg --publish never -c.mac.identity=-",
     "prepare:relay": "node scripts/prepare-relay.mjs",
     "check:jam": "node scripts/jam-probe.mjs",

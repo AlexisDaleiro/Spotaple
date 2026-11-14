@@ -6,9 +6,11 @@ import { useOffline } from '../stores/offline';
 import { settingsStore } from '../stores/settings';
 import { toast } from '../stores/ui';
 import { normalizationGainDb } from '@shared/audio';
+import brand from '@shared/assets/brand.png';
 import { createAudioEngine } from './audio-engine';
 import { createJamHook } from './jam-sync';
 import { createPlayer, type PlayerActions, type PlayerState } from './player';
+import { applyPlaybackCommand, playbackActive, type PlaybackCommand } from './transport';
 
 /**
  * Una sola instancia de reproducción para toda la app: vive fuera de React, así que cambiar de
@@ -68,8 +70,11 @@ try {
 }
 
 export const playerStore = createPlayer({
-  urlFor: api?.platform === 'android' ? (id) => new URL(`./audio/${encodeURIComponent(id)}`, location.href).href : undefined,
-  randomCollectionStart: api?.platform === 'android',
+  ...(api?.platform === 'android' && {
+    urlFor: (id: string) => new URL(`./audio/${encodeURIComponent(id)}`, location.href).href,
+    stallTimeoutMs: 12_000,
+    reconnectDelaysMs: [2_000, 6_000, 12_000],
+  }),
   audio,
   api: {
     prepare: (id) => api.music.prepare(id),
@@ -109,6 +114,16 @@ export const persistence = { suspended: false };
 
 export const usePlayer = <T>(selector: (s: PlayerState & PlayerActions) => T): T => useStore(playerStore, selector);
 export const player = () => playerStore.getState();
+
+useOffline.subscribe((state, previous) => {
+  if (state.online && !previous.online) player().networkRestored();
+});
+
+export function dispatchPlayback(command: PlaybackCommand, position?: number): void {
+  applyPlaybackCommand(player(), useJam.getState().view, () => {
+    void api.jam.send({ t: 'transport', action: 'next' }).catch(() => undefined);
+  }, command, position);
+}
 
 /** Estado actual de la pista en curso (o undefined). */
 export const currentItem = (s: PlayerState) => s.items[s.index];
@@ -158,26 +173,29 @@ export function startMediaSession() {
   if (api.platform === 'android') return; // Android publica la sesión y sus controles desde el servicio nativo.
   if (!('mediaSession' in navigator)) return;
   const ms = navigator.mediaSession;
-  const p = () => playerStore.getState();
-  ms.setActionHandler('play', () => p().togglePlay());
-  ms.setActionHandler('pause', () => p().togglePlay());
-  ms.setActionHandler('nexttrack', () => p().next());
-  ms.setActionHandler('previoustrack', () => p().prev());
-  ms.setActionHandler('seekto', (d) => d.seekTime !== undefined && p().seek(d.seekTime));
+  ms.setActionHandler('play', () => dispatchPlayback('play'));
+  ms.setActionHandler('pause', () => dispatchPlayback('pause'));
+  ms.setActionHandler('nexttrack', () => dispatchPlayback('next'));
+  ms.setActionHandler('previoustrack', () => dispatchPlayback('prev'));
+  ms.setActionHandler('seekto', (d) => dispatchPlayback('seek', d.seekTime));
 
-  let lastId = '';
-  playerStore.subscribe((s) => {
+  const fallbackArtwork = new URL(brand, location.href).href;
+  let lastId: string | undefined;
+  const sync = (s: PlayerState) => {
     const item = currentItem(s);
-    if (item && item.uid !== lastId) {
-      lastId = item.uid;
-      const art = thumbUrl(item.track.thumbnail, 256);
-      ms.metadata = new MediaMetadata({
+    if (item?.uid !== lastId) {
+      lastId = item?.uid;
+      const art = thumbUrl(item?.track.thumbnail, 256);
+      ms.metadata = item ? new MediaMetadata({
         title: item.track.title,
         artist: artistsText(item.track.artists),
         album: item.track.album?.title ?? '',
-        artwork: art ? [{ src: art, sizes: '256x256' }] : [],
-      });
+        artwork: art ? [{ src: art }] : [{ src: fallbackArtwork, sizes: '512x512', type: 'image/png' }],
+      }) : null;
     }
-    ms.playbackState = s.status === 'playing' || s.status === 'buffering' ? 'playing' : item ? 'paused' : 'none';
-  });
+    const playback = playbackActive(s.status) ? 'playing' : item ? 'paused' : 'none';
+    if (ms.playbackState !== playback) ms.playbackState = playback;
+  };
+  sync(player());
+  playerStore.subscribe(sync);
 }

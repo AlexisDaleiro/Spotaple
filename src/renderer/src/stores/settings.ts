@@ -26,25 +26,30 @@ export function createSettingsStore(deps: { api: SettingsApi; apply: (s: AppSett
   const wait = deps.debounceMs ?? 250;
   let pending: Partial<AppSettings> = {};
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let writing = Promise.resolve();
+  let revision = 0;
   const fail = (e: unknown) => deps.onError(e instanceof Error ? e.message : 'No se pudieron guardar los ajustes.');
 
   return createStore<SettingsState>((set, get) => {
-    async function flush() {
+    function flush() {
       clearTimeout(timer);
       timer = undefined;
-      if (Object.keys(pending).length === 0) return;
+      if (Object.keys(pending).length === 0) return writing;
       const patch = pending;
       pending = {};
-      try {
-        const saved = await deps.api.set(patch);
-        // Main descarta lo inválido: si no hay cambios nuevos en camino, lo que se ve pasa a ser lo guardado.
-        if (Object.keys(pending).length === 0 && JSON.stringify(saved) !== JSON.stringify(get().settings)) {
-          set({ settings: saved });
-          deps.apply(saved);
+      const mine = revision;
+      writing = writing.then(async () => {
+        try {
+          const saved = await deps.api.set(patch);
+          if (mine === revision && JSON.stringify(saved) !== JSON.stringify(get().settings)) {
+            set({ settings: saved });
+            deps.apply(saved);
+          }
+        } catch (e) {
+          fail(e);
         }
-      } catch (e) {
-        fail(e);
-      }
+      });
+      return writing;
     }
 
     return {
@@ -60,6 +65,7 @@ export function createSettingsStore(deps: { api: SettingsApi; apply: (s: AppSett
         deps.apply(get().settings);
       },
       update(patch) {
+        revision++;
         const settings = { ...get().settings, ...patch };
         set({ settings });
         deps.apply(settings);

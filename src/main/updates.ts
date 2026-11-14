@@ -1,8 +1,8 @@
 import type { AppUpdater } from 'electron-updater';
 import type { UpdateState } from '../shared/updates';
 
-export function createUpdates(autoUpdater: AppUpdater | null, emit: (state: UpdateState) => void, beforeInstall: () => Promise<void>) {
-  let state: UpdateState = { status: autoUpdater ? 'idle' : 'unsupported' };
+export function createUpdates(autoUpdater: AppUpdater | null, emit: (state: UpdateState) => void, beforeInstall: () => Promise<void>, fromStore = false) {
+  let state: UpdateState = { status: fromStore ? 'store' : autoUpdater ? 'idle' : 'unsupported' };
   const set = (next: UpdateState) => {
     state = next;
     emit(next);

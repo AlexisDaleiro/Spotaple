@@ -1,0 +1,72 @@
+name: APK firmado de Android
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SPOTAPLE_ANDROID_PRODUCTION: '1'
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - name: Instalar dependencias del motor
+        working-directory: .
+        run: npm ci --ignore-scripts
+      - name: Usar Java 21
+        run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: node build-runtime.mjs
+      - run: ./node_modules/.bin/expo prebuild --platform android --no-install
+      - name: Compilar la versión de producción
+        working-directory: mobile/android
+        run: |
+          ./gradlew :app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64 \
+            -Pexpo.useLegacyPackaging=true '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g' \
+            --no-daemon --max-workers=2
+      - name: Firmar y verificar
+        env:
+          SPOTAPLE_ANDROID_KEYSTORE_BASE64: ${{ secrets.SPOTAPLE_ANDROID_KEYSTORE_BASE64 }}
+          SPOTAPLE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SPOTAPLE_ANDROID_KEYSTORE_PASSWORD }}
+          SPOTAPLE_ANDROID_CERT_SHA256: ${{ vars.SPOTAPLE_ANDROID_CERT_SHA256 }}
+        run: |
+          test -n "$SPOTAPLE_ANDROID_KEYSTORE_BASE64" && test -n "$SPOTAPLE_ANDROID_KEYSTORE_PASSWORD"
+          [[ "$SPOTAPLE_ANDROID_CERT_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]
+          key=$(mktemp)
+          trap 'rm -f -- "$key"' EXIT
+          printf '%s' "$SPOTAPLE_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key"
+          unset SPOTAPLE_ANDROID_KEYSTORE_BASE64
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          apk=dist/Spotaple-Android.apk
+          mkdir -p dist
+          "$tools/apksigner" sign --ks "$key" --ks-key-alias spotaple \
+            --ks-pass env:SPOTAPLE_ANDROID_KEYSTORE_PASSWORD --v4-signing-enabled false \
+            --out "$apk" android/app/build/outputs/apk/release/app-release.apk
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/spotaple-signature.txt"
+          grep -Fx 'Number of signers: 1' "$RUNNER_TEMP/spotaple-signature.txt"
+          grep -Fxi "Signer #1 certificate SHA-256 digest: $SPOTAPLE_ANDROID_CERT_SHA256" "$RUNNER_TEMP/spotaple-signature.txt"
+          "$tools/zipalign" -c -P 16 4 "$apk"
+          "$tools/aapt" dump badging "$apk" | grep -F "package: name='com.alexis.spotaple'"
+          sha256sum "$apk"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Spotaple-Android-Production
+          path: mobile/dist/Spotaple-Android.apk
+          if-no-files-found: error

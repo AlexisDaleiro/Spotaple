@@ -65,7 +65,7 @@ export function AlbumPage({ id }: { id: string }) {
               icon={<ListPlus size={18} />}
               label="Agregar el álbum a la cola"
               disabled={!tracks.length}
-              onClick={() => (player().addToQueue(tracks), toastQueued(tracks.length))}
+              onClick={() => toastQueued(player().addToQueue(tracks))}
             />
           </>
         }

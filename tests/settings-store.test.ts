@@ -70,4 +70,22 @@ describe('store de ajustes del renderer', () => {
     expect(apply).toHaveBeenCalledTimes(1);
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ theme: 'medianoche' }));
   });
+
+  it('guarda en orden y una respuesta atrasada no revierte el tema visible', async () => {
+    const { store, api } = make();
+    let resolveFirst!: (value: AppSettings) => void;
+    api.set.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }));
+    store.getState().update({ theme: 'claro' });
+    const first = store.getState().flush();
+    await vi.advanceTimersByTimeAsync(0);
+    store.getState().update({ theme: 'grafito' });
+    const last = store.getState().flush();
+    expect(api.set).toHaveBeenCalledTimes(1);
+    resolveFirst({ ...DEFAULT_SETTINGS, theme: 'claro' });
+    await first;
+    expect(store.getState().settings.theme).toBe('grafito');
+    await last;
+    expect(api.set).toHaveBeenLastCalledWith({ theme: 'grafito' });
+    expect(store.getState().settings.theme).toBe('grafito');
+  });
 });

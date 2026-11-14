@@ -1,12 +1,18 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readdir } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore, type Store } from '../src/main/db/store';
 import type { MusicProvider, ResolvedAudio } from '../src/main/music/provider';
 import { createOffline } from '../src/main/offline';
 import type { OfflineState } from '../src/shared/offline';
 import type { Track } from '../src/shared/types';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...fs, readdir: vi.fn(fs.readdir) };
+});
 
 const t = (n: number): Track => ({ id: `track${String(n).padStart(6, '0')}`, title: `Canción ${n}`, artists: [{ name: 'Artista' }], durationSec: 100 + n });
 
@@ -22,7 +28,7 @@ afterEach(() => {
 });
 
 /** Proveedor y red simulados: `gated` retiene la respuesta de esas canciones hasta `release()`, `broken` responde 502. */
-function setup(opts: { enabled?: boolean } = {}) {
+function setup(opts: { enabled?: boolean; maxBytes?: () => number } = {}) {
   const gated = new Set<string>();
   const broken = new Set<string>();
   let release!: () => void;
@@ -48,7 +54,7 @@ function setup(opts: { enabled?: boolean } = {}) {
     return new Response(new Blob(['audio-bytes']).stream(), { status: 206 });
   }) as unknown as typeof fetch;
   const states: OfflineState[] = [];
-  const offline = createOffline({ dir, store, provider, fetchImpl, enabled: () => opts.enabled ?? true, emit: (s) => states.push(s) });
+  const offline = createOffline({ dir, store, provider, fetchImpl, enabled: () => opts.enabled ?? true, maxBytes: opts.maxBytes, emit: (s) => states.push(s) });
   return { offline, provider, fetchImpl, gated, broken, release, states, inFlight: () => inFlight, maxInFlight: () => maxInFlight };
 }
 
@@ -56,6 +62,55 @@ function setup(opts: { enabled?: boolean } = {}) {
 const favorite = (n: number) => store.toggleFavorite(t(n));
 
 describe('descargas de favoritas', () => {
+  it('dos descargas simultáneas respetan el límite y se recuperan al subirlo', async () => {
+    let budget = 11;
+    const { offline } = setup({ maxBytes: () => budget });
+    favorite(1);
+    favorite(2);
+    await offline.reconcile();
+    await offline.idle();
+    expect(offline.state()).toMatchObject({ bytes: 11, pending: 0, failed: 0, limited: true });
+    expect(readdirSync(dir)).toHaveLength(1);
+    budget = 22;
+    await offline.reconcile();
+    await offline.idle();
+    expect(offline.state()).toEqual({ bytes: 22, ids: expect.arrayContaining([t(1).id, t(2).id]), pending: 0, failed: 0 });
+  });
+
+  it('apagar la descarga automática pausa un trabajo en curso y conserva las favoritas', async () => {
+    const options = { enabled: true };
+    const { offline, gated, release, inFlight } = setup(options);
+    favorite(1);
+    gated.add(t(1).id);
+    await offline.onFavorite(t(1).id, true);
+    await vi.waitFor(() => expect(inFlight()).toBe(1));
+    options.enabled = false;
+    await offline.reconcile();
+    release();
+    await offline.idle();
+    expect(offline.state()).toEqual({ bytes: 0, ids: [], pending: 0, failed: 0 });
+    expect(store.isFavorite(t(1).id)).toBe(true);
+    options.enabled = true;
+    await offline.reconcile();
+    await offline.idle();
+    expect(offline.state().ids).toEqual([t(1).id]);
+  });
+
+  it('espera a que la pista esté preparada antes de iniciar otra descarga', async () => {
+    const { offline, fetchImpl } = setup();
+    let release!: () => void;
+    const preparation = new Promise<void>((resolve) => { release = resolve; });
+    const preparing = offline.prioritize(() => preparation);
+    favorite(1);
+    await offline.onFavorite(t(1).id, true);
+    expect(offline.state().pending).toBe(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    release();
+    await preparing;
+    await offline.idle();
+    expect(offline.state().ids).toEqual([t(1).id]);
+  });
+
   it('baja la favorita nueva y queda disponible sin red', async () => {
     const { offline, states } = setup();
     favorite(1);
@@ -135,6 +190,29 @@ describe('descargas de favoritas', () => {
 });
 
 describe('borrar todas las descargas', () => {
+  it('una sincronización anterior no vuelve a bajar las descargas borradas', async () => {
+    favorite(1);
+    store.addDownload(t(1).id, 'opus', 11);
+    const name = `${t(1).id}.webm`;
+    writeFileSync(join(dir, name), 'audio-bytes');
+    const { offline, fetchImpl } = setup();
+    let started!: () => void;
+    let release!: (names: string[]) => void;
+    const scanning = new Promise<void>((resolve) => { started = resolve; });
+    const entries = new Promise<string[]>((resolve) => { release = resolve; });
+    vi.mocked(readdir).mockImplementationOnce(async () => {
+      started();
+      return entries as never;
+    });
+    const syncing = offline.reconcile();
+    await scanning;
+    await offline.clear();
+    release([name]);
+    await syncing;
+    await offline.idle();
+    expect(offline.state().ids).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
   it('borra archivos y filas, y descarta lo que estaba bajando', async () => {
     const { offline, gated, release, inFlight } = setup();
     favorite(1);

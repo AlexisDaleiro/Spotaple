@@ -8,7 +8,8 @@ export function createBridge(
 ): SpotapleBridge {
   return {
     music: {
-      search: (q) => call(IPC.search, q),
+      search: (q, category, requestId) => category === undefined ? call(IPC.search, q) : call(IPC.search, q, category, requestId),
+      cancelSearch: (requestId) => call(IPC.cancelSearch, requestId),
       copyLink: (id) => call(IPC.copyTrackLink, id),
       album: (id) => call(IPC.album, id),
       artist: (id) => call(IPC.artist, id),
@@ -31,7 +32,7 @@ export function createBridge(
       resetTaste: () => call(IPC.tasteReset),
     },
     library: {
-      favorites: () => call(IPC.favorites),
+      favorites: (limit) => limit === undefined ? call(IPC.favorites) : call(IPC.favorites, limit),
       favoriteIds: () => call(IPC.favoriteIds),
       toggleFavorite: (t) => call(IPC.toggleFavorite, t),
       playlists: () => call(IPC.playlists),

@@ -60,6 +60,9 @@ export interface SearchResults {
   partial: boolean;
 }
 
+export const SEARCH_CATEGORIES = ['song', 'album', 'artist', 'playlist'] as const;
+export type SearchCategory = (typeof SEARCH_CATEGORIES)[number];
+
 export interface AlbumDetail extends AlbumSummary {
   tracks: Track[];
 }
@@ -94,6 +97,8 @@ export interface PlaylistDetail extends PlaylistSummary {
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
+export const MAX_QUEUE_ITEMS = 2000;
+
 /** Estado del reproductor que sobrevive entre sesiones (la reproducción nunca se reanuda sola). */
 export interface PersistedPlayerState {
   queue: Track[];
@@ -103,6 +108,8 @@ export interface PersistedPlayerState {
   muted: boolean;
   repeat: RepeatMode;
   shuffle: boolean;
+  /** Índices dentro de `queue` en el orden anterior a mezclarla. */
+  originalOrder?: number[];
 }
 
 export type ErrorCode = 'network' | 'unavailable' | 'region' | 'parse' | 'unknown';

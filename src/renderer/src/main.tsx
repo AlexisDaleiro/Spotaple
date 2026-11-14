@@ -38,8 +38,15 @@ if (!bridgeAvailable) {
   void startPlayerPersistence().then(async () => {
     await settingsReady;
     startMediaSession();
-    // «Reanudar al abrir la app»: la sesión restaurada queda en pausa y este ajuste la retoma donde estaba.
-    if (settingsStore.getState().settings.resumeOnOpen && playerStore.getState().status === 'paused') playerStore.getState().togglePlay();
+    const restored = playerStore.getState();
+    const recovery = window.SpotapleAndroid?.takeRecovery?.(restored.items[restored.index]?.track.id ?? '');
+    if (restored.status === 'paused') {
+      const [id, milliseconds] = recovery?.split(':') ?? [];
+      const position = Number(milliseconds);
+      const matching = id && restored.items[restored.index]?.track.id === id && Number.isFinite(position) && position >= 0;
+      if (matching) restored.seek(position / 1000);
+      if (matching || settingsStore.getState().settings.resumeOnOpen) restored.play();
+    }
     await startJamBridge();
     startJamSync({
       player: playerStore,

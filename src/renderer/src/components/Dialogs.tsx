@@ -2,17 +2,8 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { cx } from '../lib/format';
 import { useUi, type DialogSpec } from '../stores/ui';
 
-/** Devuelve el foco a quien abrió el diálogo al cerrarlo. */
-function useRestoreFocus() {
-  useEffect(() => {
-    const prev = document.activeElement as HTMLElement | null;
-    return () => prev?.focus?.();
-  }, []);
-}
-
 function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const titleId = useId();
-  useRestoreFocus();
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
@@ -20,7 +11,20 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), onClose())}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            onClose();
+          } else if (e.key === 'Tab') {
+            const controls = e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)');
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if ((e.shiftKey && e.target === first) || (!e.shiftKey && e.target === last)) {
+              e.preventDefault();
+              (e.shiftKey ? last : first)?.focus();
+            }
+          }
+        }}
       >
         <h2 id={titleId} className="dialog__title">
           {title}

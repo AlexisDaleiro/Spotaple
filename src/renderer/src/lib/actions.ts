@@ -24,7 +24,7 @@ export async function shareTrack(track: Track): Promise<void> {
 
 /** "N canciones agregadas a la cola". Dentro de una sala el aviso ("pedidas a la sala") lo da el propio pedido. */
 export const toastQueued = (count: number) => {
-  if (!inRoom(useJam.getState().view)) toast(`${count} canciones agregadas a la cola`, 'success');
+  if (count > 0 && !inRoom(useJam.getState().view)) toast(count === 1 ? 'Canción agregada a la cola' : `${count} canciones agregadas a la cola`, 'success');
 };
 
 /** «Descargar canción»: main abre «Guardar como»; si la persona cancela no pasa nada, y si guarda se avisa dónde quedó. */
@@ -38,13 +38,14 @@ export async function exportTrack(track: Track, format: AudioFormat): Promise<vo
 }
 
 /** Acciones que primero necesitan datos (álbum, artista, playlist) y luego tocan el reproductor. */
-async function withTracks(load: () => Promise<Track[]>, then: (tracks: Track[]) => void, empty = 'No hay canciones para reproducir.') {
+async function withTracks(load: () => Promise<Track[]>, then: (tracks: Track[]) => void, empty = 'No hay canciones para reproducir.', current = () => true) {
   try {
     const tracks = await load();
+    if (!current()) return;
     if (!tracks.length) return toast(empty);
     then(tracks);
   } catch (e) {
-    toast(errorMessage(e), 'error');
+    if (current()) toast(errorMessage(e), 'error');
   }
 }
 
@@ -55,21 +56,23 @@ export function playCollection(tracks: Track[], shuffle = player().shuffle) {
   current.playTracks(tracks);
 }
 
-export const playAlbum = (id: string) => withTracks(async () => (await api.music.album(id)).tracks, playCollection);
+const loadAndPlay = (load: () => Promise<Track[]>, play: (tracks: Track[]) => void = playCollection, empty?: string) =>
+  withTracks(load, play, empty, player().claimPlayback());
+
+export const playAlbum = (id: string) => loadAndPlay(async () => (await api.music.album(id)).tracks);
 export const queueAlbum = (id: string) =>
   withTracks(
     async () => (await api.music.album(id)).tracks,
     (t) => {
-      player().addToQueue(t);
-      toastQueued(t.length);
+      toastQueued(player().addToQueue(t));
     },
   );
-export const playArtist = (id: string) => withTracks(async () => (await api.music.artist(id)).topSongs, playCollection, 'Este artista no tiene canciones populares.');
+export const playArtist = (id: string) => loadAndPlay(async () => (await api.music.artist(id)).topSongs, playCollection, 'Este artista no tiene canciones populares.');
 export const playRemotePlaylist = (id: string) =>
-  withTracks(async () => (await api.music.remotePlaylist(id)).tracks, playCollection, 'Esta playlist no tiene canciones disponibles.');
+  loadAndPlay(async () => (await api.music.remotePlaylist(id)).tracks, playCollection, 'Esta playlist no tiene canciones disponibles.');
 /** Sin red solo suenan las descargadas: la cola se arma con esas, y si no hay ninguna se avisa. */
 export const playPlaylist = (id: number) =>
-  withTracks(
+  loadAndPlay(
     async () => (await api.library.playlist(id)).items.map((i) => i.track),
     (t) => {
       const list = useOffline.getState().playable(t);
@@ -82,8 +85,7 @@ export const queuePlaylist = (id: number) =>
   withTracks(
     async () => (await api.library.playlist(id)).items.map((i) => i.track),
     (t) => {
-      player().addToQueue(t);
-      toastQueued(t.length);
+      toastQueued(player().addToQueue(t));
     },
     'La playlist está vacía.',
   );

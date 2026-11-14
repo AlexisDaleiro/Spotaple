@@ -1,5 +1,5 @@
-import { ChevronDown, Heart, ListMusic, Pause, Play, Repeat, Repeat1, Share2, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, Heart, ListMusic, Maximize2, Pause, Play, Repeat, Repeat1, Share2, Shuffle, SkipBack, SkipForward, ThumbsUp, Volume1, Volume2, VolumeX, Vote } from 'lucide-react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { skipThreshold } from '@shared/jam/engine';
 import type { JamView } from '@shared/jam/types';
 import { trackLink } from '@shared/track';
@@ -7,7 +7,8 @@ import { api } from '../api';
 import { nextIndex } from '../player/queue';
 import { artistsText, cx, formatTime } from '../lib/format';
 import { shareTrack } from '../lib/actions';
-import { player, usePlayer } from '../player/instance';
+import { dispatchPlayback, player, usePlayer } from '../player/instance';
+import { playbackActive } from '../player/transport';
 import { canAdvance, inRoom, isAdmin, useJam } from '../stores/jam';
 import { useLibrary } from '../stores/library';
 import { navigate } from '../stores/nav';
@@ -81,7 +82,7 @@ function Progress({ locked }: { locked?: boolean }) {
         disabled={!seekable}
         valueText={(v) => `${formatTime(v)} de ${formatTime(duration)}`}
         onScrub={setScrubbing}
-        onCommit={(v) => player().seek(v)}
+        onCommit={(v) => dispatchPlayback('seek', v)}
       />
       <span className="progress__time" aria-hidden="true">
         {hasItem && duration > 0 ? formatTime(duration) : '–:––'}
@@ -141,7 +142,7 @@ function JamButtons({ view }: { view: JamView }) {
   );
 }
 
-export function PlayerBar() {
+export function PlayerBar({ inert }: { inert?: boolean }) {
   const localItem = usePlayer((s) => s.items[s.index]);
   const view = useJam((s) => s.view);
   const room = inRoom(view) ? view : null;
@@ -150,6 +151,7 @@ export function PlayerBar() {
   // En una sala se muestra la canción de la sala, aunque el reproductor local de un miembro esté vacío ("Solo admin").
   const item = room ? (now ? { track: now.item.track } : undefined) : localItem;
   const status = usePlayer((s) => s.status);
+  const reconnecting = usePlayer((s) => s.reconnecting);
   const error = usePlayer((s) => s.error);
   const shuffle = usePlayer((s) => s.shuffle);
   const repeat = usePlayer((s) => s.repeat);
@@ -158,72 +160,98 @@ export function PlayerBar() {
   const hasNext = usePlayer((s) => nextIndex(s.items.length, s.index, s.repeat, false) !== null);
   const queueOpen = useUi((s) => s.queueOpen);
   const mobile = api.platform === 'android';
-  const expanded = useUi((s) => mobile && s.mobilePlayerOpen);
+  const expanded = useUi((s) => s.playerOpen);
+  const opener = useRef<HTMLButtonElement>(null);
+  const wasExpanded = useRef(false);
+  useLayoutEffect(() => {
+    if (wasExpanded.current && !expanded) opener.current?.focus({ preventScroll: true });
+    wasExpanded.current = expanded;
+  }, [expanded]);
   const fav = useLibrary((s) => (item ? s.favoriteIds.has(item.track.id) : false));
   // En una sala solo el admin controla la reproducción.
   const locked = room !== null && !admin;
   const lockTitle = 'Solo el admin controla la reproducción';
 
   const loading = status === 'loading';
-  const sounding = status === 'playing' || status === 'buffering';
+  const active = playbackActive(status);
   const effective = muted ? 0 : volume;
   const VolIcon = effective === 0 ? VolumeX : effective < 0.5 ? Volume1 : Volume2;
   const repeatLabel = repeat === 'off' ? 'Repetir: desactivado' : repeat === 'all' ? 'Repetir: toda la cola' : 'Repetir: una canción';
   const share = item && trackLink(item.track.id)
     ? <IconButton icon={<Share2 size={17} />} label="Compartir canción" onClick={() => void shareTrack(item.track)} />
     : null;
+  const cover = item && (
+    <Cover
+      src={item.track.thumbnail}
+      size={expanded ? 'fill' : 56}
+      imageSize={expanded ? 480 : undefined}
+      label={item.track.title}
+      className="player__cover"
+    />
+  );
+  const openPlayer = () => useUi.getState().setPlayerOpen(true);
 
   return (
     <footer
-      className={cx('player', mobile && (expanded ? 'player--expanded' : 'player--compact'), mobile && !expanded && !item && !room && 'player--empty')}
+      inert={inert}
+      className={cx('player', expanded && 'player--expanded', mobile && !expanded && 'player--compact', mobile && !expanded && !item && !room && 'player--empty')}
       aria-label="Reproductor"
     >
       {expanded && (
-        <div className="player__mobile-head">
-          <IconButton icon={<ChevronDown size={24} />} label="Cerrar reproductor" autoFocus onClick={() => useUi.setState({ mobilePlayerOpen: false })} />
+        <div className="player__expanded-head">
+          <IconButton icon={<ChevronDown size={24} />} label="Cerrar reproductor" autoFocus onClick={() => useUi.getState().setPlayerOpen(false)} />
           <span>Reproduciendo</span>
         </div>
       )}
       <div className="player__now">
         {mobile && !expanded && (item || room) && (
-          <button type="button" className="player__open" aria-label="Abrir reproductor" onClick={() => useUi.setState({ mobilePlayerOpen: true })} />
+          <button ref={opener} type="button" className="player__open" aria-label="Abrir reproductor" aria-expanded={false} onClick={openPlayer} />
         )}
         {item ? (
           <>
-            <Cover src={item.track.thumbnail} size={56} label={item.track.title} className="player__cover" />
-            <div className="player__meta">
-              {item.track.album?.id ? (
-                <button type="button" className="player__title link" onClick={() => navigate({ page: 'album', id: item.track.album!.id! })} title={item.track.title}>
-                  {item.track.title}
-                </button>
-              ) : (
-                <span className="player__title" title={item.track.title}>
-                  {item.track.title}
-                </span>
-              )}
-              {status === 'error' && error && !locked ? (
-                <span className="player__error" role="alert">
-                  <span className="player__error-msg" title={error.message}>
-                    {error.message}
-                  </span>
-                  <button type="button" className="link link--accent" onClick={() => player().togglePlay()}>
-                    Reintentar
+            {!mobile && !expanded ? (
+              <button ref={opener} type="button" className="player__cover-button" aria-label="Abrir reproductor" aria-expanded={false} title="Abrir reproductor" onClick={openPlayer}>
+                {cover}
+                <Maximize2 className="player__expand-glyph" size={17} aria-hidden="true" />
+              </button>
+            ) : cover}
+            <div className="player__details">
+              <div className="player__meta">
+                {item.track.album?.id ? (
+                  <button type="button" className="player__title link" onClick={() => navigate({ page: 'album', id: item.track.album!.id! })} title={item.track.title}>
+                    {item.track.title}
                   </button>
-                </span>
-              ) : (
-                <span className="player__artist" title={artistsText(item.track.artists)}>
-                  <ArtistLinks artists={item.track.artists} />
-                </span>
-              )}
-              {room && now && <span className="jam-req">Pedida por {room.state?.members.find((m) => m.id === now.item.addedBy)?.name ?? 'alguien'}</span>}
+                ) : (
+                  <span className="player__title" title={item.track.title}>
+                    {item.track.title}
+                  </span>
+                )}
+                {status === 'error' && error && !locked ? (
+                  <span className="player__error" role="alert">
+                    <span className="player__error-msg" title={error.message}>
+                      {error.message}
+                    </span>
+                    <button type="button" className="link link--accent" onClick={() => dispatchPlayback('play')}>
+                      Reintentar
+                    </button>
+                  </span>
+                ) : reconnecting ? (
+                  <span className="player__artist" role="status">Reconectando…</span>
+                ) : (
+                  <span className="player__artist" title={artistsText(item.track.artists)}>
+                    <ArtistLinks artists={item.track.artists} />
+                  </span>
+                )}
+                {room && now && <span className="jam-req">Pedida por {room.state?.members.find((m) => m.id === now.item.addedBy)?.name ?? 'alguien'}</span>}
+              </div>
+              <IconButton
+                className={cx('player__fav', fav && 'is-faved')}
+                icon={<Heart size={18} fill={fav ? 'currentColor' : 'none'} />}
+                label={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                pressed={fav}
+                onClick={() => void useLibrary.getState().toggleFavorite(item.track)}
+              />
             </div>
-            <IconButton
-              className={cx('player__fav', fav && 'is-faved')}
-              icon={<Heart size={18} fill={fav ? 'currentColor' : 'none'} />}
-              label={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-              pressed={fav}
-              onClick={() => void useLibrary.getState().toggleFavorite(item.track)}
-            />
           </>
         ) : (
           <div className="player__idle">
@@ -244,16 +272,16 @@ export function PlayerBar() {
       <div className="player__center">
         <div className="player__controls">
           <IconButton icon={<Shuffle size={17} />} label={shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'} pressed={shuffle} disabled={room !== null} onClick={() => player().toggleShuffle()} />
-          <IconButton icon={<SkipBack size={19} fill="currentColor" />} label="Canción anterior" disabled={!item || room !== null} onClick={() => player().prev()} />
+          <IconButton icon={<SkipBack size={19} fill="currentColor" />} label="Canción anterior" disabled={!item || room !== null} onClick={() => dispatchPlayback('prev')} />
           <button
             type="button"
             className="play-btn"
-            aria-label={sounding ? 'Pausar' : 'Reproducir'}
-            title={locked ? lockTitle : sounding ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
+            aria-label={active ? 'Pausar' : 'Reproducir'}
+            title={locked ? lockTitle : active ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
             disabled={locked || !item}
-            onClick={() => player().togglePlay()}
+            onClick={() => dispatchPlayback(active ? 'pause' : 'play')}
           >
-            {loading ? <Spinner size={18} /> : sounding ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="play-btn__glyph" />}
+            {loading ? <Spinner size={18} /> : active ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="play-btn__glyph" />}
           </button>
           <IconButton
             className="player__next"
@@ -261,7 +289,7 @@ export function PlayerBar() {
             label="Canción siguiente"
             {...(locked ? { title: lockTitle } : {})}
             disabled={room ? !canAdvance(room) : !item || !hasNext}
-            onClick={() => (room ? sendJam({ t: 'transport', action: 'next' }) : player().next())}
+            onClick={() => dispatchPlayback('next')}
           />
           <IconButton
             icon={repeat === 'one' ? <Repeat1 size={17} /> : <Repeat size={17} />}
@@ -270,7 +298,7 @@ export function PlayerBar() {
             disabled={room !== null}
             onClick={() => player().cycleRepeat()}
           />
-          {!mobile && share}
+          {!mobile && !expanded && share}
         </div>
         <Progress locked={locked} />
       </div>
@@ -278,7 +306,7 @@ export function PlayerBar() {
       <div className="player__right">
         {room && now && <JamButtons view={room} />}
         <IconButton icon={<ListMusic size={18} />} label={queueOpen ? 'Ocultar la cola' : 'Mostrar la cola'} pressed={queueOpen} onClick={() => useUi.getState().toggleQueue()} />
-        {mobile && share}
+        {(mobile || expanded) && share}
         <div className="volume">
           <IconButton icon={<VolIcon size={18} />} label={muted ? 'Activar sonido' : 'Silenciar'} onClick={() => player().toggleMute()} />
           <Slider
