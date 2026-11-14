@@ -10,6 +10,8 @@ jobs:
   package:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       SPOTAPLE_ANDROID_PRODUCTION: '1'
     defaults:
@@ -19,6 +21,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Leer la versión
+        id: version
+        run: |
+          version=$(node -p "require('./app.json').expo.version")
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
@@ -70,3 +78,32 @@ jobs:
           name: Spotaple-Android-Production
           path: mobile/dist/Spotaple-Android.apk
           if-no-files-found: error
+          compression-level: 0
+
+  draft:
+    name: Crear borrador en GitHub Releases
+    if: github.ref == 'refs/heads/main' && github.repository == 'AlexisDaleiro/Spotaple'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Spotaple-Android-Production
+          path: dist
+      - name: Adjuntar el APK al borrador
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          tag="android-stable-v$VERSION"
+          if gh release view "$tag" --json tagName >/dev/null 2>&1 ||
+             gh api "repos/$GH_REPO/git/ref/tags/$tag" --silent 2>/dev/null; then
+            echo "::error::Ya existe un release o tag $tag. Revisá el borrador existente o incrementá la versión."
+            exit 1
+          fi
+          gh release create "$tag" dist/Spotaple-Android.apk \
+            --target "$GITHUB_SHA" --draft --title "Spotaple para Android $VERSION" --generate-notes
