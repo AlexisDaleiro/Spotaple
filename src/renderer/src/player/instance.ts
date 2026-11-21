@@ -72,9 +72,9 @@ try {
 export const playerStore = createPlayer({
   ...(api?.platform === 'android' && {
     urlFor: (id: string) => new URL(`./audio/${encodeURIComponent(id)}`, location.href).href,
-    stallTimeoutMs: 12_000,
-    reconnectDelaysMs: [2_000, 6_000, 12_000],
   }),
+  stallTimeoutMs: 12_000,
+  reconnectDelaysMs: [2_000, 6_000, 12_000, 30_000],
   audio,
   api: {
     prepare: (id) => api.music.prepare(id),
@@ -130,6 +130,15 @@ export const currentItem = (s: PlayerState) => s.items[s.index];
 
 /** Restaura cola/selección/volumen y empieza a guardarlos. La reproducción NO arranca sola. */
 export async function startPlayerPersistence() {
+  const recoveryKey = 'spotaple.playback-recovery';
+  const desktop = api.platform !== 'android';
+  let recovery: string | null = null;
+  if (desktop) {
+    try {
+      recovery = sessionStorage.getItem(recoveryKey);
+      sessionStorage.removeItem(recoveryKey);
+    } catch { /* la cola sigue en la base local */ }
+  }
   try {
     playerStore.getState().hydrate(await api.state.load());
   } catch {
@@ -139,6 +148,7 @@ export async function startPlayerPersistence() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastSave = 0;
   let last = playerStore.getState();
+  let lastRecoveryPoint: string | null = null;
 
   const save = () => {
     timer = undefined;
@@ -151,6 +161,18 @@ export async function startPlayerPersistence() {
   };
 
   playerStore.subscribe((s) => {
+    if (desktop) {
+      const item = currentItem(s);
+      const point = !persistence.suspended && item && playbackActive(s.status)
+        ? `${item.track.id}:${Math.floor(s.position / 5) * 5000}` : null;
+      if (point !== lastRecoveryPoint) {
+        lastRecoveryPoint = point;
+        try {
+          if (point) sessionStorage.setItem(recoveryKey, point);
+          else sessionStorage.removeItem(recoveryKey);
+        } catch { /* la cola sigue en la base local */ }
+      }
+    }
     const structural =
       s.items !== last.items || s.index !== last.index || s.volume !== last.volume || s.muted !== last.muted || s.repeat !== last.repeat || s.shuffle !== last.shuffle;
     const status = s.status !== last.status;
@@ -166,6 +188,7 @@ export async function startPlayerPersistence() {
   };
   window.addEventListener('beforeunload', flush);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
+  return recovery;
 }
 
 /** Teclas multimedia y tarjeta del sistema (Windows). */

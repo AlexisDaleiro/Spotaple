@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { startNodeHost } from '../src/main/jam/node-host';
 import { createJamSession } from '../src/main/jam/session';
 import type { JamView } from '../src/shared/jam/types';
 import type { Track } from '../src/shared/types';
@@ -20,7 +21,7 @@ afterEach(async () => {
   for (const s of sessions.splice(0)) await s.leave();
 });
 
-function make(settings = new Map<string, unknown>(), relayUrl = 'ws://127.0.0.1:1') {
+function make(settings = new Map<string, unknown>(), relayUrl = 'ws://127.0.0.1:1', hostRelayUrl?: () => string | null) {
   const views: JamView[] = [];
   const session = createJamSession({
     settings: {
@@ -28,6 +29,7 @@ function make(settings = new Map<string, unknown>(), relayUrl = 'ws://127.0.0.1:
       set: (k, v) => void settings.set(k, v),
     },
     relayUrl,
+    hostRelayUrl,
     emit: (v) => views.push(v),
   });
   sessions.push(session);
@@ -38,6 +40,21 @@ function make(settings = new Map<string, unknown>(), relayUrl = 'ws://127.0.0.1:
 const loopback = (invite: string) => invite.replace(/^[^:]+/, '127.0.0.1');
 
 describe('createJamSession', () => {
+  it('crea una sala en el relé compartido aunque no se haya configurado uno propio', async () => {
+    const relay = await startNodeHost({ port: 0, bindHost: '127.0.0.1', rooms: 'multi', transferAdmin: true });
+    try {
+      const url = `ws://127.0.0.1:${relay.port}`;
+      const { session } = make(undefined, url, () => null);
+      const created = await session.create({ kind: 'internet', name: 'Ana' });
+      expect(created.status).toBe('connected');
+      expect(created.state?.adminId).toBe(created.selfId);
+      expect(created.invite).toMatch(new RegExp(`^ws://127\\.0\\.0\\.1:${relay.port}/[2-9A-HJKMNP-Z]{5}$`));
+      await session.leave();
+    } finally {
+      await relay.stop();
+    }
+  });
+
   it('crea una sala local, guarda la identidad y la reutiliza en otra sesión', async () => {
     const a = make();
     const v = await a.session.create({ kind: 'local', name: 'Ana' });

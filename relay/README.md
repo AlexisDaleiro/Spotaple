@@ -6,7 +6,9 @@ Está hecho como un Worker de Cloudflare con un Durable Object por sala (`src/wo
 
 ## Relé de Spotaple
 
-El relé `wss://spotaple-jam.alexisdaleiro.workers.dev` recibe las invitaciones anteriores que solo incluyen el código de sala. Para crear una sala por internet desde el instalador nuevo, elegí **Jam → Internet → Configurar mi relé**. Spotaple usa Wrangler para preparar un Worker temporal. Iniciá sesión en Cloudflare y reclamalo dentro de una hora. Volvé a la app y elegí **Ya activé mi relé** para comprobarlo y guardar la dirección. Tus invitados pegan la invitación completa en Jam.
+Spotaple usa `wss://spotaple-jam.alexisdaleiro.workers.dev` por defecto al crear salas por internet. Los invitados pegan la invitación en **Jam → Unirse a una sala**. El relé compartido también recibe las invitaciones que solo incluyen el código de sala.
+
+Para alojar salas en tu propia cuenta, abrí **Jam → Internet → Relé propio (opcional) → Configurar mi relé**. Spotaple usa Wrangler para preparar un Worker temporal. Iniciá sesión en Cloudflare y reclamalo dentro de una hora. Volvé a la app y elegí **Ya activé mi relé** para comprobarlo y guardar la dirección. Si ya tenías un relé propio, Spotaple lo sigue usando para crear tus salas.
 
 El instalador incluye los archivos necesarios para este proceso. Para probarlo desde el código fuente, prepará Wrangler con `npm run prepare:relay` en la raíz. `SPOTAPLE_JAM_RELAY` permite apuntar las pruebas al relé que elijas.
 

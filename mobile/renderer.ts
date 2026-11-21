@@ -45,19 +45,26 @@ async function saveTransfer(result: Extract<ExportResult, { saved: true }>): Pro
 }
 
 async function request<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
-  const response = await fetch('./rpc', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channel, args }),
-  }).catch((error) => {
-    if (channel === IPC.prepare && error instanceof TypeError) return undefined;
-    throw error;
+  const retryable = channel === IPC.prepare || channel === IPC.radio || channel === IPC.invalidate;
+  // Incluye la lectura del cuerpo. La conexión local puede entregar las cabeceras y cortar antes del JSON.
+  const signal = retryable ? AbortSignal.timeout(channel === IPC.invalidate ? 8_000 : 65_000) : undefined;
+  const interrupted = (): IpcResult<T> => ({
+    ok: false, error: { code: 'network', message: 'Se interrumpió la conexión con el reproductor.' },
   });
-  if (!response || (channel === IPC.prepare && response.status >= 500)) {
-    return { ok: false, error: { code: 'network', message: 'Se interrumpió la conexión con el reproductor. Probá de nuevo.' } };
+  try {
+    const response = await fetch('./rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, args }),
+      signal,
+    });
+    if (retryable && response.status >= 500) return interrupted();
+    if (!response.ok) throw new Error('No se pudo comunicar con Spotaple.');
+    return await response.json();
+  } catch (error) {
+    if (retryable && (signal?.aborted || error instanceof TypeError)) return interrupted();
+    throw error;
   }
-  if (!response.ok) throw new Error('No se pudo comunicar con Spotaple.');
-  return response.json();
 }
 
 window.spotapleBridge = createBridge(

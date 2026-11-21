@@ -31,6 +31,7 @@ class PlaybackService : Service() {
     private const val NOTIFICATION = 617
     private const val ARTWORK_LIMIT = 1024 * 1024
     private const val ARTWORK_SIDE = 384
+    private const val PLAYBACK_HANDOFF_MS = 3_000L
     private val imageDomains = listOf("googleusercontent.com", "ggpht.com", "ytimg.com")
     private val bundledArtwork = Regex("assets/brand-[A-Za-z0-9_-]+[.]png")
     var current: PlaybackService? = null
@@ -43,7 +44,7 @@ class PlaybackService : Service() {
       latest = media.takeUnless { it.title.isEmpty() }
       if (starting) return
       current?.let {
-        if (latest == null) it.stopSelf() else it.publish(media)
+        if (latest == null) it.scheduleRelease() else it.publish(media)
         return
       }
       if (latest == null || !media.keepForeground) return
@@ -86,6 +87,15 @@ class PlaybackService : Service() {
   private var wifiLock: WifiManager.WifiLock? = null
   private var active = false
   private val main = Handler(Looper.getMainLooper())
+  private val releasePlayback = Runnable {
+    if (latest == null) stopSelf()
+    else if (latest?.keepForeground == false) {
+      keepWifi(false)
+      wakeLock?.takeIf { it.isHeld }?.release()
+      if (active) stopForeground(STOP_FOREGROUND_DETACH)
+      active = false
+    }
+  }
   private val artworkExecutor = Executors.newSingleThreadExecutor()
   private var artworkTask: Future<*>? = null
   private var artworkUrl: String? = null
@@ -124,13 +134,14 @@ class PlaybackService : Service() {
           startForeground(NOTIFICATION, notification(media ?: MediaInfo("Spotaple", "", "idle", 0, 0)))
           active = true
         }
-        if (media == null) stopSelf() else publish(media)
+        if (media == null) scheduleRelease() else publish(media)
       }
     }
     return START_NOT_STICKY
   }
 
   private fun publish(info: MediaInfo) {
+    main.removeCallbacks(releasePlayback)
     if (artworkUrl != info.artwork) requestArtwork(info.artwork)
     val previous = lastMetadata
     if (previous == null || previous.title != info.title || previous.artist != info.artist || previous.duration != info.duration || lastArtwork !== artwork) {
@@ -161,12 +172,14 @@ class PlaybackService : Service() {
       }
       keepWifi(info.streaming)
     } else {
-      keepWifi(false)
-      wakeLock?.takeIf { it.isHeld }?.release()
-      if (active) stopForeground(STOP_FOREGROUND_DETACH)
-      active = false
       manager.notify(NOTIFICATION, note)
+      scheduleRelease()
     }
+  }
+
+  private fun scheduleRelease() {
+    main.removeCallbacks(releasePlayback)
+    main.postDelayed(releasePlayback, PLAYBACK_HANDOFF_MS)
   }
 
   @Suppress("DEPRECATION")

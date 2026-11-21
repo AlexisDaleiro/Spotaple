@@ -93,7 +93,7 @@ function RelaySetup() {
         </>
       ) : (
         <>
-          <p>Configurá Cloudflare una vez para crear salas por internet. Tus invitados solo necesitan la invitación.</p>
+          <p>Podés alojar tus salas en tu propia cuenta de Cloudflare.</p>
           <button type="button" className="btn" disabled={busy} onClick={() => setShowTerms(true)}>Configurar mi relé</button>
         </>
       )}
@@ -108,8 +108,7 @@ function JamStart({ view }: { view: JamView | null }) {
   // El nombre por defecto sale de Ajustes (que se actualiza al crear o unirse a una sala), no de la vista inicial de la sesión.
   const saved = useSettings((s) => s.settings.jamName);
   const [name, setName] = useState(saved || view?.name || '');
-  const [kind, setKind] = useState<'local' | 'internet'>('local');
-  const relay = useJam((s) => s.relay);
+  const [kind, setKind] = useState<'local' | 'internet'>('internet');
   const [invite, setInvite] = useState('');
   const [working, setWorking] = useState<Where | null>(null);
   const [error, setError] = useState<{ where: Where; message: string } | null>(null);
@@ -151,25 +150,36 @@ function JamStart({ view }: { view: JamView | null }) {
       )}
 
       <div className="jam-grid">
-        <form className="jam-card" onSubmit={create} aria-labelledby={`${ids}-create`}>
-          <h2 className="jam-card__title" id={`${ids}-create`}>
-            Crear una sala
-          </h2>
-          <fieldset className="jam-kind">
-            <legend>¿Dónde se conectan?</legend>
-            <label className="jam-kind__opt">
-              <input type="radio" name="jam-kind" value="local" checked={kind === 'local'} onChange={() => setKind('local')} />
-              <span>Red local</span>
-              <span className="jam-kind__hint">Para quienes están en la misma red. No usa ningún servidor externo.</span>
-            </label>
-            <label className="jam-kind__opt">
-              <input type="radio" name="jam-kind" value="internet" checked={kind === 'internet'} onChange={() => setKind('internet')} />
-              <span>Internet</span>
-              <span className="jam-kind__hint">Para escuchar juntos desde redes distintas con tu relé de Cloudflare.</span>
-            </label>
-          </fieldset>
+        <div className="jam-card">
+          <form className="jam-create-form" onSubmit={create} aria-labelledby={`${ids}-create`}>
+            <h2 className="jam-card__title" id={`${ids}-create`}>
+              Crear una sala
+            </h2>
+            <fieldset className="jam-kind">
+              <legend>¿Dónde se conectan?</legend>
+              <label className="jam-kind__opt">
+                <input type="radio" name="jam-kind" value="internet" checked={kind === 'internet'} onChange={() => setKind('internet')} />
+                <span>Internet</span>
+                <span className="jam-kind__hint">Para escuchar juntos desde redes distintas.</span>
+              </label>
+              <label className="jam-kind__opt">
+                <input type="radio" name="jam-kind" value="local" checked={kind === 'local'} onChange={() => setKind('local')} />
+                <span>Red local</span>
+                <span className="jam-kind__hint">Para quienes están en la misma red. No usa ningún servidor externo.</span>
+              </label>
+            </fieldset>
+            {error?.where === 'create' && (
+              <p className="jam-error" role="alert">
+                {error.message}
+              </p>
+            )}
+            <button type="submit" className="btn btn--solid" disabled={busy || !name.trim()}>
+              {working === 'create' ? 'Creando…' : 'Crear sala'}
+            </button>
+          </form>
           {kind === 'internet' && (
-            <>
+            <details className="jam-relay-options">
+              <summary>Relé propio (opcional)</summary>
               <RelaySetup />
               {api.platform === 'android' && (
                 <details>
@@ -177,17 +187,9 @@ function JamStart({ view }: { view: JamView | null }) {
                   <AndroidRelaySetup />
                 </details>
               )}
-            </>
+            </details>
           )}
-          {error?.where === 'create' && (
-            <p className="jam-error" role="alert">
-              {error.message}
-            </p>
-          )}
-          <button type="submit" className="btn btn--solid" disabled={busy || !name.trim() || (kind === 'internet' && relay !== 'ready')}>
-            {working === 'create' ? 'Creando…' : 'Crear sala'}
-          </button>
-        </form>
+        </div>
 
         <form className="jam-card" onSubmit={join} aria-labelledby={`${ids}-join`}>
           <h2 className="jam-card__title" id={`${ids}-join`}>

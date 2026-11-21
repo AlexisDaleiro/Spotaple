@@ -52,9 +52,9 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
    */
   const holdForRoom = () => {
     const p = player.getState();
-    if (heldByRoom || !sounding(p.status)) return;
+    if (heldByRoom || (!sounding(p.status) && p.status !== 'loading')) return;
     heldByRoom = true;
-    p.togglePlay();
+    p.pause();
   };
   /** Corta el audio y descarta también una carga que todavía está resolviendo la fuente (no deja audio fantasma). */
   const stopAudio = () => player.getState().stop();
@@ -95,7 +95,7 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     if (now.status !== 'playing') return; // loading: el admin todavía no suena
     if (heldByRoom) {
       heldByRoom = false;
-      player.getState().togglePlay(); // togglePlay mira el audio real, no el estado, que puede estar atrasado
+      player.getState().play();
     }
     drift(now, v);
   }
@@ -115,9 +115,8 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     const s = v.state!;
     const admin = isAdmin(v);
     if (v.status === 'reconnecting') {
-      // El admin sigue con su audio mientras reconecta (no se reinicia la canción); un seguidor se pausa.
+      // El audio que ya está cargado puede seguir mientras se recupera el estado de la sala.
       staleAt ??= s.serverTime;
-      if (!admin) holdForRoom();
       return;
     }
     // El primer estado con un reloj de sala posterior al que había al caerse es el de después de volver.
@@ -132,9 +131,9 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
     }
     if (loadedItemId !== now.item.itemId) {
       loadedItemId = now.item.itemId;
-      heldByRoom = false;
-      // Un admin nuevo (traspaso) o que vuelve a unirse retoma donde va la sala; si la canción recién empieza, la posición es 0.
-      player.getState().playAt(now.item.track, expected(now, v));
+      const paused = now.status === 'paused';
+      heldByRoom = !admin && paused;
+      player.getState().playAt(now.item.track, expected(now, v), paused);
       return;
     }
     if (admin) {
@@ -173,7 +172,7 @@ export function startJamSync(d: JamSyncDeps): { stop(): void } {
       d.send({ t: 'ended', itemId });
     } else if (cur.status === 'error' && prev.status !== 'error' && (cur.error?.code === 'unavailable' || cur.error?.code === 'region')) {
       d.send({ t: 'unavailable', itemId });
-    } else if (cur.status === 'paused' && sounding(prev.status) && now.status === 'playing') {
+    } else if (cur.status === 'paused' && (sounding(prev.status) || prev.reconnecting) && now.status === 'playing') {
       // El audio también se pausa justo antes de terminar la canción: se confirma que el estado final sigue siendo "pausa".
       queueMicrotask(() => player.getState().status === 'paused' && d.send({ t: 'transport', action: 'pause' }));
     }

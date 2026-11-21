@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer } from 'ws';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRoom } from '../src/shared/jam/engine';
 import { JamClient, type JamClientOpts, type JamConnStatus } from '../src/main/jam/client';
 import { startNodeHost, type NodeHost } from '../src/main/jam/node-host';
@@ -107,6 +107,41 @@ describe('JamClient', () => {
     const a = make({ port: 1 }, { memberId: ADMIN, name: 'Ana', create: true });
     await until(() => a.status() === 'ended', 5000);
     expect(a.statuses.at(-1)).toEqual(['ended', undefined]);
+  });
+
+  it('abandona un socket sin saludo y sigue intentando recuperar una sala por internet después de dos minutos', () => {
+    const sockets: Socket[] = [];
+    class Socket {
+      static OPEN = 1;
+      readyState = Socket.OPEN;
+      onclose?: () => void;
+      onmessage?: (event: { data: string }) => void;
+      send = vi.fn();
+      close = vi.fn();
+      constructor() { sockets.push(this); }
+    }
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', Socket);
+    const a = make({ port: 1 }, { memberId: ADMIN, name: 'Ana', create: true, keepReconnecting: true });
+    try {
+      const state = createRoom({ code: 'K7M2P', adminId: ADMIN, adminName: 'Ana', transferAdmin: true }, 0);
+      const message = { data: JSON.stringify({ t: 'state', state }) };
+      sockets[0]!.onmessage!(message);
+      sockets[0]!.onclose!();
+      vi.advanceTimersByTime(140_000);
+      expect(sockets[1]!.close).toHaveBeenCalledOnce();
+      expect(sockets.length).toBeGreaterThan(3);
+      expect(a.status()).toBe('reconnecting');
+      sockets[1]!.onmessage!(message);
+      expect(a.status()).toBe('reconnecting');
+      if (sockets.at(-1)!.close.mock.calls.length) vi.advanceTimersByTime(8000);
+      sockets.at(-1)!.onmessage!(message);
+      expect(a.status()).toBe('connected');
+    } finally {
+      a.client.close();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 
   it('si el servidor deja de contestar, detecta la conexión muerta y reintenta (Important del revisor)', async () => {

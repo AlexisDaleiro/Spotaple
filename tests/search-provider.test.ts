@@ -35,3 +35,25 @@ it('limita la búsqueda a una categoría y cancela su conexión al cambiar de co
   await rejected;
   expect(options?.signal?.aborted).toBe(true);
 });
+
+it('busca videos musicales si las canciones separan el título y el artista en resultados distintos', async () => {
+  const wrongArtist = { id: 'song0000001', item_type: 'song', title: 'I Smell a Rat', artists: [{ name: 'Big Mama Thornton' }] };
+  const matchingVideo = { id: 'video000001', item_type: 'video', title: 'Buddy Guy - I Smell a Rat', authors: [{ name: 'Canal de blues' }] };
+  const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+    const type = new URL(String(url)).searchParams.get('type');
+    return Response.json({ contents: [{ contents: type === 'song' ? [wrongArtist] : [matchingVideo, matchingVideo] }] });
+  });
+  const provider = createYouTubeProvider({ fetch: fetchImpl });
+  const result = await provider.search('I Smell a Rat Buddy Guy', 'song');
+  expect(result.songs.map((song) => song.id)).toEqual([matchingVideo.id, wrongArtist.id]);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
+
+it('sube la canción de catálogo que coincide con el título y el artista', async () => {
+  const other = { id: 'song0000001', item_type: 'song', title: 'I Smell a Rat', artists: [{ name: 'Big Mama Thornton' }] };
+  const correct = { id: 'song0000002', item_type: 'song', title: 'I Smell a Rat', artists: [{ name: 'Buddy Guy' }] };
+  const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ contents: [{ contents: [other, correct] }] }));
+  const result = await createYouTubeProvider({ fetch: fetchImpl }).search('I Smell a Rat Buddy Guy', 'song');
+  expect(result.songs.map((song) => song.id)).toEqual([correct.id, other.id]);
+  expect(fetchImpl).toHaveBeenCalledOnce();
+});

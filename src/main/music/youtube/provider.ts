@@ -27,6 +27,14 @@ const STREAM_CLIENTS = ['VISIONOS', 'ANDROID_VR', 'IOS'] as const;
 /** Por debajo de este tamaño no hace falta comprobar tramos lejanos. */
 const SHORT_FILE_BYTES = 1_100_000;
 
+const searchWords = (text: string): string[] => text.normalize('NFKD').replace(/\p{Mark}/gu, '').toLowerCase().match(/[\p{Letter}\p{Number}]+/gu) ?? [];
+
+function matchesTrack(words: string[], track: Track): boolean {
+  const title = searchWords(track.title);
+  const metadata = new Set([...title, ...track.artists.flatMap((artist) => searchWords(artist.name))]);
+  return words.some((word) => title.includes(word)) && words.every((word) => metadata.has(word));
+}
+
 export interface YouTubeProviderOptions {
   /** Carpeta para cachear el reproductor de YouTube entre sesiones (acelera el arranque). */
   cacheDir?: string;
@@ -183,24 +191,33 @@ export function createYouTubeProvider(opts: YouTubeProviderOptions = {}): MusicP
       throw classify(e);
     });
     signal?.throwIfAborted();
-    const run = (type: SearchCategory) => {
-      if (category && category !== type) return Promise.resolve(null);
+    const run = (type: SearchCategory | 'video') => {
       const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
       return searchSignals.run(signal ? AbortSignal.any([signal, deadline]) : deadline,
         () => withTimeout(yt.music.search(query, { type }), REQUEST_TIMEOUT_MS));
     };
-    const responses = await Promise.allSettled(SEARCH_CATEGORIES.map(run));
+    const responses = await Promise.allSettled(SEARCH_CATEGORIES.map((type) => !category || category === type ? run(type) : null));
+    signal?.throwIfAborted();
     const [songsR, albumsR, artistsR, playlistsR] = responses;
     const requested = category ? [responses[SEARCH_CATEGORIES.indexOf(category)]!] : responses;
     const errors = requested.filter((result) => result.status === 'rejected');
     if (errors.length === requested.length) throw classify(errors[0]!.reason);
     const items = (r: PromiseSettledResult<Node> | undefined) => (r?.status === 'fulfilled' && r.value ? searchItems(r.value) : []);
+    const tracks = (nodes: Node[]) => nodes.filter(isTrackItem).map((node) => mapTrack(node)).filter((track) => track !== null);
+    const foundSongs = tracks(items(songsR));
+    const words = searchWords(query);
+    const matches = words.length ? foundSongs.filter((song) => matchesTrack(words, song)) : [];
+    let best = matches;
+    if ((!category || category === 'song') && songsR?.status === 'fulfilled' && words.length && !matches.length) {
+      const videos = await run('video').catch(() => null);
+      signal?.throwIfAborted();
+      best = tracks(searchItems(videos)).filter((track) => matchesTrack(words, track)).slice(0, 8);
+    }
+    const songs = new Map(best.map((track) => [track.id, track]));
+    for (const song of foundSongs) songs.set(song.id, song);
     return {
       query,
-      songs: items(songsR)
-        .filter(isTrackItem)
-        .map((i) => mapTrack(i))
-        .filter((t) => t !== null),
+      songs: [...songs.values()],
       albums: items(albumsR)
         .filter((i) => i.item_type === 'album')
         .map((i) => mapAlbum(i))

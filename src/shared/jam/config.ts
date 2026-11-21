@@ -1,5 +1,5 @@
 /**
- * Relé de las invitaciones antiguas que solo tienen el código. `SPOTAPLE_JAM_RELAY` lo reemplaza en pruebas.
+ * Relé compartido de Spotaple. También recibe las invitaciones que solo tienen el código.
  */
 export const JAM_RELAY_URL = 'wss://spotaple-jam.alexisdaleiro.workers.dev';
 

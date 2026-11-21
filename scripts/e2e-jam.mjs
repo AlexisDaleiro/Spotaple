@@ -174,14 +174,17 @@ await step('J8. por la interfaz: crear sala, unirse con la invitación y cambiar
   await call(B.page, 'jam.leave');
   await A.page.locator('.nav-item[title="Jam"]').click();
   await A.page.locator('.jam-name input').fill('Ana');
-  if (KIND === 'internet') await A.page.locator('.jam-kind__opt', { hasText: 'Internet' }).click();
+  if (KIND === 'local') await A.page.getByRole('radio', { name: /^Red local/ }).check();
+  if (KIND === 'internet' && !(await A.page.getByRole('radio', { name: /^Internet/ }).isChecked())) {
+    throw new Error('Internet debe venir seleccionado al crear una sala');
+  }
   await A.page.locator('.jam-card .btn', { hasText: 'Crear sala' }).click();
   await A.page.waitForSelector('.jam-panel', { timeout: 10000 });
   const shown = await A.page.locator('.jam-invite__input').inputValue();
   invite = KIND === 'local' ? shown.replace(/^[^:]+/, '127.0.0.1') : shown;
   await B.page.locator('.nav-item[title="Jam"]').click();
   await B.page.locator('.jam-name input').fill('Mara');
-  await B.page.locator('.jam-card input[placeholder^="K7M2P"]').fill(invite);
+  await B.page.getByRole('textbox', { name: 'Invitación', exact: true }).fill(invite);
   await B.page.locator('.jam-card .btn', { hasText: 'Unirse' }).click();
   await B.page.waitForSelector('.jam-panel', { timeout: 10000 });
   await waitFor(async () => (await A.page.locator('.jam-member').count()) === 2, 5000, 'el panel del admin lista a 2 miembros');

@@ -8,9 +8,11 @@ El APK incluye la interfaz de Spotaple adaptada al teléfono y ejecuta el motor 
 2. Extraé el ZIP, pasá `Spotaple-Android-preview.apk` al teléfono y abrilo desde la app de archivos. Si Android te pide habilitar la instalación desde esa app, aceptá para seguir.
 3. Abrí **Spotaple**, buscá una canción y tocá el botón de reproducción. Probá guardar una favorita, crear una playlist y abrir la cola.
 
-El APK usa el identificador `com.alexis.spotaple.preview` y una firma de prueba. Para Jam por internet, podés unirte con una invitación, configurar un relé con tu cuenta de Cloudflare o guardar la dirección de un relé existente. En **Biblioteca → Abrir audio del teléfono** también podés reproducir archivos locales. Las actualizaciones de Android se buscan en GitHub Releases. Para ofrecer una actualización, adjuntá `Spotaple-Android.apk` a un release con el tag `android-vX.Y.Z` y usá el mismo identificador y firma con un `versionCode` mayor.
+El APK usa el identificador `com.alexis.spotaple.preview` y una firma de prueba. En **Jam** podés crear una sala por internet directamente o unirte con una invitación. Desde **Relé propio (opcional)** podés configurar uno en Cloudflare o guardar la dirección de un relé existente. En **Biblioteca → Abrir audio del teléfono** también podés reproducir archivos locales. Las actualizaciones de Android se buscan en GitHub Releases. Para ofrecer una actualización, adjuntá `Spotaple-Android.apk` a un release con el tag `android-vX.Y.Z` y usá el mismo identificador y firma con un `versionCode` mayor.
 
 Al publicar el release de Android, dejá desactivada la opción **Set as the latest release** para que GitHub conserve la última versión de Windows como principal.
+
+En Android, el servicio de reproducción mantiene activos el audio y los controles de la notificación con la pantalla apagada o al cambiar de app. Si se interrumpe el streaming, Spotaple intenta retomar desde la última posición. Podés pausar desde la notificación mientras espera la conexión.
 
 ## Generar otro APK
 

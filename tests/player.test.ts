@@ -87,6 +87,54 @@ describe('radio automática', () => {
     expect(s().status).toBe('playing');
   });
 
+  it('continúa la radio tras un corte de internet aunque el dispositivo siga indicando que está en línea', async () => {
+    vi.useFakeTimers();
+    try {
+      let connected = false;
+      const radio = radioOf(async () => {
+        if (!connected) throw Object.assign(new Error('Sin internet'), { code: 'network' });
+        return batch(3);
+      });
+      const { s, audio } = setup(undefined, { radio, reconnectDelaysMs: [2000], reachable: () => true });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      audio.finish();
+      expect(s()).toMatchObject({ status: 'loading', reconnecting: true });
+      await vi.advanceTimersByTimeAsync(4000);
+      connected = true; // Android puede seguir diciendo que está conectado a la misma red Wi-Fi.
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(s().items[s().index]?.track.id).toBe(track(100).id);
+      expect(s().status).toBe('playing');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una pausa al esperar la radio cancela el avance automático aunque vuelva internet', async () => {
+    vi.useFakeTimers();
+    try {
+      let online = false;
+      const radio = radioOf(async () => {
+        if (!online) throw Object.assign(new Error('Sin internet'), { code: 'network' });
+        return batch(3);
+      });
+      const { s, audio } = setup(undefined, { radio, reconnectDelaysMs: [2000] });
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      audio.finish();
+      s().pause();
+      online = true;
+      s().networkRestored();
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(radio.fetch).toHaveBeenCalledOnce();
+      expect(s()).toMatchObject({ status: 'paused', index: 0, reconnecting: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('con la radio activa, al empezar una canción suelta se piden sugerencias y se agregan marcadas', async () => {
     const radio = radioOf(async () => batch(5));
     const { s } = setup(undefined, { radio });
@@ -380,6 +428,7 @@ describe('estados de reproducción', () => {
       await vi.advanceTimersByTimeAsync(0);
       audio.dispatchEvent(new Event('waiting'));
       s().pause();
+      audio.fail(2);
       await vi.advanceTimersByTimeAsync(12_000);
       expect(s().status).toBe('paused');
       expect(api.prepare).toHaveBeenCalledTimes(1);
@@ -549,7 +598,7 @@ describe('estados de reproducción', () => {
     }
   });
 
-  it('muestra el error solo cuando se agotan los intentos de conexión', async () => {
+  it('sigue intentando después de la última demora y evita pedir audio sin red', async () => {
     vi.useFakeTimers();
     try {
       let online = true;
@@ -562,15 +611,40 @@ describe('estados de reproducción', () => {
       expect(api.prepare).toHaveBeenCalledTimes(2);
       expect(notify).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
-      expect(s()).toMatchObject({ status: 'error', reconnecting: false, error: { code: 'network' } });
+      expect(s()).toMatchObject({ status: 'loading', reconnecting: true, error: null });
       expect(api.prepare).toHaveBeenCalledTimes(3);
-      expect(notify).toHaveBeenCalledTimes(1);
       online = false;
-      s().play();
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(18_000);
       expect(s()).toMatchObject({ index: 0, status: 'loading', reconnecting: true });
-      expect(api.prepare.mock.calls.map(([id]) => id)).toEqual(Array(5).fill(track(0).id));
+      expect(api.prepare.mock.calls.map(([id]) => id)).toEqual(Array(3).fill(track(0).id));
+      expect(notify).not.toHaveBeenCalled();
       s().pause();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una Jam reintenta el audio en la misma posición sin saltar a otra canción', async () => {
+    vi.useFakeTimers();
+    try {
+      let online = true;
+      const { s, audio } = setup(async (id) => {
+        if (!online) throw Object.assign(new Error('Sin conexión'), { code: 'network' });
+        return ok(id);
+      }, { reconnectDelaysMs: [2000], jam: { active: () => true, request: vi.fn() } });
+      s().playAt(track(0), 42);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      online = false;
+      audio.fail(2);
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(s()).toMatchObject({ reconnecting: true, position: 42 });
+      online = true;
+      s().networkRestored();
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      expect(audio.currentTime).toBe(42);
+      expect(s()).toMatchObject({ status: 'playing', reconnecting: false });
     } finally {
       vi.useRealTimers();
     }
@@ -590,6 +664,82 @@ describe('estados de reproducción', () => {
       await vi.advanceTimersByTimeAsync(2000);
       expect(s()).toMatchObject({ status: 'paused', reconnecting: false });
       expect(api.prepare).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reintenta si el navegador cancela un arranque de audio que la persona no canceló', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio } = setup(undefined, { reconnectDelaysMs: [2000] });
+      const play = audio.play.bind(audio);
+      vi.spyOn(audio, 'play').mockRejectedValueOnce(new DOMException('El navegador canceló el arranque', 'AbortError')).mockImplementation(play);
+      s().playTracks([track(0)]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(s()).toMatchObject({ status: 'playing', reconnecting: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('inicia la siguiente pista aunque el arranque quede pendiente y llegue una pausa tardía de la anterior', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000, reconnectDelaysMs: [2000] });
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      const play = audio.play.bind(audio);
+      vi.spyOn(audio, 'play').mockReturnValueOnce(deferred<void>().promise).mockImplementation(play);
+      audio.finish();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(s()).toMatchObject({ index: 1, status: 'loading' });
+      audio.dispatchEvent(new Event('pause'));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(s()).toMatchObject({ index: 1, status: 'playing' });
+      expect(api.prepare.mock.calls.map(([id]) => id)).toEqual([track(0).id, track(1).id, track(1).id]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('un stream abortado varias veces retoma la pista actual en vez de descartarla', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio } = setup(undefined, { stallTimeoutMs: 12_000, reconnectDelaysMs: [2000] });
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      s().seek(42);
+      audio.fail(1);
+      await vi.advanceTimersByTimeAsync(0);
+      audio.loaded(180);
+      audio.fail(1);
+      expect(s()).toMatchObject({ index: 0, reconnecting: true, position: 42 });
+      await vi.advanceTimersByTimeAsync(2000);
+      audio.loaded(180);
+      expect(s()).toMatchObject({ index: 0, status: 'playing', position: 42 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pausar durante un inicio trabado impide que un rechazo tardío vuelva a arrancar el audio', async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, audio, api } = setup(undefined, { stallTimeoutMs: 12_000, reconnectDelaysMs: [2000] });
+      const startup = deferred<void>();
+      vi.spyOn(audio, 'play').mockReturnValueOnce(startup.promise);
+      s().playTracks(tracks(2));
+      await vi.advanceTimersByTimeAsync(0);
+      s().pause();
+      startup.reject(new DOMException('Inicio interrumpido', 'AbortError'));
+      audio.dispatchEvent(new Event('pause'));
+      s().networkRestored();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(s()).toMatchObject({ index: 0, status: 'paused', reconnecting: false });
+      expect(api.prepare).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }

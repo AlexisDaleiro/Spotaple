@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, nativeTheme, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeTheme, net, powerSaveBlocker, protocol, session, shell } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import updater from 'electron-updater';
@@ -68,8 +68,25 @@ function createWindow(settings: AppSettings) {
   win.webContents.on('will-navigate', (e, url) => {
     if (!(rendererUrl && url.startsWith(rendererUrl))) e.preventDefault();
   });
+  let playing = 0;
+  let sleepBlocker: number | undefined;
+  const releaseSleepBlocker = () => {
+    if (sleepBlocker !== undefined) powerSaveBlocker.stop(sleepBlocker);
+    sleepBlocker = undefined;
+  };
+  win.webContents.on('media-started-playing', () => {
+    playing++;
+    sleepBlocker ??= powerSaveBlocker.start('prevent-app-suspension');
+  });
+  win.webContents.on('media-paused', () => {
+    playing = Math.max(0, playing - 1);
+    if (playing === 0) releaseSleepBlocker();
+  });
+  win.once('closed', releaseSleepBlocker);
   let lastRecovery = 0;
   win.webContents.on('render-process-gone', (_event, { reason }) => {
+    playing = 0;
+    releaseSleepBlocker();
     if (reason === 'clean-exit') return;
     // Deja que Electron termine de cerrar el proceso antes de recargar la ventana.
     setImmediate(async () => {

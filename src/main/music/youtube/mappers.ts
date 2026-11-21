@@ -55,7 +55,8 @@ export function mapTrack(item: Node, fallback: TrackFallback = {}): Track | null
   if (!artists.length) artists = toRefs(item.authors);
   if (!artists.length) {
     const sub = flexText(item, 1);
-    const first = parts(sub)[0];
+    const p = parts(sub);
+    const first = /^(song|video)$/i.test(p[0] ?? '') ? p[1] : p[0];
     if (first && first !== 'N/A') artists = [{ name: first.slice(0, 200) }];
   }
   if (!artists.length && fallback.artists?.length) artists = fallback.artists;

@@ -10,7 +10,7 @@ import { App } from './App';
 import { api, bridgeAvailable } from './api';
 import { persistence, playerStore, startMediaSession, startPlayerPersistence } from './player/instance';
 import { startJamSync } from './player/jam-sync';
-import { startJamBridge, useJam } from './stores/jam';
+import { inRoom, startJamBridge, useJam } from './stores/jam';
 import { startOfflineBridge } from './stores/offline';
 import { settingsStore } from './stores/settings';
 import { startUpdatesBridge } from './stores/updates';
@@ -35,19 +35,19 @@ if (!bridgeAvailable) {
   void startUpdatesBridge();
 
   // Primero se restaura la cola personal; recién después el jam puede tomar el reproductor (y guardarla aparte).
-  void startPlayerPersistence().then(async () => {
+  void startPlayerPersistence().then(async (desktopRecovery) => {
     await settingsReady;
     startMediaSession();
+    await startJamBridge();
     const restored = playerStore.getState();
-    const recovery = window.SpotapleAndroid?.takeRecovery?.(restored.items[restored.index]?.track.id ?? '');
-    if (restored.status === 'paused') {
+    const recovery = desktopRecovery ?? window.SpotapleAndroid?.takeRecovery?.(restored.items[restored.index]?.track.id ?? '');
+    if (restored.status === 'paused' && !inRoom(useJam.getState().view)) {
       const [id, milliseconds] = recovery?.split(':') ?? [];
       const position = Number(milliseconds);
       const matching = id && restored.items[restored.index]?.track.id === id && Number.isFinite(position) && position >= 0;
       if (matching) restored.seek(position / 1000);
       if (matching || settingsStore.getState().settings.resumeOnOpen) restored.play();
     }
-    await startJamBridge();
     startJamSync({
       player: playerStore,
       getView: () => useJam.getState().view,

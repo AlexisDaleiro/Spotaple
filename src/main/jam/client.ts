@@ -12,6 +12,8 @@ export interface JamClientOpts {
   name: string;
   /** Solo la primera conexión crea la sala; las reconexiones siempre se unen a la existente. */
   create: boolean;
+  /** Una sala por internet puede seguir disponible después de un corte largo. */
+  keepReconnecting?: boolean;
   /** Solo pruebas: simula otra versión del protocolo. */
   protocol?: number;
   /** Solo pruebas: reloj local simulado. */
@@ -31,8 +33,9 @@ export interface JamClientEvents {
 }
 
 const BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
-/** Tras tanto tiempo sin lograr reconectar se da la sesión por terminada. */
+/** Una sala local depende del equipo que la hospeda. */
 const GIVE_UP_MS = 120_000;
+const HANDSHAKE_MS = 12_000;
 const SYNC_SAMPLES = 5;
 const SYNC_GAP_MS = 150;
 const RESYNC_MS = 30_000;
@@ -61,6 +64,7 @@ export class JamClient {
   private attempt = 0;
   private downSince: number | null = null;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private handshakeTimer?: ReturnType<typeof setTimeout>;
   private syncTimers: ReturnType<typeof setTimeout>[] = [];
   private resyncTimer?: ReturnType<typeof setInterval>;
   private watchdog?: ReturnType<typeof setInterval>;
@@ -110,8 +114,10 @@ export class JamClient {
     const ws = new WebSocket(this.o.url);
     this.ws = ws;
     let gotState = false;
+    this.handshakeTimer = setTimeout(() => this.onDrop(), HANDSHAKE_MS);
 
     ws.onopen = () => {
+      if (ws !== this.ws) return;
       const hello: ClientMsg = {
         t: 'hello',
         protocol: this.o.protocol ?? PROTOCOL,
@@ -123,6 +129,7 @@ export class JamClient {
       ws.send(encode(hello));
     };
     ws.onmessage = (ev) => {
+      if (ws !== this.ws) return;
       let m: unknown;
       try {
         m = JSON.parse(String(ev.data));
@@ -134,6 +141,7 @@ export class JamClient {
       if (m.t === 'state') {
         if (!gotState) {
           gotState = true;
+          clearTimeout(this.handshakeTimer);
           this.onConnected();
         }
         this.e.onState(m.state);
@@ -166,10 +174,11 @@ export class JamClient {
 
   private onDrop(): void {
     if (this.ended) return;
+    this.closeSocket();
     this.stopSync();
     if (!this.everConnected) return this.end();
     this.downSince ??= Date.now();
-    if (Date.now() - this.downSince > GIVE_UP_MS) return this.end();
+    if (!this.o.keepReconnecting && Date.now() - this.downSince > GIVE_UP_MS) return this.end();
     this.setStatus('reconnecting');
     const delay = BACKOFF_MS[Math.min(this.attempt++, BACKOFF_MS.length - 1)]!;
     this.reconnectTimer = setTimeout(() => this.open(), delay);
@@ -200,14 +209,18 @@ export class JamClient {
   /** Una conexión TCP medio abierta no avisa que murió: si el servidor calla demasiado se da por caída y se reintenta. */
   private checkAlive(silent: number): void {
     if (this.ended || Date.now() - this.lastHeard <= silent) return;
-    const dead = this.ws;
-    this.ws = null; // el `onclose` tardío del socket muerto ya no cuenta
+    this.onDrop();
+  }
+
+  private closeSocket(): void {
+    clearTimeout(this.handshakeTimer);
+    const ws = this.ws;
+    this.ws = null;
     try {
-      dead?.close();
+      ws?.close();
     } catch {
       /* ya estaba cerrado */
     }
-    this.onDrop();
   }
 
   private stopSync(): void {
@@ -225,13 +238,7 @@ export class JamClient {
     this.ended = true;
     this.stopSync();
     clearTimeout(this.reconnectTimer);
-    const ws = this.ws;
-    this.ws = null;
-    try {
-      ws?.close();
-    } catch {
-      /* ya estaba cerrado */
-    }
+    this.closeSocket();
     this.setStatus('ended', reason);
   }
 }

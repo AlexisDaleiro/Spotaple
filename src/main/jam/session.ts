@@ -9,7 +9,7 @@ import { lanAddresses, startLocalHost, type NodeHost } from './node-host';
 export interface JamSessionDeps {
   settings: { get<V>(key: string): V | null; set(key: string, value: unknown): void };
   relayUrl: string;
-  /** Con relé propio, solo se crean salas de internet después de configurarlo. */
+  /** Relé propio opcional para crear salas. Sin él se usa relayUrl. */
   hostRelayUrl?: () => string | null;
   /** Se llama con la vista completa cada vez que algo cambia. */
   emit(view: JamView): void;
@@ -81,7 +81,10 @@ export function createJamSession(d: JamSessionDeps) {
     return new Promise<JamView>((resolve, reject) => {
       let settled = false;
       client = new JamClient(
-        { url: o.url, memberId: view.selfId, key: memberKey(o.url.slice(o.url.lastIndexOf('/') + 1)), name: o.name, create: o.create },
+        {
+          url: o.url, memberId: view.selfId, key: memberKey(o.url.slice(o.url.lastIndexOf('/') + 1)),
+          name: o.name, create: o.create, keepReconnecting: o.kind === 'internet',
+        },
         {
           onState: (state) => {
             if (mine !== gen) return;
@@ -125,8 +128,6 @@ export function createJamSession(d: JamSessionDeps) {
   async function create(o: { kind: 'local' | 'internet'; name: string }): Promise<JamView> {
     const name = sanitizeName(o.name);
     if (!name) throw new Error(NEED_NAME);
-    const relay = d.hostRelayUrl ? d.hostRelayUrl() : d.relayUrl;
-    if (o.kind === 'internet' && !relay) throw new Error('Configurá tu relé de Cloudflare para crear una sala por internet.');
     await leave();
     d.settings.set('jam_name', name);
     let v: JamView;
@@ -137,7 +138,7 @@ export function createJamSession(d: JamSessionDeps) {
       const invite = formatInvite('local', code, `${d.localAddress?.() ?? lanAddresses()[0] ?? '127.0.0.1'}:${h.port}`);
       v = await start({ url: `ws://127.0.0.1:${h.port}/${code}`, kind: 'local', invite, name, create: true });
     } else {
-      v = await createInternet(name, relay!);
+      v = await createInternet(name, d.hostRelayUrl?.() ?? d.relayUrl);
     }
     // El modo que el admin usó la última vez se recuerda como punto de partida.
     const last = d.settings.get<JamMode>('jam_last_mode');

@@ -33,9 +33,12 @@
     grid-template-columns: 1fr 1fr;
   }
 }
-.jam-card {
+.jam-card,
+.jam-create-form {
   display: grid;
   gap: var(--s-6);
+}
+.jam-card {
   padding: var(--s-8);
   border-radius: var(--r-lg);
   background: var(--bg-2);
@@ -268,6 +271,16 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--track-xs);
 }
+.jam-relay-options > summary {
+  cursor: pointer;
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+}
+
+.jam-relay-options[open] > summary {
+  margin-bottom: var(--s-4);
+}
+
 .jam-relay {
   display: grid;
   gap: 10px;

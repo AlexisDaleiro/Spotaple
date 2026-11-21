@@ -200,6 +200,30 @@ describe('un seguidor reproduce solo en el modo "Todas"', () => {
     setView(view('u-mara', { ...st, mode: 'admin-only' }));
     expect(audio.paused).toBe(true);
   });
+
+  it('mantiene el audio del invitado durante un corte del relé y aplica la pausa al volver', async () => {
+    const { s, setView } = setup();
+    const st = everyone(anchored(withSong(base()), 10));
+    setView(view('u-mara', st));
+    await flush();
+    setView(view('u-mara', st, { status: 'reconnecting' }));
+    expect(s().status).toBe('playing');
+    const paused = { ...st, now: { ...st.now!, status: 'paused' as const, pausedAtSec: 12 } };
+    setView(view('u-mara', paused));
+    expect(s().status).toBe('paused');
+  });
+
+  it('al recuperar una sala pausada conserva la canción y espera la orden de reproducir', async () => {
+    const { s, api, setView } = setup();
+    const st = everyone(anchored(withSong(base()), 10));
+    const paused = { ...st, now: { ...st.now!, status: 'paused' as const, pausedAtSec: 12 } };
+    setView(view('u-mara', paused));
+    expect(s()).toMatchObject({ status: 'paused', position: 12 });
+    expect(api.prepare).not.toHaveBeenCalled();
+    setView(view('u-mara', st));
+    await flush();
+    expect(s().status).toBe('playing');
+  });
 });
 
 describe('entrar y salir de la sala', () => {

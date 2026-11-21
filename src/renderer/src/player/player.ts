@@ -125,7 +125,7 @@ export interface PlayerActions {
   /** Reemplaza la cola. Un índice explícito conserva la canción elegida incluso con aleatorio. */
   playTracks(tracks: Track[], start?: number): void;
   /** Reemplaza la cola por esta canción y arranca en `startSec`. Lo usa el conductor de la sala; no pasa por el gancho jam. */
-  playAt(track: Track, startSec: number): void;
+  playAt(track: Track, startSec: number, paused?: boolean): void;
   /** Corta el audio y descarta cualquier carga en curso (no arranca sola después); la cola no se toca. */
   stop(): void;
   /** Salta a un ítem de la cola actual. */
@@ -178,6 +178,7 @@ export function createPlayer(deps: PlayerDeps) {
     // --- estado interno de la "única instancia responsable de la reproducción"
     let token = 0; // cada elección nueva invalida las cargas anteriores: gana la última
     let intent = 0;
+    let wantsPlayback = false;
     let pendingStart: number | null = null;
     let loadedUid: string | null = null; // ítem cuyo audio está cargado en el elemento
     let recordedFor: string | null = null; // ítem ya registrado en "sonó"
@@ -188,9 +189,12 @@ export function createPlayer(deps: PlayerDeps) {
     let reconnect: { timer: ReturnType<typeof setTimeout>; run: () => void } | undefined;
     let reconnectAttempts = 0;
     let autoSkips = 0;
-    let radioBusy = false; // hay un pedido de radio en curso
+    let radioPending: { uid: string; epoch: number } | null = null;
     let radioBlockedUid: string | null = null; // canción para la que la radio falló o no dio nada: no se reintenta
     let radioNetworkUid: string | null = null;
+    let radioRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    let radioRetryAttempts = 0;
+    let radioWaitingUid: string | null = null; // terminó la última canción y todavía se esperan sugerencias
     let radioOnlineEpoch = 0;
     let playedAuto = false; // la reproducción en curso la puso la radio y avanzó sola
     let radioEpoch = 0; // sube con «Limpiar»: una respuesta de radio anterior ya no vale
@@ -219,8 +223,9 @@ export function createPlayer(deps: PlayerDeps) {
     }
 
     function scheduleReconnect(item: QueueItem): boolean {
-      const delay = deps.reconnectDelaysMs?.[reconnectAttempts];
-      if (delay === undefined || jam?.active() || deps.isDownloaded?.(item.track.id)) return false;
+      const delays = deps.reconnectDelaysMs;
+      const delay = delays?.[Math.min(reconnectAttempts, delays.length - 1)];
+      if (delay === undefined || deps.isDownloaded?.(item.track.id)) return false;
       const mine = ++token;
       reconnectAttempts++;
       retriedUid = item.uid;
@@ -247,8 +252,8 @@ export function createPlayer(deps: PlayerDeps) {
       stallTimer = setTimeout(() => {
         stallTimer = undefined;
         const status = get().status;
-        if (mine !== token || cur()?.uid !== item.uid || audio.paused ||
-          (status !== 'buffering' && status !== 'loading' && status !== 'playing')) return;
+        const waitingForAudio = status === 'loading' || (!audio.paused && (status === 'buffering' || status === 'playing'));
+        if (!wantsPlayback || mine !== token || cur()?.uid !== item.uid || !waitingForAudio) return;
         recoverAudio(item, true);
       }, deps.stallTimeoutMs);
     }
@@ -294,19 +299,21 @@ export function createPlayer(deps: PlayerDeps) {
     function maybeRefill() {
       const item = cur();
       const s = get();
-      if (!radio || !item || !radio.enabled() || jam?.active() || s.repeat !== 'off') return;
-      if (s.items.length - s.index - 1 >= RADIO_REFILL_BELOW || radioBusy || radioBlockedUid === item.uid) return;
-      radioBusy = true;
+      if (!wantsPlayback || !radio || !item || !radio.enabled() || jam?.active() || s.repeat !== 'off') return false;
+      if (s.items.length - s.index - 1 >= RADIO_REFILL_BELOW || radioPending || radioBlockedUid === item.uid) return false;
+      if (radioNetworkUid !== item.uid) clearRadioRetry();
       const epoch = radioEpoch;
+      radioPending = { uid: item.uid, epoch };
       const onlineEpoch = radioOnlineEpoch;
       // La canción para la que se pidió ya no está en la cola (la reemplazaron): esa respuesta no sirve.
       const gone = () => !get().items.some((i) => i.uid === item.uid);
       radio.fetch(item.track, s.items.map((i) => i.track.id)).then(
         (tracks) => {
-          radioBusy = false;
+          radioPending = null;
+          if (radioNetworkUid === item.uid) clearRadioRetry();
           if (epoch !== radioEpoch) return; // «Limpiar» entre medio: la persona vació la cola a propósito
           if (gone()) return maybeRefill(); // se reemplazó la cola: pedir para la canción que suena ahora
-          if (jam?.active() || !radio.enabled()) return; // cambió el contexto mientras llegaba
+          if (jam?.active() || !radio.enabled()) return finishRadioWait(item.uid);
           const queue = get().items;
           const haveIds = new Set(queue.map((i) => i.track.id));
           const haveSongs = new Set(queue.map((i) => songKey(i.track)));
@@ -314,33 +321,39 @@ export function createPlayer(deps: PlayerDeps) {
           const fresh = tracks.filter((t) => !haveIds.has(t.id) && !haveSongs.has(songKey(t)));
           if (!fresh.length) {
             radioBlockedUid = item.uid;
-            return;
+            return finishRadioWait(item.uid);
           }
           const state = qs();
           const added = fresh.slice(0, MAX_QUEUE_ITEMS - (queue.length - state.index));
           const drop = Math.max(0, queue.length + added.length - MAX_QUEUE_ITEMS);
           const discarded = new Set(queue.slice(0, drop).map((item) => item.uid));
           const kept = queue.slice(drop);
-          const first = kept.length;
           commit(append({
             items: kept,
             index: state.index - drop,
             original: state.original?.filter((item) => !discarded.has(item.uid)) ?? null,
           }, makeItems(added, true)));
           // La cola ya había terminado mientras llegaba la respuesta: sigue sola.
-          if (get().status === 'ended' && cur()?.uid === item.uid) void go(first, { user: false });
+          if (wantsPlayback && cur()?.uid === item.uid && (get().status === 'ended' || radioWaitingUid === item.uid)) {
+            void go(state.index - drop + 1, { user: false });
+          }
         },
         (e) => {
-          radioBusy = false;
+          radioPending = null;
           if (epoch !== radioEpoch) return;
           if (gone()) return maybeRefill();
           radioBlockedUid = item.uid;
           if ((e as { code?: string } | null)?.code === 'network') {
             radioNetworkUid = item.uid;
-            if (radioOnlineEpoch !== onlineEpoch) retryRadioAfterNetwork();
-          } else notify('No pudimos sumar canciones sugeridas.');
+            if (radioOnlineEpoch !== onlineEpoch && wantsPlayback) retryRadioAfterNetwork();
+            else if (!scheduleRadioRetry(item.uid)) finishRadioWait(item.uid);
+          } else {
+            finishRadioWait(item.uid);
+            notify('No pudimos sumar canciones sugeridas.');
+          }
         },
       );
+      return true;
     }
 
     function patchDuration(uid: string, durationSec: number) {
@@ -349,11 +362,41 @@ export function createPlayer(deps: PlayerDeps) {
       set({ items: patch(get().items), original: original ? patch(original) : null, duration: durationSec });
     }
 
-    function retryRadioAfterNetwork() {
-      if (radioNetworkUid === null || cur()?.uid !== radioNetworkUid || radioBlockedUid !== radioNetworkUid) return;
+    function clearRadioRetry() {
+      clearTimeout(radioRetryTimer);
+      radioRetryTimer = undefined;
+      radioRetryAttempts = 0;
+      if (radioBlockedUid === radioNetworkUid) radioBlockedUid = null;
       radioNetworkUid = null;
+    }
+
+    function finishRadioWait(uid: string) {
+      if (radioWaitingUid !== uid) return;
+      radioWaitingUid = null;
+      set({ status: 'ended', reconnecting: false });
+    }
+
+    function scheduleRadioRetry(uid: string): boolean {
+      const delays = deps.reconnectDelaysMs;
+      const delay = delays?.[Math.min(radioRetryAttempts, delays.length - 1)];
+      if (delay === undefined || !wantsPlayback || cur()?.uid !== uid) return false;
+      clearTimeout(radioRetryTimer);
+      radioRetryAttempts++;
+      radioRetryTimer = setTimeout(() => {
+        radioRetryTimer = undefined;
+        retryRadioAfterNetwork();
+      }, delay);
+      if (radioWaitingUid === uid) set({ reconnecting: true });
+      return true;
+    }
+
+    function retryRadioAfterNetwork() {
+      const uid = radioNetworkUid;
+      if (!wantsPlayback || uid === null || cur()?.uid !== uid || radioBlockedUid !== uid || get().status === 'paused') return;
+      clearTimeout(radioRetryTimer);
+      radioRetryTimer = undefined;
       radioBlockedUid = null;
-      if (get().status !== 'paused') maybeRefill();
+      if (!maybeRefill()) finishRadioWait(uid);
     }
 
     function skipToDownload(item: QueueItem): boolean {
@@ -371,10 +414,11 @@ export function createPlayer(deps: PlayerDeps) {
     }
 
     function fail(e: unknown, item: QueueItem, duringPlayback = false) {
-      if (cur()?.uid !== item.uid) return;
+      if (!wantsPlayback || cur()?.uid !== item.uid) return;
       const code = (e as { code?: string })?.code ?? 'unknown';
       if (code === 'network' && get().position === 0 && skipToDownload(item)) return;
       if (code === 'network') {
+        if (duringPlayback && reconnectAttempts >= (deps.reconnectDelaysMs?.length ?? 0) && skipToDownload(item)) return;
         if (scheduleReconnect(item)) return;
         if (duringPlayback && skipToDownload(item)) return;
       }
@@ -388,6 +432,13 @@ export function createPlayer(deps: PlayerDeps) {
         go(nextIndex(s.items.length, s.index, s.repeat, false)!, { user: false });
       } else {
         notify(message, 'error');
+      }
+    }
+
+    function handlePlayFailure(e: unknown, item: QueueItem) {
+      if (!isAbort(e)) return fail(e, item);
+      if (deps.reconnectDelaysMs?.length) {
+        fail({ code: 'network', message: 'Se interrumpió el inicio de la reproducción.' }, item);
       }
     }
 
@@ -420,6 +471,9 @@ export function createPlayer(deps: PlayerDeps) {
         index = ni;
       }
       const mine = ++token;
+      wantsPlayback = true;
+      radioWaitingUid = null;
+      if (radioNetworkUid !== item.uid) clearRadioRetry();
       if (opts.user) {
         retriedUid = null;
         autoSkips = 0;
@@ -455,9 +509,9 @@ export function createPlayer(deps: PlayerDeps) {
       maybeRefill();
       if (opts.user && !opts.retry) quiet(api.recordSelection(item.track));
 
-      if (!opts.retry && deps.reachable && !deps.reachable(item.track.id)) {
+      if (deps.reachable && !deps.reachable(item.track.id)) {
         if (skipToDownload(item)) return;
-        if (deps.reconnectDelaysMs && !jam?.active()) {
+        if (deps.reconnectDelaysMs) {
           return fail({ code: 'network', message: 'Sin conexión para reproducir esta canción.' }, item);
         }
         return fail({ code: 'unavailable', message: 'Sin conexión: esta canción no está descargada.' }, item);
@@ -486,10 +540,10 @@ export function createPlayer(deps: PlayerDeps) {
       try {
         await audio.play();
       } catch (e) {
-        if (mine !== token || isAbort(e)) return;
+        if (mine !== token || !wantsPlayback) return;
         if (deps.stallTimeoutMs && !deps.isDownloaded?.(item.track.id) &&
           (e as { name?: string })?.name === 'NotSupportedError') recoverAudio(item, false);
-        else fail(e, item);
+        else handlePlayFailure(e, item);
       }
     }
 
@@ -501,11 +555,11 @@ export function createPlayer(deps: PlayerDeps) {
       }
       const network = stalled || audio.error?.code === 2 ||
         Boolean(deps.reconnectDelaysMs && !deps.isDownloaded?.(item.track.id) &&
-          (audio.error == null || audio.error.code === 4));
+          (audio.error == null || audio.error.code === 1 || audio.error.code === 4));
       fail({
         code: network ? 'network' : 'unavailable',
         message: network
-          ? 'Se cortó la conexión mientras sonaba. Revisá tu internet y tocá reproducir.'
+          ? 'Se cortó la conexión mientras sonaba. Revisá tu conexión a internet.'
           : 'No se pudo reproducir esta canción. Probá con otra.',
       }, item, true);
       if (stalled && get().status === 'error') {
@@ -520,10 +574,17 @@ export function createPlayer(deps: PlayerDeps) {
       const s = get();
       const ni = nextIndex(s.items.length, s.index, s.repeat, auto);
       if (ni === null) {
+        const uid = cur()?.uid;
         audio.pause();
         set({ status: 'ended', position: get().duration });
         // Terminó la cola: si la radio puede seguir, la pide y retoma sola cuando llega.
         if (auto) maybeRefill();
+        const retryingRadio = radioNetworkUid === uid && radioRetryTimer !== undefined;
+        const pendingRadio = radioPending?.uid === uid && radioPending?.epoch === radioEpoch;
+        if (uid && deps.reconnectDelaysMs?.length && (pendingRadio || retryingRadio)) {
+          radioWaitingUid = uid;
+          set({ status: 'loading', reconnecting: retryingRadio });
+        }
         return;
       }
       if (auto && ni === s.index) {
@@ -534,7 +595,7 @@ export function createPlayer(deps: PlayerDeps) {
         const item = cur();
         const mine = token;
         audio.play().catch((e) => {
-          if (item && mine === token && !isAbort(e)) fail(e, item);
+          if (item && mine === token) handlePlayFailure(e, item);
         });
         return;
       }
@@ -548,10 +609,15 @@ export function createPlayer(deps: PlayerDeps) {
     };
     on('playing', () => {
       const item = cur();
-      if (!item || loadedUid !== item.uid) return;
+      if (!wantsPlayback || !item || loadedUid !== item.uid) return;
       clearStall();
       uninterruptedSince = undefined;
+      const previous = get();
       set({ status: 'playing', reconnecting: false, error: null });
+      if (previous.reconnecting || previous.status === 'paused') {
+        radioOnlineEpoch++;
+        retryRadioAfterNetwork();
+      }
       watchStall();
       autoSkips = 0;
       if (recordedFor !== item.uid) {
@@ -560,10 +626,11 @@ export function createPlayer(deps: PlayerDeps) {
       }
     });
     on('pause', () => {
-      if (!audio.paused) return;
+      const { status } = get();
+      // La pista anterior puede emitir su pausa con retraso, cuando la nueva ya está cargando.
+      if (!audio.paused || status === 'loading') return;
       clearStall();
       uninterruptedSince = undefined;
-      const { status } = get();
       if (!audio.ended && (status === 'playing' || status === 'buffering')) set({ status: 'paused' });
     });
     on('waiting', () => {
@@ -602,7 +669,7 @@ export function createPlayer(deps: PlayerDeps) {
     on('ended', () => {
       const s = get();
       const item = cur();
-      if (s.status === 'loading' || s.status === 'idle' || s.status === 'error' || !item || loadedUid !== item.uid) return;
+      if (!wantsPlayback || s.status === 'loading' || s.status === 'idle' || s.status === 'error' || !item || loadedUid !== item.uid) return;
       clearStall();
       // Un archivo truncado puede disparar "ended" en vez de "error". No saltar de pista si le falta audio.
       const expected = sourceDuration;
@@ -620,6 +687,10 @@ export function createPlayer(deps: PlayerDeps) {
       const item = cur();
       if (!item || loadedUid !== item.uid) return;
       clearStall();
+      if (!wantsPlayback) {
+        loadedUid = null;
+        return;
+      }
       recoverAudio(item, false);
     });
 
@@ -676,12 +747,20 @@ export function createPlayer(deps: PlayerDeps) {
         commit(q);
         void go(q.index, { user: true });
       },
-      playAt(track, startSec) {
+      playAt(track, startSec, paused) {
         commit({ items: makeItems([track]), index: 0, original: null });
+        if (paused) {
+          get().stop();
+          set({ position: startSec, duration: track.durationSec ?? 0 });
+          return;
+        }
         void go(0, { user: false, startAt: startSec });
       },
       stop() {
         intent++;
+        wantsPlayback = false;
+        radioWaitingUid = null;
+        clearRadioRetry();
         clearStall();
         clearReconnect();
         token++; // una carga que todavía resuelve la fuente ya no es la vigente: no pondrá el audio
@@ -733,6 +812,8 @@ export function createPlayer(deps: PlayerDeps) {
       },
       clearUpcoming() {
         radioEpoch++; // una respuesta de radio que venía en camino ya no vale
+        if (radioWaitingUid) finishRadioWait(radioWaitingUid);
+        clearRadioRetry();
         commit(clearUpcoming(qs()));
       },
 
@@ -741,6 +822,7 @@ export function createPlayer(deps: PlayerDeps) {
         const s = get();
         const item = cur();
         if (!item || s.status === 'loading') return;
+        wantsPlayback = true;
         // Sesión restaurada, error o cola terminada: no hay audio cargado que reanudar.
         if (loadedUid !== item.uid || s.status === 'error' || s.status === 'ended') {
           const retry = s.status === 'error' && s.error?.code === 'network';
@@ -750,11 +832,14 @@ export function createPlayer(deps: PlayerDeps) {
         }
         const mine = token;
         if (audio.paused) audio.play().catch((e) => {
-          if (mine === token && !isAbort(e)) fail(e, item);
+          if (mine === token) handlePlayFailure(e, item);
         });
       },
       pause() {
         intent++;
+        wantsPlayback = false;
+        clearTimeout(radioRetryTimer);
+        radioRetryTimer = undefined;
         clearStall();
         if (get().status === 'loading') {
           get().stop();
@@ -765,6 +850,7 @@ export function createPlayer(deps: PlayerDeps) {
       },
       togglePlay() {
         const s = get();
+        if (s.reconnecting) return s.pause();
         if (s.status === 'loading') return;
         if (loadedUid === cur()?.uid && !audio.paused && s.status !== 'error' && s.status !== 'ended') s.pause();
         else s.play();
@@ -823,6 +909,9 @@ export function createPlayer(deps: PlayerDeps) {
 
       hydrate(saved) {
         if (!saved) return;
+        wantsPlayback = false;
+        radioWaitingUid = null;
+        clearRadioRetry();
         clearStall();
         clearReconnect();
         const items = makeItems(saved.queue);
